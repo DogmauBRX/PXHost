@@ -1,0 +1,682 @@
+// PXHost Panel API — Prisma schema (M3: data foundation + identity).
+// Full v1 domain model per docs/ARCHITECTURE.md section 2. Status columns
+// are modelled as String, not native Postgres ENUM: values map 1:1 to
+// TypeScript string unions, and CHECK constraints (added in a follow-up
+// SQL migration, see prisma/migrations) can be dropped/re-added
+// transactionally, unlike ALTER TYPE ... ADD VALUE.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// DATABASE_URL: the app's own connection, as the restricted "app_user"
+// role — subject to Row-Level Security on tenant-owned tables (see
+// migrations/0002_rls_policies). DIRECT_DATABASE_URL: the migration/owner
+// role, which Prisma Migrate uses to create/alter schema (RLS-restricted
+// app_user could never run DDL or the RLS-setup migration itself). This
+// is Prisma's standard pooler-bypass mechanism, repurposed here for a
+// privilege split instead of a connection-pooler bypass.
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// ─────────────────────────── IDENTITY ───────────────────────────
+
+model User {
+  id                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  email             String    @db.Citext
+  username          String    @db.Citext
+  passwordHash      String    @map("password_hash")
+  firstName         String?   @map("first_name")
+  lastName          String?   @map("last_name")
+  language          String    @default("pt-BR")
+  timezone          String    @default("America/Sao_Paulo")
+  globalRole        String    @default("user") @map("global_role")
+  adminPermissions  String[]  @default([]) @map("admin_permissions")
+  totpSecretEnc     Bytes?    @map("totp_secret_enc")
+  totpEnabledAt     DateTime? @map("totp_enabled_at") @db.Timestamptz
+  recoveryCodesEnc  Bytes?    @map("recovery_codes_enc")
+  isActive          Boolean   @default(true) @map("is_active")
+  emailVerifiedAt   DateTime? @map("email_verified_at") @db.Timestamptz
+  lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz
+  failedLogins      Int       @default(0) @map("failed_logins") @db.SmallInt
+  lockedUntil       DateTime? @map("locked_until") @db.Timestamptz
+  tokensValidAfter  DateTime  @default(now()) @map("tokens_valid_after") @db.Timestamptz
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz
+
+  sessions       Session[]
+  apiKeys        ApiKey[]
+  ownedServers   Server[]        @relation("ServerOwner")
+  subusers       Subuser[]       @relation("SubuserUser")
+  invitedSubs    Subuser[]       @relation("SubuserInvitedBy")
+  auditActor     AuditLog[]      @relation("AuditActor")
+  activity       ActivityLog[]   @relation("ActivityActor")
+  createdTokens  NodeToken[]     @relation("NodeTokenCreatedBy")
+  createdBackups Backup[]        @relation("BackupCreatedBy")
+
+  @@map("users")
+}
+
+model Session {
+  id           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  refreshHash  String    @map("refresh_hash")
+  familyId     String    @default(dbgenerated("uuidv7()")) @map("family_id") @db.Uuid
+  parentId     String?   @map("parent_id") @db.Uuid
+  userAgent    String?   @map("user_agent")
+  ip           String?   @db.Inet
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz
+  usedAt       DateTime? @map("used_at") @db.Timestamptz
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz
+  lastUsedAt   DateTime? @map("last_used_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model ApiKey {
+  id           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  keyType      String    @default("account") @map("key_type")
+  identifier   String    @unique @db.Char(16)
+  tokenHash    String    @map("token_hash")
+  memo         String    @default("")
+  scopes       String[]  @default([])
+  allowedIps   String[]  @default([]) @map("allowed_ips")
+  lastUsedAt   DateTime? @map("last_used_at") @db.Timestamptz
+  expiresAt    DateTime? @map("expires_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model PermissionCatalog {
+  key         String  @id
+  scope       String
+  groupKey    String  @map("group_key")
+  i18nKey     String  @map("i18n_key")
+  isDangerous Boolean @default(false) @map("is_dangerous")
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  @@map("permission_catalog")
+}
+
+// ─────────────────────── INFRASTRUCTURE ────────────────────────
+
+model Location {
+  id         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  shortCode  String    @map("short_code")
+  name       String
+  country    String?   @db.Char(2)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
+
+  nodes Node[]
+
+  @@map("locations")
+}
+
+model Node {
+  id                       String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  locationId               String    @map("location_id") @db.Uuid
+  name                     String
+  description              String?
+  fqdn                     String
+  scheme                   String    @default("https")
+  daemonPort               Int       @default(8443) @map("daemon_port")
+  sftpPort                 Int       @default(2022) @map("sftp_port")
+  daemonDataPath           String    @default("/var/lib/pxhost/volumes") @map("daemon_data_path")
+  behindProxy              Boolean   @default(false) @map("behind_proxy")
+  isPublic                 Boolean   @default(true) @map("is_public")
+  maintenanceMode          Boolean   @default(false) @map("maintenance_mode")
+  memoryTotalMb            Int       @map("memory_total_mb")
+  memoryReservedMb         Int       @default(0) @map("memory_reserved_mb")
+  memoryOverallocatePct    Int       @default(0) @map("memory_overallocate_pct")
+  diskTotalMb              Int       @map("disk_total_mb")
+  diskReservedMb           Int       @default(0) @map("disk_reserved_mb")
+  diskOverallocatePct      Int       @default(0) @map("disk_overallocate_pct")
+  cpuTotalPercent          Int       @default(0) @map("cpu_total_percent")
+  cpuOverallocatePct       Int       @default(-1) @map("cpu_overallocate_pct")
+  uploadSizeMb             Int       @default(256) @map("upload_size_mb")
+  healthStatus             String    @default("unknown") @map("health_status")
+  lastHeartbeatAt          DateTime? @map("last_heartbeat_at") @db.Timestamptz
+  agentVersion             String?   @map("agent_version")
+  dockerVersion             String?   @map("docker_version")
+  // Encrypted (reversible, CryptoService/AES-256-GCM) copy of the SAME
+  // secret issued to the agent as its node_token during bootstrap
+  // (node_tokens.token_hash holds an argon2id hash of it, for verifying
+  // AGENT->PANEL calls). This column exists so the PANEL can also
+  // authenticate PANEL->AGENT control-plane calls (create server, power
+  // actions) with that identical credential, without a second bootstrap
+  // round trip. It's a deliberate interim simplification pending full
+  // mTLS (architecture doc 3.4 layer 1, explicitly deferred in the M4
+  // README) — one shared secret, used in both directions, verified
+  // structurally differently on each end (hash comparison on the panel
+  // for inbound; local-file comparison on the agent for inbound; this
+  // encrypted copy purely so the panel has *something* to present
+  // outbound). Never returned by any API response.
+  controlTokenEnc          Bytes?    @map("control_token_enc")
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt                DateTime? @map("deleted_at") @db.Timestamptz
+
+  location    Location     @relation(fields: [locationId], references: [id])
+  allocations Allocation[]
+  servers     Server[]
+  tokens      NodeToken[]
+  dbHosts     DatabaseHost[]
+  mounts      MountNode[]
+  transfersFrom ServerTransfer[] @relation("TransferSource")
+  transfersTo   ServerTransfer[] @relation("TransferTarget")
+
+  @@map("nodes")
+}
+
+model NodeToken {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  nodeId      String    @map("node_id") @db.Uuid
+  tokenId     String    @map("token_id") @db.Char(16)
+  tokenHash   String    @map("token_hash")
+  status      String    @default("active")
+  lastUsedAt  DateTime? @map("last_used_at") @db.Timestamptz
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz
+
+  node    Node  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  creator User? @relation("NodeTokenCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@unique([tokenId])
+  @@map("node_tokens")
+}
+
+// Capability-token signing keys (architecture doc 3.4: "signing keys
+// carry next/current/retiring states, published in the JWKS 24h before
+// promotion, retired 24h after"). Rotation in this milestone (roadmap
+// M13) is admin-triggered rather than time-scheduled — see
+// SigningKeysService's doc comment — so this schema only needs
+// current/retiring/retired, not a separate "next" row: rotate() both
+// creates AND promotes the new key in the same call.
+model SigningKey {
+  id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  kid           String    @unique
+  publicKey     String    @map("public_key") // base64, raw 32-byte Ed25519 public key
+  privateKeyEnc Bytes?    @map("private_key_enc") // AES-256-GCM envelope-encrypted seed+pub; null once retired — a retired key can still verify old tokens via publicKey, but must never sign a new one
+  state         String    @default("current") // current | retiring | retired
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  promotedAt    DateTime? @map("promoted_at") @db.Timestamptz
+  retiredAt     DateTime? @map("retired_at") @db.Timestamptz
+
+  @@map("signing_keys")
+}
+
+model Allocation {
+  id        BigInt   @id @default(autoincrement())
+  nodeId    String   @map("node_id") @db.Uuid
+  ip        String   @db.Inet
+  ipAlias   String?  @map("ip_alias")
+  port      Int
+  serverId  String?  @map("server_id") @db.Uuid
+  isPrimary Boolean  @default(false) @map("is_primary")
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  node   Node    @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  server Server? @relation(fields: [serverId], references: [id], onDelete: SetNull)
+
+  @@unique([nodeId, ip, port])
+  @@map("allocations")
+}
+
+model Mount {
+  id             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name           String
+  description    String?
+  sourcePath     String   @map("source_path")
+  targetPath     String   @map("target_path")
+  isReadOnly     Boolean  @default(true) @map("is_read_only")
+  userMountable  Boolean  @default(false) @map("user_mountable")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  nodes     MountNode[]
+  templates MountTemplate[]
+  servers   ServerMount[]
+
+  @@map("mounts")
+}
+
+model MountNode {
+  mountId String @map("mount_id") @db.Uuid
+  nodeId  String @map("node_id") @db.Uuid
+
+  mount Mount @relation(fields: [mountId], references: [id], onDelete: Cascade)
+  node  Node  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@id([mountId, nodeId])
+  @@map("mount_nodes")
+}
+
+model MountTemplate {
+  mountId    String @map("mount_id") @db.Uuid
+  templateId String @map("template_id") @db.Uuid
+
+  mount    Mount          @relation(fields: [mountId], references: [id], onDelete: Cascade)
+  template ServerTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@id([mountId, templateId])
+  @@map("mount_templates")
+}
+
+model ServerMount {
+  serverId String @map("server_id") @db.Uuid
+  mountId  String @map("mount_id") @db.Uuid
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  mount  Mount  @relation(fields: [mountId], references: [id], onDelete: Cascade)
+
+  @@id([serverId, mountId])
+  @@map("server_mounts")
+}
+
+// ────────────────────────── CATALOG ────────────────────────────
+
+model TemplateGroup {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name        String
+  description String?
+  iconUrl     String?   @map("icon_url")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+
+  templates ServerTemplate[]
+
+  @@map("template_groups")
+}
+
+model ServerTemplate {
+  id                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  groupId           String    @map("group_id") @db.Uuid
+  parentId          String?   @map("parent_id") @db.Uuid
+  name              String
+  author            String
+  description       String?
+  dockerImages      Json      @map("docker_images")
+  startupCommand    String    @map("startup_command")
+  stopCommand       String    @default("stop") @map("stop_command")
+  configFiles       Json      @default("{}") @map("config_files")
+  configStartup     Json      @default("{}") @map("config_startup")
+  configLogs        Json      @default("{}") @map("config_logs")
+  installImage      String    @default("ghcr.io/pxhost/installers:debian") @map("install_image")
+  installEntrypoint String    @default("bash") @map("install_entrypoint")
+  installScript     String    @map("install_script")
+  features          String[]  @default([])
+  forceOutgoingIp   Boolean   @default(false) @map("force_outgoing_ip")
+  isActive          Boolean   @default(true) @map("is_active")
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz
+
+  group     TemplateGroup          @relation(fields: [groupId], references: [id])
+  parent    ServerTemplate?        @relation("TemplateParent", fields: [parentId], references: [id])
+  children  ServerTemplate[]       @relation("TemplateParent")
+  variables TemplateVariable[]
+  servers   Server[]
+  mounts    MountTemplate[]
+
+  @@map("server_templates")
+}
+
+model TemplateVariable {
+  id               BigInt   @id @default(autoincrement())
+  templateId       String   @map("template_id") @db.Uuid
+  name             String
+  description      String?
+  envVariable      String   @map("env_variable")
+  defaultValue     String   @default("") @map("default_value")
+  rules            String   @default("nullable|string")
+  isUserViewable   Boolean  @default(true) @map("is_user_viewable")
+  isUserEditable   Boolean  @default(true) @map("is_user_editable")
+  sortOrder        Int      @default(0) @map("sort_order")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  template       ServerTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  serverValues   ServerVariable[]
+
+  @@unique([templateId, envVariable])
+  @@map("template_variables")
+}
+
+model Plan {
+  id                    String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name                  String
+  slug                  String
+  description           String?
+  isPublic              Boolean   @default(true) @map("is_public")
+  sortOrder             Int       @default(0) @map("sort_order")
+  cpuLimitPercent       Int       @default(100) @map("cpu_limit_percent")
+  cpuPinning            String    @default("") @map("cpu_pinning")
+  memoryMb              Int       @map("memory_mb")
+  swapMb                Int       @default(0) @map("swap_mb")
+  diskMb                Int       @map("disk_mb")
+  ioWeight              Int       @default(500) @map("io_weight")
+  blockIoReadBps        BigInt    @default(0) @map("block_io_read_bps")
+  blockIoWriteBps       BigInt    @default(0) @map("block_io_write_bps")
+  oomKillEnabled        Boolean   @default(false) @map("oom_kill_enabled")
+  maxDatabases          Int       @default(0) @map("max_databases")
+  maxBackups            Int       @default(0) @map("max_backups")
+  maxAllocations        Int       @default(1) @map("max_allocations")
+  maxSchedules          Int       @default(5) @map("max_schedules")
+  backupRetentionDays   Int       @default(7) @map("backup_retention_days")
+  allowedGroupIds       String[]  @default([]) @map("allowed_group_ids") @db.Uuid
+  priceCents            Int       @default(0) @map("price_cents")
+  currency              String    @default("BRL") @db.Char(3)
+  billingPeriod         String    @default("monthly") @map("billing_period")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt             DateTime? @map("deleted_at") @db.Timestamptz
+
+  servers Server[]
+
+  @@map("plans")
+}
+
+// ───────────────────────── SERVERS ─────────────────────────────
+
+model Server {
+  id                 String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  shortId            String    @unique @map("short_id") @db.Char(8)
+  ownerId            String    @map("owner_id") @db.Uuid
+  nodeId             String    @map("node_id") @db.Uuid
+  templateId         String    @map("template_id") @db.Uuid
+  planId             String?   @map("plan_id") @db.Uuid
+  name               String
+  description        String    @default("")
+  dockerImage        String    @map("docker_image")
+  startupCommand     String    @map("startup_command")
+  cpuLimitPercent    Int       @default(100) @map("cpu_limit_percent")
+  cpuPinning         String    @default("") @map("cpu_pinning")
+  memoryMb           Int       @map("memory_mb")
+  swapMb             Int       @default(0) @map("swap_mb")
+  diskMb             Int       @map("disk_mb")
+  ioWeight           Int       @default(500) @map("io_weight")
+  blockIoReadBps     BigInt    @default(0) @map("block_io_read_bps")
+  blockIoWriteBps    BigInt    @default(0) @map("block_io_write_bps")
+  oomKillEnabled     Boolean   @default(false) @map("oom_kill_enabled")
+  maxDatabases       Int       @default(0) @map("max_databases")
+  maxBackups         Int       @default(0) @map("max_backups")
+  maxAllocations     Int       @default(1) @map("max_allocations")
+  maxSchedules       Int       @default(5) @map("max_schedules")
+  status             String    @default("installing")
+  suspendedAt        DateTime? @map("suspended_at") @db.Timestamptz
+  suspensionReason   String?   @map("suspension_reason")
+  powerState         String    @default("offline") @map("power_state")
+  powerStateAt       DateTime  @default(now()) @map("power_state_at") @db.Timestamptz
+  lastDiskUsedMb     Int       @default(0) @map("last_disk_used_mb")
+  installedAt        DateTime? @map("installed_at") @db.Timestamptz
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  owner    User           @relation("ServerOwner", fields: [ownerId], references: [id])
+  node     Node           @relation(fields: [nodeId], references: [id])
+  template ServerTemplate @relation(fields: [templateId], references: [id])
+  plan     Plan?          @relation(fields: [planId], references: [id])
+
+  allocations Allocation[]
+  variables   ServerVariable[]
+  subusers    Subuser[]
+  backups     Backup[]
+  databases   Database[]
+  schedules   Schedule[]
+  mounts      ServerMount[]
+  activity    ActivityLog[]
+  transfers   ServerTransfer[]
+  metrics     ServerMetric1m[]
+  billingEvents BillingEvent[]
+
+  @@map("servers")
+}
+
+model ServerVariable {
+  id         BigInt   @id @default(autoincrement())
+  serverId   String   @map("server_id") @db.Uuid
+  variableId BigInt   @map("variable_id")
+  value      String   @default("")
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  server   Server           @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  variable TemplateVariable @relation(fields: [variableId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, variableId])
+  @@map("server_variables")
+}
+
+model Subuser {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  serverId    String    @map("server_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  permissions String[]  @default([])
+  invitedBy   String?   @map("invited_by") @db.Uuid
+  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  server  Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user    User   @relation("SubuserUser", fields: [userId], references: [id], onDelete: Cascade)
+  inviter User?  @relation("SubuserInvitedBy", fields: [invitedBy], references: [id], onDelete: SetNull)
+
+  @@unique([serverId, userId])
+  @@map("subusers")
+}
+
+// ────────────────────── SERVER SERVICES ────────────────────────
+
+model Backup {
+  id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  serverId      String    @map("server_id") @db.Uuid
+  createdBy     String?   @map("created_by") @db.Uuid
+  name          String
+  adapter       String    @default("local")
+  status        String    @default("pending")
+  ignoredGlobs  String    @default("") @map("ignored_globs")
+  bytes         BigInt    @default(0)
+  checksum      String?
+  checksumAlgo  String    @default("sha256") @map("checksum_algo")
+  isLocked      Boolean   @default(false) @map("is_locked")
+  uploadId      String?   @map("upload_id")
+  errorMessage  String?   @map("error_message")
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz
+  expiresAt     DateTime? @map("expires_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+
+  server  Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  creator User?  @relation("BackupCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@map("backups")
+}
+
+model DatabaseHost {
+  id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name          String
+  host          String
+  port          Int       @default(3306)
+  username      String
+  passwordEnc   Bytes     @map("password_enc")
+  keyVersion    Int       @default(1) @map("key_version") @db.SmallInt
+  nodeId        String?   @map("node_id") @db.Uuid
+  maxDatabases  Int       @default(0) @map("max_databases")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+
+  node      Node?      @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  databases Database[]
+
+  @@map("database_hosts")
+}
+
+model Database {
+  id              String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  serverId        String   @map("server_id") @db.Uuid
+  hostId          String   @map("host_id") @db.Uuid
+  database        String
+  username        String
+  passwordEnc     Bytes    @map("password_enc")
+  keyVersion      Int      @default(1) @map("key_version") @db.SmallInt
+  remote          String   @default("%")
+  maxConnections  Int      @default(0) @map("max_connections")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  server Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  host   DatabaseHost @relation(fields: [hostId], references: [id], onDelete: Restrict)
+
+  @@unique([hostId, database])
+  @@unique([hostId, username])
+  @@map("databases")
+}
+
+model Schedule {
+  id               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  serverId         String    @map("server_id") @db.Uuid
+  name             String
+  cronMinute       String    @default("*") @map("cron_minute")
+  cronHour         String    @default("*") @map("cron_hour")
+  cronDayOfMonth   String    @default("*") @map("cron_day_of_month")
+  cronMonth        String    @default("*") @map("cron_month")
+  cronDayOfWeek    String    @default("*") @map("cron_day_of_week")
+  timezone         String    @default("America/Sao_Paulo")
+  isActive         Boolean   @default(true) @map("is_active")
+  onlyWhenOnline   Boolean   @default(false) @map("only_when_online")
+  isProcessing     Boolean   @default(false) @map("is_processing")
+  lastRunAt        DateTime? @map("last_run_at") @db.Timestamptz
+  lastRunStatus    String?   @map("last_run_status")
+  nextRunAt        DateTime  @map("next_run_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  tasks  Task[]
+
+  @@map("schedules")
+}
+
+model Task {
+  id                  String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  scheduleId          String   @map("schedule_id") @db.Uuid
+  sequenceNumber      Int      @map("sequence_number")
+  action              String
+  payload             String   @default("")
+  timeOffsetSeconds   Int      @default(0) @map("time_offset_seconds")
+  continueOnFailure   Boolean  @default(false) @map("continue_on_failure")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  schedule Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, sequenceNumber])
+  @@map("tasks")
+}
+
+model ServerTransfer {
+  id                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  serverId            String    @map("server_id") @db.Uuid
+  sourceNodeId        String    @map("source_node_id") @db.Uuid
+  targetNodeId        String    @map("target_node_id") @db.Uuid
+  targetAllocationId  BigInt?   @map("target_allocation_id")
+  status              String    @default("pending")
+  errorMessage        String?   @map("error_message")
+  startedAt           DateTime? @map("started_at") @db.Timestamptz
+  completedAt         DateTime? @map("completed_at") @db.Timestamptz
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  server     Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  sourceNode Node   @relation("TransferSource", fields: [sourceNodeId], references: [id])
+  targetNode Node   @relation("TransferTarget", fields: [targetNodeId], references: [id])
+
+  @@map("server_transfers")
+}
+
+// BillingEvent's id IS the external payment provider's own event id, not
+// a generated uuid — that's what makes the webhook handler idempotent
+// (architecture doc roadmap M14: "idempotently suspends/restores"): a
+// second delivery of the same event hits this table's primary key and
+// is a no-op, with no separate dedup table or cache needed. See
+// BillingWebhookService's doc comment for the full reasoning.
+model BillingEvent {
+  id          String   @id // external event id, e.g. Stripe's "evt_..."
+  serverId    String   @map("server_id") @db.Uuid
+  type        String
+  action      String // 'suspend' | 'restore' — what this event resolved to
+  receivedAt  DateTime @default(now()) @map("received_at") @db.Timestamptz
+  rawPayload  Json     @map("raw_payload")
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@map("billing_events")
+}
+
+// ────────────────────── OBSERVABILITY ──────────────────────────
+
+model ActivityLog {
+  id         BigInt   @id @default(autoincrement())
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorType  String   @default("user") @map("actor_type")
+  serverId   String?  @map("server_id") @db.Uuid
+  event      String
+  ip         String?  @db.Inet
+  properties Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  actor  User?   @relation("ActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+  server Server? @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@map("activity_logs")
+}
+
+// audit_logs and server_metrics_1m are partitioned tables (RANGE by
+// occurred_at / bucket) — Prisma models the parent shape; partitions are
+// created by the raw-SQL migration alongside the RLS policies, since
+// Prisma's schema DSL has no partitioning syntax.
+model AuditLog {
+  id           BigInt   @id @default(autoincrement())
+  occurredAt   DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+  actorId      String?  @map("actor_id") @db.Uuid
+  actorEmail   String?  @map("actor_email")
+  actorIp      String?  @map("actor_ip") @db.Inet
+  action       String
+  targetType   String?  @map("target_type")
+  targetId     String?  @map("target_id")
+  beforeState  Json?    @map("before_state")
+  afterState   Json?    @map("after_state")
+  metadata     Json     @default("{}")
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model ServerMetric1m {
+  serverId    String   @map("server_id") @db.Uuid
+  bucket      DateTime @db.Timestamptz
+  cpuPercent  Float    @map("cpu_percent")
+  memoryBytes BigInt   @map("memory_bytes")
+  diskBytes   BigInt   @map("disk_bytes")
+  netRxBytes  BigInt   @map("net_rx_bytes")
+  netTxBytes  BigInt   @map("net_tx_bytes")
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@id([serverId, bucket])
+  @@map("server_metrics_1m")
+}

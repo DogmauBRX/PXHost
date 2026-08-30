@@ -1,0 +1,22 @@
+{
+  "uuid": "9c2e0000-0000-0000-0000-000000000042",
+  "uid": 100042,
+  "image": "alpine",
+  "image_digest": "",
+  "startup_template": "sleep {{SLEEP_SECONDS}}",
+  "stop_signal": "SIGTERM",
+  "declared_variables": ["SLEEP_SECONDS"],
+  "variables": { "SLEEP_SECONDS": "3600" },
+  "limits": {
+    "cpu_percent": 100,
+    "memory_mb": 256,
+    "swap_mb": 0,
+    "disk_mb": 1024,
+    "io_weight": 500,
+    "pids_limit": 64
+  },
+  "allocations": [
+    { "IP": "127.0.0.1", "Port": 25599, "Primary": true, "Protocols": ["tcp"] }
+  ],
+  "mounts": []
+}

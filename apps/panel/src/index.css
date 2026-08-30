@@ -1,0 +1,69 @@
+@import url("https://fonts.googleapis.com/css2?family=Fragment+Mono:ital@0;1&family=Public+Sans:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Public Sans", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Fragment Mono", "SFMono-Regular", Consolas, monospace;
+
+  /* dark-first: these are the values used when no light override applies */
+  --color-bg: #10161a;
+  --color-surface: #161d22;
+  --color-surface-2: #1c242a;
+  --color-border: #263038;
+  --color-border-strong: #34424c;
+  --color-text: #e7edef;
+  --color-text-muted: #97a6ac;
+  --color-text-faint: #6c7b82;
+  --color-accent: #57b5a0;
+  --color-accent-strong: #7fcdb9;
+  --color-accent-tint: #17302b;
+  --color-ok: #5cb583;
+  --color-ok-tint: #16261d;
+  --color-warn: #d1a24f;
+  --color-warn-tint: #2b2213;
+  --color-fail: #e0806d;
+  --color-fail-tint: #2c1a16;
+}
+
+[data-theme="light"] {
+  --color-bg: #f4f6f7;
+  --color-surface: #ffffff;
+  --color-surface-2: #eceff1;
+  --color-border: #d7dde0;
+  --color-border-strong: #b9c2c7;
+  --color-text: #1a2226;
+  --color-text-muted: #5b6b71;
+  --color-text-faint: #8a969b;
+  --color-accent: #2f7d6e;
+  --color-accent-strong: #1f5b50;
+  --color-accent-tint: #e2efec;
+  --color-ok: #2f7d4f;
+  --color-ok-tint: #e5f2e9;
+  --color-warn: #a8762a;
+  --color-warn-tint: #f7ecdb;
+  --color-fail: #ad4a3b;
+  --color-fail-tint: #f8e7e3;
+}
+
+html {
+  color-scheme: dark;
+}
+[data-theme="light"] {
+  color-scheme: light;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: var(--color-accent-tint);
+  color: var(--color-accent-strong);
+}
+
+/* xterm.js ships its own base styles; this just lets it size to its flex parent */
+.xterm-wrapper .xterm {
+  height: 100%;
+}

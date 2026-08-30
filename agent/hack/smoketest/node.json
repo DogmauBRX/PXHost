@@ -1,0 +1,20 @@
+{
+  "data_dir": "/var/lib/pxhost/servers",
+  "network_name": "pxhost0-dev",
+  "network_subnet": "172.31.0.0/24",
+  "network_gateway": "172.31.0.1",
+  "cgroup_parent": "",
+  "uid_range_min": 100000,
+  "uid_range_max": 165535,
+  "seccomp_profile_path": "configs/seccomp-pxhost.json",
+  "apparmor_profile": "",
+  "io_weight_supported": false,
+  "log_max_size": "8m",
+  "log_max_file": "3",
+  "mount_allowlist": [],
+  "node_uuid": "b0f7a1f0-6b1a-4a6f-9f2e-9d1c1a5f2b31",
+  "node_token": "dev-node-token-change-me",
+  "listen_addr": "127.0.0.1:8443",
+  "panel_public_key_path": "hack/smoketest/keys/panel-ed25519.pub",
+  "ws_allowed_origins": ["*"]
+}
