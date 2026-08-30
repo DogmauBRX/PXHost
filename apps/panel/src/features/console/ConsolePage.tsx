@@ -6,8 +6,7 @@ import { useServerSocket } from '@/shared/realtime/useServerSocket';
 import { Terminal } from './Terminal';
 import { StatsChart, type StatsChartHandle } from './StatsChart';
 import { PowerControls } from './PowerControls';
-import { StatusBadge } from '@/ui/primitives/Badge';
-import { Button } from '@/ui/primitives/Button';
+import { Alert, Button, Input, StatusBadge } from '@/ui/primitives';
 
 const CONN_LABEL: Record<string, string> = {
   idle: 'Iniciando…',
@@ -55,32 +54,39 @@ export function ConsolePage({ serverId }: { serverId: string }) {
   }
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      <div className="flex items-center justify-between gap-4">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="font-medium text-text">{server?.name ?? '…'}</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-text">{server?.name ?? '…'}</h1>
           <StatusBadge status={displayState} />
         </div>
-        <span className={`font-mono text-xs ${connected ? 'text-ok' : 'text-text-faint'}`}>{CONN_LABEL[connectionState]}</span>
+        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${connected ? 'text-ok' : 'text-text-faint'}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-ok' : 'bg-text-faint'}`} />
+          {CONN_LABEL[connectionState]}
+        </span>
       </div>
 
       <PowerControls state={displayState} permissions={permissions} onAction={sendPower} />
 
-      {lastError && <p className="rounded-md bg-fail-tint px-3 py-2 text-sm text-fail">{lastError}</p>}
+      {lastError && <Alert>{lastError}</Alert>}
 
       <StatsChart ref={statsRef} />
 
-      <div className="min-h-0 flex-1">
+      {/* Deliberately bounded. xterm's FitAddon derives its row count from
+          the container's clientHeight — an auto-height parent measures 0 and
+          the terminal renders no rows at all. This is one of the few places
+          the redesign keeps a fixed-height box on purpose. */}
+      <div className="h-[clamp(320px,55vh,760px)]">
         <Terminal onReady={(t) => (termRef.current = t)} disabled={!connected} />
       </div>
 
       <form onSubmit={submitCommand} className="flex gap-2">
-        <input
+        <Input
           value={command}
           onChange={(e) => setCommand(e.target.value)}
           disabled={!connected || !permissions.includes('control.console')}
           placeholder={connected ? 'Digite um comando e pressione Enter…' : 'Aguardando conexão…'}
-          className="flex-1 rounded-md border border-border bg-surface-2 px-3 py-2 font-mono text-sm text-text outline-none focus:border-accent disabled:opacity-50"
+          className="font-mono"
         />
         <Button type="submit" variant="primary" disabled={!connected || !command.trim()}>
           Enviar

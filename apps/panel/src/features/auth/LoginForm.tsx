@@ -6,7 +6,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { login } from './auth.api';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { ApiError } from '@/shared/api/client';
-import { Button } from '@/ui/primitives/Button';
+import { Alert, Button, Field, Input } from '@/ui/primitives';
 
 const schema = z.object({
   email: z.string().email('Informe um e-mail válido'),
@@ -29,7 +29,12 @@ export function LoginForm() {
     setServerError(null);
     try {
       const res = await login(values.email, values.password);
-      setSession(res.accessToken, { id: res.user.id, email: res.user.email, isAdmin: res.user.globalRole !== 'user' });
+      setSession(res.accessToken, {
+        id: res.user.id,
+        email: res.user.email,
+        username: res.user.username,
+        isAdmin: res.user.globalRole !== 'user',
+      });
       void navigate({ to: '/' });
     } catch (err) {
       setServerError(err instanceof ApiError ? err.message : 'Não foi possível entrar. Tente novamente.');
@@ -38,35 +43,15 @@ export function LoginForm() {
 
   return (
     <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="email" className="text-sm font-medium text-text-muted">
-          E-mail
-        </label>
-        <input
-          id="email"
-          type="email"
-          autoComplete="email"
-          className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text outline-none focus:border-accent"
-          {...register('email')}
-        />
-        {errors.email && <p className="text-xs text-fail">{errors.email.message}</p>}
-      </div>
+      <Field label="E-mail" htmlFor="email" error={errors.email?.message}>
+        <Input id="email" type="email" autoComplete="email" invalid={!!errors.email} {...register('email')} />
+      </Field>
 
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="password" className="text-sm font-medium text-text-muted">
-          Senha
-        </label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text outline-none focus:border-accent"
-          {...register('password')}
-        />
-        {errors.password && <p className="text-xs text-fail">{errors.password.message}</p>}
-      </div>
+      <Field label="Senha" htmlFor="password" error={errors.password?.message}>
+        <Input id="password" type="password" autoComplete="current-password" invalid={!!errors.password} {...register('password')} />
+      </Field>
 
-      {serverError && <p className="rounded-md bg-fail-tint px-3 py-2 text-sm text-fail">{serverError}</p>}
+      {serverError && <Alert>{serverError}</Alert>}
 
       <Button type="submit" variant="primary" disabled={isSubmitting} className="mt-1 w-full">
         {isSubmitting ? 'Entrando…' : 'Entrar'}

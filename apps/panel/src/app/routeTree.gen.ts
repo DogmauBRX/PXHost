@@ -12,11 +12,15 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminLogsRouteImport } from './routes/admin.logs'
 import { Route as AdminNodesRouteImport } from './routes/admin.nodes'
 import { Route as AdminPlansRouteImport } from './routes/admin.plans'
 import { Route as AdminServersRouteImport } from './routes/admin.servers'
 import { Route as AdminTemplatesRouteImport } from './routes/admin.templates'
+import { Route as AdminUsersRouteImport } from './routes/admin.users'
+import { Route as ServersIndexRouteImport } from './routes/servers.index'
 import { Route as ServersServerIdRouteImport } from './routes/servers.$serverId'
 import { Route as ServersServerIdIndexRouteImport } from './routes/servers.$serverId.index'
 import { Route as ServersServerIdActivityRouteImport } from './routes/servers.$serverId.activity'
@@ -41,9 +45,19 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminLogsRoute = AdminLogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminNodesRoute = AdminNodesRouteImport.update({
@@ -65,6 +79,16 @@ const AdminTemplatesRoute = AdminTemplatesRouteImport.update({
   id: '/templates',
   path: '/templates',
   getParentRoute: () => AdminRoute,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AdminRoute,
+} as any)
+const ServersIndexRoute = ServersIndexRouteImport.update({
+  id: '/servers/',
+  path: '/servers/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ServersServerIdRoute = ServersServerIdRouteImport.update({
   id: '/servers/$serverId',
@@ -113,12 +137,16 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
+  '/settings': typeof SettingsRoute
+  '/admin/logs': typeof AdminLogsRoute
   '/admin/nodes': typeof AdminNodesRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/servers': typeof AdminServersRoute
   '/admin/templates': typeof AdminTemplatesRoute
+  '/admin/users': typeof AdminUsersRoute
   '/servers/$serverId': typeof ServersServerIdRouteWithChildren
   '/admin/': typeof AdminIndexRoute
+  '/servers/': typeof ServersIndexRoute
   '/servers/$serverId/activity': typeof ServersServerIdActivityRoute
   '/servers/$serverId/backups': typeof ServersServerIdBackupsRoute
   '/servers/$serverId/databases': typeof ServersServerIdDatabasesRoute
@@ -130,11 +158,15 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/settings': typeof SettingsRoute
+  '/admin/logs': typeof AdminLogsRoute
   '/admin/nodes': typeof AdminNodesRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/servers': typeof AdminServersRoute
   '/admin/templates': typeof AdminTemplatesRoute
+  '/admin/users': typeof AdminUsersRoute
   '/admin': typeof AdminIndexRoute
+  '/servers': typeof ServersIndexRoute
   '/servers/$serverId/activity': typeof ServersServerIdActivityRoute
   '/servers/$serverId/backups': typeof ServersServerIdBackupsRoute
   '/servers/$serverId/databases': typeof ServersServerIdDatabasesRoute
@@ -148,12 +180,16 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
+  '/settings': typeof SettingsRoute
+  '/admin/logs': typeof AdminLogsRoute
   '/admin/nodes': typeof AdminNodesRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/servers': typeof AdminServersRoute
   '/admin/templates': typeof AdminTemplatesRoute
+  '/admin/users': typeof AdminUsersRoute
   '/servers/$serverId': typeof ServersServerIdRouteWithChildren
   '/admin/': typeof AdminIndexRoute
+  '/servers/': typeof ServersIndexRoute
   '/servers/$serverId/activity': typeof ServersServerIdActivityRoute
   '/servers/$serverId/backups': typeof ServersServerIdBackupsRoute
   '/servers/$serverId/databases': typeof ServersServerIdDatabasesRoute
@@ -168,12 +204,16 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/login'
+    | '/settings'
+    | '/admin/logs'
     | '/admin/nodes'
     | '/admin/plans'
     | '/admin/servers'
     | '/admin/templates'
+    | '/admin/users'
     | '/servers/$serverId'
     | '/admin/'
+    | '/servers/'
     | '/servers/$serverId/activity'
     | '/servers/$serverId/backups'
     | '/servers/$serverId/databases'
@@ -185,11 +225,15 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/settings'
+    | '/admin/logs'
     | '/admin/nodes'
     | '/admin/plans'
     | '/admin/servers'
     | '/admin/templates'
+    | '/admin/users'
     | '/admin'
+    | '/servers'
     | '/servers/$serverId/activity'
     | '/servers/$serverId/backups'
     | '/servers/$serverId/databases'
@@ -202,12 +246,16 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/login'
+    | '/settings'
+    | '/admin/logs'
     | '/admin/nodes'
     | '/admin/plans'
     | '/admin/servers'
     | '/admin/templates'
+    | '/admin/users'
     | '/servers/$serverId'
     | '/admin/'
+    | '/servers/'
     | '/servers/$serverId/activity'
     | '/servers/$serverId/backups'
     | '/servers/$serverId/databases'
@@ -221,7 +269,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   LoginRoute: typeof LoginRoute
+  SettingsRoute: typeof SettingsRoute
   ServersServerIdRoute: typeof ServersServerIdRouteWithChildren
+  ServersIndexRoute: typeof ServersIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -247,11 +297,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/': {
       id: '/admin/'
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/logs': {
+      id: '/admin/logs'
+      path: '/logs'
+      fullPath: '/admin/logs'
+      preLoaderRoute: typeof AdminLogsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/nodes': {
@@ -281,6 +345,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/templates'
       preLoaderRoute: typeof AdminTemplatesRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/servers/': {
+      id: '/servers/'
+      path: '/servers'
+      fullPath: '/servers/'
+      preLoaderRoute: typeof ServersIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/servers/$serverId': {
       id: '/servers/$serverId'
@@ -342,18 +420,22 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminLogsRoute: typeof AdminLogsRoute
   AdminNodesRoute: typeof AdminNodesRoute
   AdminPlansRoute: typeof AdminPlansRoute
   AdminServersRoute: typeof AdminServersRoute
   AdminTemplatesRoute: typeof AdminTemplatesRoute
+  AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminLogsRoute: AdminLogsRoute,
   AdminNodesRoute: AdminNodesRoute,
   AdminPlansRoute: AdminPlansRoute,
   AdminServersRoute: AdminServersRoute,
   AdminTemplatesRoute: AdminTemplatesRoute,
+  AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 
@@ -387,7 +469,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   LoginRoute: LoginRoute,
+  SettingsRoute: SettingsRoute,
   ServersServerIdRoute: ServersServerIdRouteWithChildren,
+  ServersIndexRoute: ServersIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

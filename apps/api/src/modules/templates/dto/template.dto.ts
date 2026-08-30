@@ -100,6 +100,15 @@ export class UpdateServerTemplateDto {
 
   @IsOptional()
   @IsString()
+  @Length(1, 191)
+  author?: string;
+
+  @IsOptional()
+  @IsString()
+  groupId?: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
 
   @IsOptional()
@@ -113,6 +122,14 @@ export class UpdateServerTemplateDto {
   @IsOptional()
   @IsString()
   stopCommand?: string;
+
+  @IsOptional()
+  @IsString()
+  installImage?: string;
+
+  @IsOptional()
+  @IsString()
+  installEntrypoint?: string;
 
   @IsOptional()
   @IsString()

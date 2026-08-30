@@ -262,3 +262,39 @@ export interface ServerTransfer {
   completedAt: string | null;
   createdAt: string;
 }
+
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  username: string;
+  firstName: string | null;
+  lastName: string | null;
+  globalRole: string;
+  isActive: boolean;
+  emailVerifiedAt: string | null;
+  lastLoginAt: string | null;
+  createdAt: string;
+  serverCount: number;
+  twoFactorEnabled: boolean;
+}
+
+// `id` is a BigInt column; the API's global toJSON polyfill renders it as a
+// string, so it is never a JS number here.
+export interface AdminAuditLog {
+  id: string;
+  occurredAt: string;
+  action: string;
+  actorEmail: string | null;
+  actorIp: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  metadata: Record<string, unknown>;
+  actor: { id: string; username: string; email: string } | null;
+}

@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
+import { Activity } from 'lucide-react';
 import { listActivity } from './activity.api';
 import { ApiError } from '@/shared/api/client';
+import { Alert, EmptyState, LoadingRow, PageHeader, TBody, TD, TR, Table, TableWrap } from '@/ui/primitives';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('pt-BR');
@@ -33,35 +35,37 @@ export function ActivityPage({ serverId }: { serverId: string }) {
   const { data: entries, isLoading, isError, error } = useQuery({ queryKey: ['activity', serverId], queryFn: () => listActivity(serverId) });
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      <h1 className="font-medium text-text">Atividade</h1>
+    <>
+      <PageHeader title="Atividade" subtitle="Histórico de ações realizadas neste servidor." />
 
       {isError && (
-        <p className="rounded-md bg-fail-tint px-3 py-2 text-sm text-fail">
+        <Alert className="mb-6">
           {error instanceof ApiError && error.status === 403 ? 'Você não tem permissão para ver o feed de atividade.' : 'Não foi possível carregar a atividade.'}
-        </p>
+        </Alert>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface">
-        {isLoading && <p className="p-4 text-sm text-text-muted">Carregando…</p>}
-        {entries && entries.length === 0 && <p className="p-4 text-sm text-text-muted">Nenhuma atividade ainda.</p>}
-        {entries && entries.length > 0 && (
-          <table className="w-full text-sm">
-            <tbody>
+      {isLoading ? (
+        <LoadingRow />
+      ) : !entries || entries.length === 0 ? (
+        <EmptyState icon={Activity} title="Nenhuma atividade ainda" description="Ações realizadas neste servidor aparecem aqui." />
+      ) : (
+        <TableWrap>
+          <Table>
+            <TBody>
               {entries.map((e) => (
-                <tr key={e.id} className="border-b border-border last:border-0 hover:bg-surface-2">
-                  <td className="px-4 py-2">
+                <TR key={e.id}>
+                  <TD>
                     <p className="text-text">{EVENT_LABELS[e.event] ?? e.event}</p>
                     <p className="text-xs text-text-faint">
                       {e.actor ? `${e.actor.username} (${e.actor.email})` : 'Sistema'} · {formatDate(e.createdAt)}
                     </p>
-                  </td>
-                </tr>
+                  </TD>
+                </TR>
               ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
+            </TBody>
+          </Table>
+        </TableWrap>
+      )}
+    </>
   );
 }

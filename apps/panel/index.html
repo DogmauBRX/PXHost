@@ -5,6 +5,19 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PXHost — Painel</title>
+    <!--
+      Applies the saved theme before the first paint. This cannot live in
+      main.tsx: that awaits bootstrapAuth() (a network round trip) before
+      rendering, so a dark-mode user would stare at a white page for the
+      whole refresh call. Light needs no attribute — it is the default.
+    -->
+    <script>
+      try {
+        if (localStorage.getItem('pxhost.theme') === 'dark') document.documentElement.dataset.theme = 'dark';
+      } catch (e) {
+        /* storage blocked — fall through to the light default */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

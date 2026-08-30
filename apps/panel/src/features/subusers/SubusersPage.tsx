@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Users } from 'lucide-react';
 import { inviteSubuser, listPermissionCatalog, listSubusers, removeSubuser, updateSubuserPermissions } from './subusers.api';
-import { Button } from '@/ui/primitives/Button';
 import { ApiError } from '@/shared/api/client';
+import { Alert, Avatar, Button, Card, CardBody, ConfirmDialog, EmptyState, Field, Input, LoadingRow, PageHeader } from '@/ui/primitives';
 
 function groupByGroupKey<T extends { groupKey: string }>(entries: T[]): Map<string, T[]> {
   const map = new Map<string, T[]>();
@@ -25,13 +26,18 @@ function PermissionChecklist({
 }) {
   const grouped = groupByGroupKey(catalog);
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
       {[...grouped.entries()].map(([groupKey, entries]) => (
-        <div key={groupKey} className="space-y-1">
-          <p className="text-xs font-medium uppercase text-text-faint">{groupKey}</p>
+        <div key={groupKey} className="space-y-1.5">
+          <p className="text-xs font-semibold tracking-wide text-text-faint uppercase">{groupKey}</p>
           {entries.map((entry) => (
             <label key={entry.key} className="flex items-center gap-2 text-sm text-text">
-              <input type="checkbox" checked={selected.has(entry.key)} onChange={(e) => onChange(entry.key, e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={selected.has(entry.key)}
+                onChange={(e) => onChange(entry.key, e.target.checked)}
+                className="h-4 w-4 rounded border-border-strong text-accent accent-accent"
+              />
               <span className={entry.isDangerous ? 'text-fail' : undefined}>{entry.key}</span>
             </label>
           ))}
@@ -52,6 +58,7 @@ export function SubusersPage({ serverId }: { serverId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPerms, setEditPerms] = useState<Set<string>>(new Set());
+  const [removeTarget, setRemoveTarget] = useState<string | null>(null);
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: ['subusers', serverId] });
@@ -73,14 +80,16 @@ export function SubusersPage({ serverId }: { serverId: string }) {
     }
   }
 
-  async function handleRemove(id: string) {
-    if (!window.confirm('Remover o acesso deste usuário ao servidor?')) return;
+  async function handleConfirmRemove() {
+    if (!removeTarget) return;
     setError(null);
     try {
-      await removeSubuser(serverId, id);
+      await removeSubuser(serverId, removeTarget);
       refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Não foi possível remover este usuário.');
+    } finally {
+      setRemoveTarget(null);
     }
   }
 
@@ -101,68 +110,111 @@ export function SubusersPage({ serverId }: { serverId: string }) {
   }
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      <h1 className="font-medium text-text">Subusuários</h1>
+    <>
+      <PageHeader title="Subusuários" subtitle="Convide pessoas e escolha exatamente o que cada uma pode fazer neste servidor." />
 
-      <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
-        <p className="text-sm text-text-muted">Convide alguém pelo e-mail (precisa já ter uma conta) e escolha exatamente o que essa pessoa pode fazer neste servidor.</p>
-        <div className="flex items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-text-muted">E-mail</label>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="amigo@exemplo.com" className="w-64 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text outline-none focus:border-accent" />
+      <Card className="mb-6">
+        <CardBody className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label="E-mail" htmlFor="invite-email" className="w-64">
+              <Input id="invite-email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="amigo@exemplo.com" />
+            </Field>
+            <Button variant="primary" disabled={inviting || !email.trim()} onClick={() => void handleInvite()}>
+              {inviting ? 'Convidando…' : 'Convidar'}
+            </Button>
           </div>
-          <Button variant="primary" disabled={inviting} onClick={() => void handleInvite()}>
-            {inviting ? 'Convidando…' : 'Convidar'}
-          </Button>
-        </div>
-        {catalog && <PermissionChecklist catalog={catalog} selected={invitePerms} onChange={(key, checked) => setInvitePerms((prev) => { const next = new Set(prev); if (checked) next.add(key); else next.delete(key); return next; })} />}
-      </div>
+          {catalog && (
+            <PermissionChecklist
+              catalog={catalog}
+              selected={invitePerms}
+              onChange={(key, checked) =>
+                setInvitePerms((prev) => {
+                  const next = new Set(prev);
+                  if (checked) next.add(key);
+                  else next.delete(key);
+                  return next;
+                })
+              }
+            />
+          )}
+        </CardBody>
+      </Card>
 
-      {error && <p className="rounded-md bg-fail-tint px-3 py-2 text-sm text-fail">{error}</p>}
+      {error && <Alert className="mb-6">{error}</Alert>}
+      {isError && <Alert className="mb-6">Não foi possível carregar os subusuários.</Alert>}
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-auto">
-        {isLoading && <p className="text-sm text-text-muted">Carregando…</p>}
-        {isError && <p className="text-sm text-fail">Não foi possível carregar os subusuários.</p>}
-        {subusers && subusers.length === 0 && <p className="text-sm text-text-muted">Nenhum subusuário ainda.</p>}
-        {subusers?.map((s) => (
-          <div key={s.id} className="rounded-lg border border-border bg-surface p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-text">{s.user.username}</p>
-                <p className="text-xs text-text-faint">{s.user.email}</p>
-                <p className="mt-1 flex flex-wrap gap-1">
+      {isLoading ? (
+        <LoadingRow />
+      ) : !subusers || subusers.length === 0 ? (
+        <EmptyState icon={Users} title="Nenhum subusuário ainda" description="Convide alguém acima para compartilhar acesso a este servidor." />
+      ) : (
+        <div className="space-y-3">
+          {subusers.map((s) => (
+            <Card key={s.id}>
+              <CardBody>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Avatar name={s.user.username} email={s.user.email} size="sm" />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-text">{s.user.username}</p>
+                      <p className="truncate text-xs text-text-faint">{s.user.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="secondary" size="sm" onClick={() => startEditing(s.id, s.permissions)}>
+                      Editar permissões
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setRemoveTarget(s.id)}>
+                      Remover
+                    </Button>
+                  </div>
+                </div>
+                <p className="mt-3 flex flex-wrap gap-1.5">
                   {s.permissions.map((p) => (
                     <span key={p} className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-text-muted">
                       {p}
                     </span>
                   ))}
                 </p>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button variant="secondary" onClick={() => startEditing(s.id, s.permissions)}>
-                  Editar permissões
-                </Button>
-                <Button variant="ghost" onClick={() => void handleRemove(s.id)}>
-                  Remover
-                </Button>
-              </div>
-            </div>
-            {editingId === s.id && catalog && (
-              <div className="mt-3 border-t border-border pt-3">
-                <PermissionChecklist catalog={catalog} selected={editPerms} onChange={(key, checked) => setEditPerms((prev) => { const next = new Set(prev); if (checked) next.add(key); else next.delete(key); return next; })} />
-                <div className="mt-2 flex gap-2">
-                  <Button variant="primary" onClick={() => void saveEditing(s.id)}>
-                    Salvar
-                  </Button>
-                  <Button variant="ghost" onClick={() => setEditingId(null)}>
-                    Cancelar
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
+                {editingId === s.id && catalog && (
+                  <div className="mt-4 border-t border-border pt-4">
+                    <PermissionChecklist
+                      catalog={catalog}
+                      selected={editPerms}
+                      onChange={(key, checked) =>
+                        setEditPerms((prev) => {
+                          const next = new Set(prev);
+                          if (checked) next.add(key);
+                          else next.delete(key);
+                          return next;
+                        })
+                      }
+                    />
+                    <div className="mt-3 flex gap-2">
+                      <Button variant="primary" size="sm" onClick={() => void saveEditing(s.id)}>
+                        Salvar
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={removeTarget !== null}
+        title="Remover subusuário"
+        message="Remover o acesso deste usuário ao servidor?"
+        confirmLabel="Remover"
+        tone="danger"
+        onConfirm={() => void handleConfirmRemove()}
+        onCancel={() => setRemoveTarget(null)}
+      />
+    </>
   );
 }

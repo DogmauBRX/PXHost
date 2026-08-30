@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Layers } from 'lucide-react';
 import { applyPlan, createPlan, getPlanDrift, listPlans, updatePlan } from './admin.api';
-import { Button } from '@/ui/primitives/Button';
 import { ApiError } from '@/shared/api/client';
 import type { PlanApplyResult, PlanDriftReport } from '@/shared/api/types';
+import { Alert, Button, Card, CardBody, EmptyState, Field, Input, LoadingRow, PageHeader } from '@/ui/primitives';
 
 function PlanEditor({ planId, onClose }: { planId: string; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -62,35 +63,32 @@ function PlanEditor({ planId, onClose }: { planId: string; onClose: () => void }
   }
 
   return (
-    <div className="mt-3 space-y-3 border-t border-border pt-3">
-      <div className="flex items-end gap-2">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-text-muted">CPU (%)</label>
-          <input value={cpuLimitPercent} onChange={(e) => setCpuLimitPercent(e.target.value)} placeholder="sem alteração" className="w-28 rounded-md border border-border bg-surface-2 px-2 py-1.5 text-sm text-text outline-none focus:border-accent" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-text-muted">Memória (MB)</label>
-          <input value={memoryMb} onChange={(e) => setMemoryMb(e.target.value)} placeholder="sem alteração" className="w-28 rounded-md border border-border bg-surface-2 px-2 py-1.5 text-sm text-text outline-none focus:border-accent" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-text-muted">Disco (MB)</label>
-          <input value={diskMb} onChange={(e) => setDiskMb(e.target.value)} placeholder="sem alteração" className="w-28 rounded-md border border-border bg-surface-2 px-2 py-1.5 text-sm text-text outline-none focus:border-accent" />
-        </div>
-        <Button variant="primary" disabled={busy} onClick={() => void handleSave()}>
+    <div className="mt-4 space-y-4 border-t border-border pt-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="CPU (%)" htmlFor="edit-cpu" className="w-28">
+          <Input id="edit-cpu" value={cpuLimitPercent} onChange={(e) => setCpuLimitPercent(e.target.value)} placeholder="sem alteração" />
+        </Field>
+        <Field label="Memória (MB)" htmlFor="edit-mem" className="w-28">
+          <Input id="edit-mem" value={memoryMb} onChange={(e) => setMemoryMb(e.target.value)} placeholder="sem alteração" />
+        </Field>
+        <Field label="Disco (MB)" htmlFor="edit-disk" className="w-28">
+          <Input id="edit-disk" value={diskMb} onChange={(e) => setDiskMb(e.target.value)} placeholder="sem alteração" />
+        </Field>
+        <Button variant="primary" size="sm" disabled={busy} onClick={() => void handleSave()}>
           Salvar plano
         </Button>
-        <Button variant="secondary" disabled={busy} onClick={() => void handleDryRun()}>
+        <Button variant="secondary" size="sm" disabled={busy} onClick={() => void handleDryRun()}>
           Ver dry run
         </Button>
-        <Button variant="ghost" onClick={onClose}>
+        <Button variant="ghost" size="sm" onClick={onClose}>
           Fechar
         </Button>
       </div>
 
-      {error && <p className="text-sm text-fail">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       {drift && (
-        <div className="rounded-md bg-surface-2 p-3">
+        <div className="rounded-lg bg-surface-2 p-3">
           <p className="mb-2 text-sm text-text">
             {drift.affectedCount === 0 ? 'Nenhum servidor divergiria deste plano.' : `${drift.affectedCount} servidor(es) seriam alterados:`}
           </p>
@@ -102,7 +100,7 @@ function PlanEditor({ planId, onClose }: { planId: string; onClose: () => void }
             </div>
           ))}
           {drift.affectedCount > 0 && (
-            <Button variant="danger" disabled={busy} onClick={() => void handleApply()}>
+            <Button variant="danger" size="sm" disabled={busy} onClick={() => void handleApply()} className="mt-2">
               Aplicar a {drift.affectedCount} servidor(es)
             </Button>
           )}
@@ -110,10 +108,12 @@ function PlanEditor({ planId, onClose }: { planId: string; onClose: () => void }
       )}
 
       {applyResult && (
-        <div className="rounded-md bg-surface-2 p-3 text-sm text-text">
+        <div className="rounded-lg bg-surface-2 p-3 text-sm text-text">
           <p>{applyResult.appliedCount} servidor(es) atualizado(s).</p>
           {applyResult.failures.length > 0 && (
-            <p className="text-fail">{applyResult.failures.length} falha(s): {applyResult.failures.map((f) => f.error).join('; ')}</p>
+            <p className="text-fail">
+              {applyResult.failures.length} falha(s): {applyResult.failures.map((f) => f.error).join('; ')}
+            </p>
           )}
         </div>
       )}
@@ -150,53 +150,58 @@ export function PlansPage() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      <h1 className="font-medium text-text">Plans</h1>
+    <>
+      <PageHeader title="Plans" subtitle="Perfis de recursos que definem o que cada servidor pode usar." />
 
-      <div className="flex items-end gap-2 rounded-lg border border-border bg-surface p-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-text-muted">Nome</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Básico" className="w-40 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text outline-none focus:border-accent" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-text-muted">Slug</label>
-          <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="basico" className="w-32 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text outline-none focus:border-accent" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-text-muted">Memória (MB)</label>
-          <input value={memoryMb} onChange={(e) => setMemoryMb(e.target.value)} className="w-28 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text outline-none focus:border-accent" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-text-muted">Disco (MB)</label>
-          <input value={diskMb} onChange={(e) => setDiskMb(e.target.value)} className="w-28 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text outline-none focus:border-accent" />
-        </div>
-        <Button variant="primary" disabled={creating} onClick={() => void handleCreate()}>
-          {creating ? 'Criando…' : 'Criar plano'}
-        </Button>
-      </div>
+      <Card className="mb-6">
+        <CardBody className="flex flex-wrap items-end gap-3">
+          <Field label="Nome" htmlFor="plan-name" className="w-40">
+            <Input id="plan-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Básico" />
+          </Field>
+          <Field label="Slug" htmlFor="plan-slug" className="w-32">
+            <Input id="plan-slug" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="basico" />
+          </Field>
+          <Field label="Memória (MB)" htmlFor="plan-mem" className="w-28">
+            <Input id="plan-mem" value={memoryMb} onChange={(e) => setMemoryMb(e.target.value)} />
+          </Field>
+          <Field label="Disco (MB)" htmlFor="plan-disk" className="w-28">
+            <Input id="plan-disk" value={diskMb} onChange={(e) => setDiskMb(e.target.value)} />
+          </Field>
+          <Button variant="primary" disabled={creating || !name.trim() || !slug.trim()} onClick={() => void handleCreate()}>
+            {creating ? 'Criando…' : 'Criar plano'}
+          </Button>
+        </CardBody>
+      </Card>
 
-      {error && <p className="rounded-md bg-fail-tint px-3 py-2 text-sm text-fail">{error}</p>}
+      {error && <Alert className="mb-6">{error}</Alert>}
+      {isError && <Alert className="mb-6">Não foi possível carregar os planos.</Alert>}
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-auto">
-        {isLoading && <p className="text-sm text-text-muted">Carregando…</p>}
-        {isError && <p className="text-sm text-fail">Não foi possível carregar os planos.</p>}
-        {plans?.map((p) => (
-          <div key={p.id} className="rounded-lg border border-border bg-surface p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-text">{p.name}</p>
-                <p className="font-mono text-xs text-text-faint">
-                  {p.slug} · {p.cpuLimitPercent}% CPU · {p.memoryMb} MB RAM · {p.diskMb} MB disco
-                </p>
-              </div>
-              <Button variant="secondary" onClick={() => setEditingId(editingId === p.id ? null : p.id)}>
-                {editingId === p.id ? 'Fechar' : 'Editar / Aplicar'}
-              </Button>
-            </div>
-            {editingId === p.id && <PlanEditor planId={p.id} onClose={() => setEditingId(null)} />}
-          </div>
-        ))}
-      </div>
-    </div>
+      {isLoading ? (
+        <LoadingRow />
+      ) : !plans || plans.length === 0 ? (
+        <EmptyState icon={Layers} title="Nenhum plano ainda" description="Crie o primeiro acima." />
+      ) : (
+        <div className="space-y-3">
+          {plans.map((p) => (
+            <Card key={p.id}>
+              <CardBody>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-text">{p.name}</p>
+                    <p className="font-mono text-xs text-text-faint">
+                      {p.slug} · {p.cpuLimitPercent}% CPU · {p.memoryMb} MB RAM · {p.diskMb} MB disco
+                    </p>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={() => setEditingId(editingId === p.id ? null : p.id)}>
+                    {editingId === p.id ? 'Fechar' : 'Editar / Aplicar'}
+                  </Button>
+                </div>
+                {editingId === p.id && <PlanEditor planId={p.id} onClose={() => setEditingId(null)} />}
+              </CardBody>
+            </Card>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

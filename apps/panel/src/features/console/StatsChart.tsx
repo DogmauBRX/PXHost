@@ -1,12 +1,17 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import UPlot from 'uplot';
 import type { StatsFrame } from '@/shared/realtime/protocol';
+import { readToken } from '@/shared/theme/tokens';
+import { THEME_CHANGE_EVENT } from '@/shared/theme/theme.store';
 
 export interface StatsChartHandle {
   pushFrame: (frame: StatsFrame) => void;
 }
 
 const WINDOW_POINTS = 60; // ~2 minutes at the agent's 2s push interval
+// One constant for both the constructor and the ResizeObserver — these were
+// two separate literals before, which is how they drift apart.
+const CHART_HEIGHT = 200;
 
 // A plain useRef ring buffer fed straight into uPlot.setData() on every
 // incoming frame — no React state, so a server streaming stats every
@@ -45,57 +50,86 @@ export const StatsChart = forwardRef<StatsChartHandle>(function StatsChart(_prop
   }));
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    const chart = new UPlot(
-      {
-        width: containerRef.current.clientWidth || 400,
-        height: 160,
-        legend: { show: false },
-        cursor: { show: false },
-        axes: [
-          { stroke: '#6c7b82', grid: { stroke: '#263038' }, ticks: { show: false } },
-          { scale: 'cpu', stroke: '#57b5a0', grid: { show: false }, ticks: { show: false }, size: 34 },
-          { scale: 'mem', stroke: '#d1a24f', side: 1, grid: { show: false }, ticks: { show: false }, size: 42 },
-        ],
-        scales: { cpu: { range: [0, 100] }, mem: { range: (_u, _min, max) => [0, Math.max(max, 64)] } },
-        series: [
-          {},
-          { label: 'CPU %', stroke: '#57b5a0', width: 1.5, scale: 'cpu', points: { show: false } },
-          { label: 'RAM MB', stroke: '#d1a24f', width: 1.5, scale: 'mem', points: { show: false } },
-        ],
-      },
-      [new Float64Array(0), new Float64Array(0), new Float64Array(0)],
-      containerRef.current,
-    );
-    chartRef.current = chart;
+    const el = containerRef.current;
+    if (!el) return;
+
+    // uPlot takes colors as plain strings and cannot read CSS variables, so
+    // the palette has to be resolved here at build time. Reading the tokens
+    // (rather than hardcoding hexes, as this file used to) is what keeps the
+    // chart legible after a theme switch. RAM is drawn in `info` rather than
+    // `warn` because amber next to the orange accent is near-indistinguishable.
+    function build(): UPlot | null {
+      if (!el) return null;
+      const chart = new UPlot(
+        {
+          width: el.clientWidth || 400,
+          height: CHART_HEIGHT,
+          legend: { show: false },
+          cursor: { show: false },
+          axes: [
+            { stroke: readToken('--color-text-faint'), grid: { stroke: readToken('--color-border') }, ticks: { show: false } },
+            { scale: 'cpu', stroke: readToken('--color-accent'), grid: { show: false }, ticks: { show: false }, size: 34 },
+            { scale: 'mem', stroke: readToken('--color-info'), side: 1, grid: { show: false }, ticks: { show: false }, size: 42 },
+          ],
+          scales: { cpu: { range: [0, 100] }, mem: { range: (_u, _min, max) => [0, Math.max(max, 64)] } },
+          series: [
+            {},
+            { label: 'CPU %', stroke: readToken('--color-accent'), width: 1.5, scale: 'cpu', points: { show: false } },
+            { label: 'RAM MB', stroke: readToken('--color-info'), width: 1.5, scale: 'mem', points: { show: false } },
+          ],
+        },
+        [new Float64Array(0), new Float64Array(0), new Float64Array(0)],
+        el,
+      );
+      // Replay whatever the ring buffer already holds, so rebuilding on a
+      // theme switch never drops accumulated history.
+      const buf = bufRef.current;
+      if (buf.n > 0) chart.setData([buf.t.subarray(0, buf.n), buf.cpu.subarray(0, buf.n), buf.mem.subarray(0, buf.n)]);
+      return chart;
+    }
+
+    chartRef.current = build();
 
     const resizeObserver = new ResizeObserver(() => {
-      if (containerRef.current) chart.setSize({ width: containerRef.current.clientWidth, height: 160 });
+      if (el) chartRef.current?.setSize({ width: el.clientWidth, height: CHART_HEIGHT });
     });
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(el);
+
+    // uPlot has no public "restyle an existing chart" API, so a theme change
+    // means destroy and rebuild. That is fine precisely because it is a rare,
+    // user-initiated event — and it is driven by a DOM event rather than
+    // React state, so the per-second stats path stays render-free.
+    const onThemeChange = () => {
+      chartRef.current?.destroy();
+      chartRef.current = build();
+    };
+    window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
 
     return () => {
+      window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
       resizeObserver.disconnect();
-      chart.destroy();
+      chartRef.current?.destroy();
       chartRef.current = null;
     };
   }, []);
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-3">
-      <div className="mb-2 flex items-center justify-between">
+    <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-4 text-xs">
           <span className="flex items-center gap-1.5 text-text-muted">
             <span className="h-2 w-2 rounded-full bg-accent" /> CPU
           </span>
           <span className="flex items-center gap-1.5 text-text-muted">
-            <span className="h-2 w-2 rounded-full bg-warn" /> RAM
+            <span className="h-2 w-2 rounded-full bg-info" /> RAM
           </span>
         </div>
         <span data-readout className="font-mono text-xs text-text-faint">
           aguardando dados…
         </span>
       </div>
+      {/* pushFrame writes the readout above by walking up from this node —
+          keep it a sibling under the same parent if this markup moves. */}
       <div ref={containerRef} />
     </div>
   );

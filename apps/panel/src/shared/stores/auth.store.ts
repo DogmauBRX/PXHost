@@ -3,6 +3,7 @@ import { create } from 'zustand';
 export interface SessionUser {
   id: string;
   email: string;
+  username: string;
   isAdmin: boolean;
 }
 

@@ -17,6 +17,7 @@ export async function bootstrapAuth(): Promise<void> {
     useAuthStore.getState().setSession(body.accessToken, {
       id: body.user.id,
       email: body.user.email,
+      username: body.user.username,
       isAdmin: body.user.globalRole !== 'user',
     });
   } catch {

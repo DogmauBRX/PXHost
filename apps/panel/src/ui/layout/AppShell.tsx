@@ -1,42 +1,30 @@
 import type { ReactNode } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
-import { useAuthStore } from '@/shared/stores/auth.store';
-import { logout } from '@/features/auth/auth.api';
-import { Button } from '@/ui/primitives/Button';
+import { Sidebar } from './Sidebar';
+import { Topbar } from './Topbar';
 
+/**
+ * Fixed left rail + fluid content column.
+ *
+ * The important part is what is NOT here: no `h-screen`, and no
+ * `overflow-auto` on `<main>`. The previous shell locked the app to the
+ * viewport and made `<main>` its own scroll container, which meant every
+ * page then had to fight for height with `h-full` + `flex-1` + another
+ * `overflow-auto`. That chain is what collapsed the templates list to
+ * `clientHeight: 0` while it held 2,498px of content. The document scrolls
+ * now, and pages simply grow.
+ *
+ * Still a `{ children }` wrapper rather than a layout route, because it is
+ * used by exactly three route files and converting would mean renaming all
+ * 17 of them — regenerating every route id for no visual gain.
+ */
 export function AppShell({ children }: { children: ReactNode }) {
-  const user = useAuthStore((s) => s.user);
-  const clear = useAuthStore((s) => s.clear);
-  const navigate = useNavigate();
-
-  async function handleLogout() {
-    try {
-      await logout();
-    } finally {
-      clear();
-      void navigate({ to: '/login' });
-    }
-  }
-
   return (
-    <div className="flex h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-border px-6 py-3">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-sm font-medium tracking-wide text-accent-strong">PXHost</span>
-        </div>
-        <div className="flex items-center gap-3">
-          {user?.isAdmin && (
-            <Link to="/admin" className="text-sm text-text-muted hover:text-text">
-              Admin
-            </Link>
-          )}
-          <span className="text-sm text-text-muted">{user?.email}</span>
-          <Button variant="ghost" onClick={() => void handleLogout()}>
-            Sair
-          </Button>
-        </div>
-      </header>
-      <main className="min-h-0 flex-1 overflow-auto p-6">{children}</main>
+    <div className="min-h-screen bg-bg">
+      <Sidebar />
+      <div className="lg:pl-64">
+        <Topbar />
+        <main className="mx-auto w-full max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      </div>
     </div>
   );
 }

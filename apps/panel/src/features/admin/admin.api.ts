@@ -3,10 +3,13 @@ import type {
   Allocation,
   AdminNode,
   AdminPlan,
+  AdminAuditLog,
   AdminServerSummary,
   AdminTemplate,
+  AdminUserSummary,
   BootstrapTokenResponse,
   Location,
+  Paginated,
   PlanApplyResult,
   PlanDriftReport,
   ServerTransfer,
@@ -66,6 +69,23 @@ export const addTemplateVariable = (
 ) => apiFetch(`/api/admin/eggs/${templateId}/variables`, { method: 'POST', body: JSON.stringify(input) });
 export const removeTemplateVariable = (templateId: string, variableId: string) => apiFetch<void>(`/api/admin/eggs/${templateId}/variables/${variableId}`, { method: 'DELETE' });
 
+export interface UpdateTemplateInput {
+  name?: string;
+  author?: string;
+  groupId?: string;
+  description?: string;
+  dockerImages?: Record<string, string>;
+  startupCommand?: string;
+  stopCommand?: string;
+  installImage?: string;
+  installEntrypoint?: string;
+  installScript?: string;
+  isActive?: boolean;
+}
+export const updateTemplate = (id: string, input: UpdateTemplateInput) =>
+  apiFetch<AdminTemplate>(`/api/admin/eggs/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
+export const removeTemplate = (id: string) => apiFetch<void>(`/api/admin/eggs/${id}`, { method: 'DELETE' });
+
 // ---- Plans ----
 
 export const listPlans = () => apiFetch<AdminPlan[]>('/api/admin/plans');
@@ -105,3 +125,32 @@ export const initiateTransfer = (serverId: string, input: { targetNodeId: string
 export const suspendServer = (serverId: string, reason: string) =>
   apiFetch<void>(`/api/admin/servers/${serverId}/suspend`, { method: 'POST', body: JSON.stringify({ reason }) });
 export const unsuspendServer = (serverId: string) => apiFetch<void>(`/api/admin/servers/${serverId}/unsuspend`, { method: 'POST' });
+
+// ---- Users / clientes ----
+
+function qs(params: object): string {
+  const pairs = Object.entries(params).filter(([, v]) => v !== undefined && v !== '');
+  return pairs.length ? `?${pairs.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&')}` : '';
+}
+
+export interface ListUsersParams {
+  q?: string;
+  role?: string;
+  limit?: number;
+  offset?: number;
+}
+export const listUsers = (params: ListUsersParams = {}) =>
+  apiFetch<Paginated<AdminUserSummary>>(`/api/admin/users${qs(params)}`);
+
+// ---- Audit logs ----
+
+export interface ListAuditLogsParams {
+  action?: string;
+  actorId?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+export const listAuditLogs = (params: ListAuditLogsParams = {}) =>
+  apiFetch<Paginated<AdminAuditLog>>(`/api/admin/audit-logs${qs(params)}`);

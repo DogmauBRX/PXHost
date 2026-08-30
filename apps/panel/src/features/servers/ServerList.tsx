@@ -1,44 +1,51 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { Cpu, HardDrive, Server } from 'lucide-react';
 import { listServers } from './servers.api';
-import { StatusBadge } from '@/ui/primitives/Badge';
+import { Alert, EmptyState, LoadingRow, StatusBadge } from '@/ui/primitives';
 
-export function ServerList() {
+export function ServerList({ limit }: { limit?: number } = {}) {
   const { data, isLoading, isError } = useQuery({ queryKey: ['servers'], queryFn: listServers, refetchInterval: 15_000 });
 
-  if (isLoading) {
-    return <p className="text-sm text-text-muted">Carregando seus servidores…</p>;
-  }
-  if (isError) {
-    return <p className="text-sm text-fail">Não foi possível carregar seus servidores.</p>;
-  }
+  if (isLoading) return <LoadingRow label="Carregando seus servidores…" />;
+  if (isError) return <Alert>Não foi possível carregar seus servidores.</Alert>;
   if (!data || data.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-text-muted">
-        Você ainda não tem nenhum servidor.
-      </div>
+      <EmptyState
+        icon={Server}
+        title="Nenhum servidor ainda"
+        description="Quando um servidor for provisionado para você, ele aparece aqui."
+      />
     );
   }
 
+  const servers = limit ? data.slice(0, limit) : data;
+
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {data.map((s) => (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {servers.map((s) => (
         <Link
           key={s.id}
           to="/servers/$serverId"
           params={{ serverId: s.id }}
-          className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 shadow-sm transition-colors hover:border-border-strong"
+          className="group flex flex-col gap-4 rounded-card border border-border bg-surface p-5 shadow-xs transition hover:border-accent/40 hover:shadow-sm"
         >
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="font-medium text-text">{s.name}</p>
-              <p className="font-mono text-xs text-text-faint">{s.shortId}</p>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate font-semibold text-text transition-colors group-hover:text-accent-strong">{s.name}</p>
+              <p className="mt-0.5 font-mono text-xs text-text-faint">{s.shortId}</p>
             </div>
             <StatusBadge status={s.status} />
           </div>
-          <div className="flex items-center justify-between text-xs text-text-muted">
-            <span>{s.node.name}</span>
-            <span className="font-mono">{s.memoryMb} MB</span>
+          <div className="flex items-center justify-between border-t border-border pt-3 text-xs text-text-muted">
+            <span className="inline-flex items-center gap-1.5">
+              <HardDrive className="h-3.5 w-3.5" aria-hidden="true" />
+              {s.node.name}
+            </span>
+            <span className="inline-flex items-center gap-1.5 font-mono tabular-nums">
+              <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+              {s.memoryMb} MB
+            </span>
           </div>
         </Link>
       ))}

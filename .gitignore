@@ -34,3 +34,4 @@ Thumbs.db
 
 # Agent dev secrets
 agent/hack/smoketest/keys/
+agent/hack/demo/

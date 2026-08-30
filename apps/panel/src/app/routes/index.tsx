@@ -1,18 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { requireAuth } from '@/app/guards';
 import { AppShell } from '@/ui/layout/AppShell';
-import { ServerList } from '@/features/servers/ServerList';
+import { DashboardPage } from '@/features/dashboard/DashboardPage';
 
 export const Route = createFileRoute('/')({
   beforeLoad: requireAuth,
-  component: Dashboard,
-});
-
-function Dashboard() {
-  return (
+  component: () => (
     <AppShell>
-      <h1 className="mb-4 text-lg font-semibold text-text">Seus servidores</h1>
-      <ServerList />
+      <DashboardPage />
     </AppShell>
-  );
-}
+  ),
+});

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronLeft } from 'lucide-react';
 import { readFile, writeFile } from './files.api';
-import { Button } from '@/ui/primitives/Button';
+import { Alert, Badge, Button, CodeEditor, LoadingRow } from '@/ui/primitives';
 
 interface FileEditorProps {
   serverId: string;
@@ -52,32 +53,28 @@ export function FileEditor({ serverId, path, onClose }: FileEditorProps) {
   }
 
   return (
-    <div className="flex h-full flex-col gap-3">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Button variant="ghost" onClick={handleClose}>
-            ← Voltar
+          <Button variant="ghost" size="sm" onClick={handleClose}>
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            Voltar
           </Button>
           <span className="font-mono text-sm text-text">{path}</span>
-          {dirty && <span className="font-mono text-xs text-warn">não salvo</span>}
+          {dirty && <Badge tone="warn">não salvo</Badge>}
         </div>
         <Button variant="primary" onClick={() => void handleSave()} disabled={!dirty || saving}>
           {saving ? 'Salvando…' : 'Salvar'}
         </Button>
       </div>
 
-      {error && <p className="rounded-md bg-fail-tint px-3 py-2 text-sm text-fail">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
-      {isLoading && <p className="text-sm text-text-muted">Carregando…</p>}
-      {isError && <p className="text-sm text-fail">Não foi possível abrir este arquivo.</p>}
+      {isLoading && <LoadingRow />}
+      {isError && <Alert>Não foi possível abrir este arquivo.</Alert>}
 
       {draft !== null && (
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          spellCheck={false}
-          className="min-h-0 flex-1 resize-none rounded-lg border border-border bg-surface p-3 font-mono text-sm text-text outline-none focus:border-accent"
-        />
+        <CodeEditor value={draft} onChange={setDraft} language={path.split('/').pop() ?? 'texto'} />
       )}
     </div>
   );

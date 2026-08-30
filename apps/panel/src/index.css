@@ -1,61 +1,112 @@
 @import url("https://fonts.googleapis.com/css2?family=Fragment+Mono:ital@0;1&family=Public+Sans:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
+/*
+ * Light-first. Every value here is the DEFAULT; the dark block below only
+ * overrides. That ordering matters for more than taste: a token declared
+ * only inside the dark block generates no Tailwind utility at all, so
+ * anything new must be introduced here first.
+ *
+ * The token NAMES are unchanged from the original dark-first palette, which
+ * is why re-skinning the whole panel took no edits to the ~4,000 lines of
+ * markup that consume them — `bg-surface` resolves to var(--color-surface)
+ * at paint time, so swapping values swaps the entire product.
+ */
 @theme {
   --font-sans: "Public Sans", -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Fragment Mono", "SFMono-Regular", Consolas, monospace;
 
-  /* dark-first: these are the values used when no light override applies */
-  --color-bg: #10161a;
-  --color-surface: #161d22;
-  --color-surface-2: #1c242a;
-  --color-border: #263038;
-  --color-border-strong: #34424c;
-  --color-text: #e7edef;
-  --color-text-muted: #97a6ac;
-  --color-text-faint: #6c7b82;
-  --color-accent: #57b5a0;
-  --color-accent-strong: #7fcdb9;
-  --color-accent-tint: #17302b;
-  --color-ok: #5cb583;
-  --color-ok-tint: #16261d;
-  --color-warn: #d1a24f;
-  --color-warn-tint: #2b2213;
-  --color-fail: #e0806d;
-  --color-fail-tint: #2c1a16;
+  --color-bg: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f3f6;
+  /* Inputs need their own token: on light, `surface-2` is also the row-hover
+     colour, so fields would read as hovered rows inside a white card. */
+  --color-field: #ffffff;
+  --color-border: #e4e7ec;
+  --color-border-strong: #cdd3dc;
+  --color-text: #14181f;
+  --color-text-muted: #596274;
+  --color-text-faint: #8a93a3;
+
+  /* Orange is the brand accent, used for fills and active state — not as a
+     wash over the whole UI. The accent/accent-strong split exists because
+     #ea580c as TEXT on white is only ~3.9:1; `accent` fills, `accent-strong`
+     writes. */
+  --color-accent: #ea580c;
+  --color-accent-strong: #c2410c;
+  --color-accent-tint: #fff3ea;
+  /* What goes ON an accent fill. `--color-bg` was used for this before and
+     fails AA in light mode (#f6f7f9 on #ea580c ≈ 3.9:1). */
+  --color-accent-contrast: #ffffff;
+
+  --color-ok: #157f49;
+  --color-ok-tint: #e9f7ef;
+  --color-warn: #a16207;
+  --color-warn-tint: #fdf4e3;
+  --color-fail: #c7302b;
+  --color-fail-tint: #fdecea;
+  /* Blue is not decoration: the stats chart draws CPU in `accent`, and an
+     amber RAM series next to an orange one is unreadable. RAM uses this. */
+  --color-info: #1d4ed8;
+  --color-info-tint: #eaf0fe;
+
+  --radius-card: 0.75rem;
+
+  --shadow-xs: 0 1px 2px 0 rgb(16 24 40 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(16 24 40 / 0.06), 0 1px 2px -1px rgb(16 24 40 / 0.04);
+  --shadow-md: 0 4px 8px -2px rgb(16 24 40 / 0.08), 0 2px 4px -2px rgb(16 24 40 / 0.04);
+  --shadow-lg: 0 12px 24px -6px rgb(16 24 40 / 0.12);
 }
 
-[data-theme="light"] {
-  --color-bg: #f4f6f7;
-  --color-surface: #ffffff;
-  --color-surface-2: #eceff1;
-  --color-border: #d7dde0;
-  --color-border-strong: #b9c2c7;
-  --color-text: #1a2226;
-  --color-text-muted: #5b6b71;
-  --color-text-faint: #8a969b;
-  --color-accent: #2f7d6e;
-  --color-accent-strong: #1f5b50;
-  --color-accent-tint: #e2efec;
-  --color-ok: #2f7d4f;
-  --color-ok-tint: #e5f2e9;
-  --color-warn: #a8762a;
-  --color-warn-tint: #f7ecdb;
-  --color-fail: #ad4a3b;
-  --color-fail-tint: #f8e7e3;
+/*
+ * `html[data-theme="dark"]` (0,1,1) rather than a bare attribute selector
+ * (0,1,0), so it outranks the :root that @theme emits regardless of the
+ * order Tailwind writes them in.
+ */
+html[data-theme="dark"] {
+  --color-bg: #0e1115;
+  --color-surface: #161a20;
+  --color-surface-2: #1d222a;
+  --color-field: #12161b;
+  --color-border: #262c36;
+  --color-border-strong: #39414e;
+  --color-text: #e8ebef;
+  --color-text-muted: #9ba4b2;
+  --color-text-faint: #6e7887;
+
+  --color-accent: #f97316;
+  --color-accent-strong: #fdba74;
+  --color-accent-tint: #2a1810;
+  --color-accent-contrast: #14181f;
+
+  --color-ok: #4cbb7f;
+  --color-ok-tint: #12261c;
+  --color-warn: #ddb157;
+  --color-warn-tint: #2a2213;
+  --color-fail: #ef7b6b;
+  --color-fail-tint: #2c1815;
+  --color-info: #6ba5f8;
+  --color-info-tint: #121f35;
+
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.35);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 10px -2px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 16px 32px -8px rgb(0 0 0 / 0.55);
 }
 
 html {
-  color-scheme: dark;
-}
-[data-theme="light"] {
   color-scheme: light;
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 body {
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {

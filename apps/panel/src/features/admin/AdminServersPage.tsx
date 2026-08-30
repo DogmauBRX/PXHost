@@ -1,8 +1,20 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { History, ServerCog } from 'lucide-react';
 import { initiateTransfer, listAdminServers, listNodes, listTransfers, suspendServer, unsuspendServer } from './admin.api';
-import { Button } from '@/ui/primitives/Button';
 import { ApiError } from '@/shared/api/client';
+import {
+  Alert,
+  Button,
+  Card,
+  CardBody,
+  EmptyState,
+  LoadingRow,
+  PageHeader,
+  PromptDialog,
+  Select,
+  StatusBadge,
+} from '@/ui/primitives';
 
 const STATUS_LABELS: Record<string, string> = {
   installing: 'Instalando',
@@ -22,8 +34,8 @@ function TransferHistory({ serverId }: { serverId: string }) {
   });
   if (!transfers || transfers.length === 0) return null;
   return (
-    <div className="mt-2 space-y-1 rounded-md bg-surface-2 p-3">
-      <p className="mb-1 text-xs font-medium uppercase text-text-faint">Transferências</p>
+    <div className="mt-3 space-y-1 rounded-lg bg-surface-2 p-3">
+      <p className="mb-1 text-xs font-medium text-text-faint uppercase">Transferências</p>
       {transfers.map((t) => (
         <div key={t.id} className="font-mono text-xs text-text-muted">
           {new Date(t.createdAt).toLocaleString('pt-BR')} · <span className="text-text">{t.status}</span>
@@ -43,6 +55,7 @@ export function AdminServersPage() {
   const [busyServer, setBusyServer] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [suspendTarget, setSuspendTarget] = useState<string | null>(null);
 
   async function handleTransfer(serverId: string) {
     const targetNodeId = targetByServer[serverId];
@@ -61,18 +74,18 @@ export function AdminServersPage() {
     }
   }
 
-  async function handleSuspend(serverId: string) {
-    const reason = prompt('Motivo da suspensão:');
-    if (!reason) return;
-    setBusyServer(serverId);
+  async function handleConfirmSuspend(reason: string) {
+    if (!suspendTarget) return;
+    setBusyServer(suspendTarget);
     setError(null);
     try {
-      await suspendServer(serverId, reason);
+      await suspendServer(suspendTarget, reason);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'servers'] });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Não foi possível suspender o servidor.');
     } finally {
       setBusyServer(null);
+      setSuspendTarget(null);
     }
   }
 
@@ -90,68 +103,92 @@ export function AdminServersPage() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      <h1 className="font-medium text-text">Servers</h1>
-      <p className="text-sm text-text-muted">Transferência de servidores entre nodes ao vivo (roadmap M13) — sem perda de dados.</p>
+    <>
+      <PageHeader title="Todos os servidores" subtitle="Transferência de servidores entre nodes ao vivo, sem perda de dados, e suspensão administrativa." />
 
-      {error && <p className="rounded-md bg-fail-tint px-3 py-2 text-sm text-fail">{error}</p>}
+      {error && <Alert className="mb-6">{error}</Alert>}
+      {isError && <Alert className="mb-6">Não foi possível carregar os servidores.</Alert>}
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-auto">
-        {isLoading && <p className="text-sm text-text-muted">Carregando…</p>}
-        {isError && <p className="text-sm text-fail">Não foi possível carregar os servidores.</p>}
-        {servers && servers.length === 0 && <p className="text-sm text-text-muted">Nenhum servidor ainda.</p>}
-        {servers?.map((s) => {
-          const otherNodes = nodes?.filter((n) => n.id !== s.node.id) ?? [];
-          const canTransfer = s.status === 'ready';
-          return (
-            <div key={s.id} className="rounded-lg border border-border bg-surface p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-text">{s.name}</p>
-                  <p className="font-mono text-xs text-text-faint">
-                    {s.shortId} · node: {s.node.name} · {STATUS_LABELS[s.status] ?? s.status}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={targetByServer[s.id] ?? ''}
-                    onChange={(e) => setTargetByServer((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                    disabled={!canTransfer}
-                    className="rounded-md border border-border bg-surface-2 px-2 py-1.5 text-xs text-text outline-none focus:border-accent disabled:opacity-50"
-                  >
-                    <option value="">Node de destino…</option>
-                    {otherNodes.map((n) => (
-                      <option key={n.id} value={n.id}>
-                        {n.name}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    variant="secondary"
-                    disabled={!canTransfer || !targetByServer[s.id] || busyServer === s.id}
-                    onClick={() => void handleTransfer(s.id)}
-                  >
-                    {busyServer === s.id ? 'Iniciando…' : 'Transferir'}
-                  </Button>
-                  <Button variant="ghost" onClick={() => setExpanded(expanded === s.id ? null : s.id)}>
-                    Histórico
-                  </Button>
-                  {s.status === 'suspended' ? (
-                    <Button variant="secondary" disabled={busyServer === s.id} onClick={() => void handleUnsuspend(s.id)}>
-                      Reativar
+      {isLoading ? (
+        <LoadingRow />
+      ) : !servers || servers.length === 0 ? (
+        <EmptyState icon={ServerCog} title="Nenhum servidor ainda" />
+      ) : (
+        <div className="space-y-3">
+          {servers.map((s) => {
+            const otherNodes = nodes?.filter((n) => n.id !== s.node.id) ?? [];
+            const canTransfer = s.status === 'ready';
+            return (
+              <Card key={s.id}>
+                <CardBody className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-text">{s.name}</p>
+                      <StatusBadge status={s.status} />
+                    </div>
+                    <p className="mt-0.5 font-mono text-xs text-text-faint">
+                      {s.shortId} · node: {s.node.name} · {STATUS_LABELS[s.status] ?? s.status}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="w-44">
+                      <Select
+                        value={targetByServer[s.id] ?? ''}
+                        onChange={(e) => setTargetByServer((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                        disabled={!canTransfer}
+                        aria-label="Node de destino"
+                      >
+                        <option value="">Node de destino…</option>
+                        {otherNodes.map((n) => (
+                          <option key={n.id} value={n.id}>
+                            {n.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={!canTransfer || !targetByServer[s.id] || busyServer === s.id}
+                      onClick={() => void handleTransfer(s.id)}
+                    >
+                      {busyServer === s.id ? 'Iniciando…' : 'Transferir'}
                     </Button>
-                  ) : (
-                    <Button variant="danger" disabled={busyServer === s.id} onClick={() => void handleSuspend(s.id)}>
-                      Suspender
+                    <Button variant="ghost" size="sm" onClick={() => setExpanded(expanded === s.id ? null : s.id)}>
+                      <History className="h-4 w-4" aria-hidden="true" />
+                      Histórico
                     </Button>
+                    {s.status === 'suspended' ? (
+                      <Button variant="secondary" size="sm" disabled={busyServer === s.id} onClick={() => void handleUnsuspend(s.id)}>
+                        Reativar
+                      </Button>
+                    ) : (
+                      <Button variant="danger" size="sm" disabled={busyServer === s.id} onClick={() => setSuspendTarget(s.id)}>
+                        Suspender
+                      </Button>
+                    )}
+                  </div>
+                  {expanded === s.id && (
+                    <div className="w-full">
+                      <TransferHistory serverId={s.id} />
+                    </div>
                   )}
-                </div>
-              </div>
-              {expanded === s.id && <TransferHistory serverId={s.id} />}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+                </CardBody>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <PromptDialog
+        open={suspendTarget !== null}
+        title="Suspender servidor"
+        label="Motivo da suspensão"
+        confirmLabel="Suspender"
+        loading={busyServer === suspendTarget}
+        onSubmit={(reason) => void handleConfirmSuspend(reason)}
+        onCancel={() => setSuspendTarget(null)}
+      />
+    </>
   );
 }

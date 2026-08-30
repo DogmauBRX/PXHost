@@ -25,6 +25,7 @@ import { PartitionsModule } from './modules/partitions/partitions.module';
 import { TransfersModule } from './modules/transfers/transfers.module';
 import { SecurityModule } from './modules/security/security.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { UsersModule } from './modules/users/users.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { BillingModule } from './modules/billing/billing.module';
     TransfersModule,
     SecurityModule,
     BillingModule,
+    UsersModule,
   ],
   providers: [
     // JwtAuthGuard is global: every route requires authentication unless

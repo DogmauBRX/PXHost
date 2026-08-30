@@ -1,9 +1,23 @@
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { File as FileIcon, Folder, FolderPlus, Upload } from 'lucide-react';
 import { deleteFile, listFiles, mintDownloadLink, mintUploadLink, mkdir, renameFile } from './files.api';
 import { FileEditor } from './FileEditor';
-import { Button } from '@/ui/primitives/Button';
 import { ApiError } from '@/shared/api/client';
+import {
+  Alert,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  LoadingRow,
+  PageHeader,
+  PromptDialog,
+  TBody,
+  TD,
+  TR,
+  Table,
+  TableWrap,
+} from '@/ui/primitives';
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -16,6 +30,8 @@ function joinPath(dir: string, name: string): string {
   return dir === '.' ? name : `${dir}/${name}`;
 }
 
+type PendingPrompt = { kind: 'mkdir' } | { kind: 'rename'; name: string };
+
 export function FileManager({ serverId }: { serverId: string }) {
   const queryClient = useQueryClient();
   const [path, setPath] = useState('.');
@@ -23,6 +39,8 @@ export function FileManager({ serverId }: { serverId: string }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ name: string; isDir: boolean } | null>(null);
+  const [prompt, setPrompt] = useState<PendingPrompt | null>(null);
 
   const { data: entries, isLoading, isError } = useQuery({ queryKey: ['files', serverId, path], queryFn: () => listFiles(serverId, path) });
 
@@ -49,31 +67,30 @@ export function FileManager({ serverId }: { serverId: string }) {
     a.remove();
   }
 
-  async function handleDelete(name: string, isDir: boolean) {
-    const label = isDir ? 'esta pasta e todo o seu conteúdo' : 'este arquivo';
-    if (!window.confirm(`Excluir ${label}: ${name}?`)) return;
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
     await withErrorHandling(async () => {
-      await deleteFile(serverId, joinPath(path, name), isDir);
+      await deleteFile(serverId, joinPath(path, deleteTarget.name), deleteTarget.isDir);
       refresh();
     });
+    setDeleteTarget(null);
   }
 
-  async function handleRename(name: string) {
-    const next = window.prompt('Novo nome:', name);
-    if (!next || next === name) return;
-    await withErrorHandling(async () => {
-      await renameFile(serverId, joinPath(path, name), joinPath(path, next));
-      refresh();
-    });
-  }
-
-  async function handleMkdir() {
-    const name = window.prompt('Nome da nova pasta:');
-    if (!name) return;
-    await withErrorHandling(async () => {
-      await mkdir(serverId, joinPath(path, name));
-      refresh();
-    });
+  async function handlePromptSubmit(value: string) {
+    if (prompt?.kind === 'rename') {
+      if (value !== prompt.name) {
+        await withErrorHandling(async () => {
+          await renameFile(serverId, joinPath(path, prompt.name), joinPath(path, value));
+          refresh();
+        });
+      }
+    } else if (prompt?.kind === 'mkdir') {
+      await withErrorHandling(async () => {
+        await mkdir(serverId, joinPath(path, value));
+        refresh();
+      });
+    }
+    setPrompt(null);
   }
 
   async function handleUpload(file: File) {
@@ -94,85 +111,128 @@ export function FileManager({ serverId }: { serverId: string }) {
   const crumbs = path === '.' ? [] : path.split('/');
 
   return (
-    <div className="flex h-full flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <nav className="flex items-center gap-1 font-mono text-sm text-text-muted">
-          <button onClick={() => setPath('.')} className="hover:text-text">
+    <>
+      <PageHeader
+        title="Arquivos"
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => setPrompt({ kind: 'mkdir' })}>
+              <FolderPlus className="h-4 w-4" aria-hidden="true" />
+              Nova pasta
+            </Button>
+            <Button variant="primary" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              {uploading ? 'Enviando…' : 'Enviar arquivo'}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void handleUpload(file);
+              }}
+            />
+          </div>
+        }
+      >
+        <nav className="mt-3 flex items-center gap-1 font-mono text-sm text-text-muted">
+          <button onClick={() => setPath('.')} className="rounded px-1.5 py-0.5 hover:bg-surface-2 hover:text-text">
             /
           </button>
           {crumbs.map((c, i) => (
             <span key={i} className="flex items-center gap-1">
               <span>/</span>
-              <button onClick={() => setPath(crumbs.slice(0, i + 1).join('/'))} className="hover:text-text">
+              <button
+                onClick={() => setPath(crumbs.slice(0, i + 1).join('/'))}
+                className="rounded px-1.5 py-0.5 hover:bg-surface-2 hover:text-text"
+              >
                 {c}
               </button>
             </span>
           ))}
         </nav>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => void handleMkdir()}>
-            Nova pasta
-          </Button>
-          <Button variant="primary" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
-            {uploading ? 'Enviando…' : 'Enviar arquivo'}
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (file) void handleUpload(file);
-            }}
-          />
-        </div>
-      </div>
+      </PageHeader>
 
-      {actionError && <p className="rounded-md bg-fail-tint px-3 py-2 text-sm text-fail">{actionError}</p>}
+      {actionError && <Alert className="mb-6">{actionError}</Alert>}
+      {isError && <Alert className="mb-6">Não foi possível carregar esta pasta.</Alert>}
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface">
-        {isLoading && <p className="p-4 text-sm text-text-muted">Carregando…</p>}
-        {isError && <p className="p-4 text-sm text-fail">Não foi possível carregar esta pasta.</p>}
-        {entries && entries.length === 0 && <p className="p-4 text-sm text-text-muted">Esta pasta está vazia.</p>}
-        {entries && entries.length > 0 && (
-          <table className="w-full text-sm">
-            <tbody>
+      {isLoading ? (
+        <LoadingRow />
+      ) : !entries || entries.length === 0 ? (
+        <EmptyState icon={Folder} title="Esta pasta está vazia" />
+      ) : (
+        <TableWrap>
+          <Table>
+            <TBody>
               {entries.map((e) => (
-                <tr key={e.name} className="border-b border-border last:border-0 hover:bg-surface-2">
-                  <td className="px-4 py-2">
+                <TR key={e.name}>
+                  <TD>
                     {e.isDir ? (
-                      <button onClick={() => setPath(joinPath(path, e.name))} className="font-medium text-text hover:text-accent">
-                        📁 {e.name}
+                      <button
+                        onClick={() => setPath(joinPath(path, e.name))}
+                        className="inline-flex items-center gap-2 font-medium text-text hover:text-accent-strong"
+                      >
+                        <Folder className="h-4 w-4 text-text-faint" aria-hidden="true" />
+                        {e.name}
                       </button>
                     ) : (
-                      <button onClick={() => setEditingPath(joinPath(path, e.name))} className="text-text hover:text-accent">
-                        📄 {e.name}
+                      <button
+                        onClick={() => setEditingPath(joinPath(path, e.name))}
+                        className="inline-flex items-center gap-2 text-text hover:text-accent-strong"
+                      >
+                        <FileIcon className="h-4 w-4 text-text-faint" aria-hidden="true" />
+                        {e.name}
                       </button>
                     )}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs text-text-faint">{e.isDir ? '' : formatBytes(e.size)}</td>
-                  <td className="px-4 py-2">
+                  </TD>
+                  <TD className="text-right font-mono text-xs text-text-faint">{e.isDir ? '' : formatBytes(e.size)}</TD>
+                  <TD>
                     <div className="flex justify-end gap-1">
                       {!e.isDir && (
-                        <Button variant="ghost" onClick={() => void handleDownload(e.name)}>
+                        <Button variant="ghost" size="sm" onClick={() => void handleDownload(e.name)}>
                           Baixar
                         </Button>
                       )}
-                      <Button variant="ghost" onClick={() => void handleRename(e.name)}>
+                      <Button variant="ghost" size="sm" onClick={() => setPrompt({ kind: 'rename', name: e.name })}>
                         Renomear
                       </Button>
-                      <Button variant="ghost" onClick={() => void handleDelete(e.name, e.isDir)}>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget({ name: e.name, isDir: e.isDir })}>
                         Excluir
                       </Button>
                     </div>
-                  </td>
-                </tr>
+                  </TD>
+                </TR>
               ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
+            </TBody>
+          </Table>
+        </TableWrap>
+      )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Excluir"
+        message={
+          deleteTarget
+            ? `Excluir ${deleteTarget.isDir ? 'esta pasta e todo o seu conteúdo' : 'este arquivo'}: ${deleteTarget.name}?`
+            : ''
+        }
+        confirmLabel="Excluir"
+        tone="danger"
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
+      <PromptDialog
+        open={prompt !== null}
+        title={prompt?.kind === 'mkdir' ? 'Nova pasta' : 'Renomear'}
+        label={prompt?.kind === 'mkdir' ? 'Nome da pasta' : 'Novo nome'}
+        defaultValue={prompt?.kind === 'rename' ? prompt.name : ''}
+        confirmLabel={prompt?.kind === 'mkdir' ? 'Criar' : 'Renomear'}
+        onSubmit={(value) => void handlePromptSubmit(value)}
+        onCancel={() => setPrompt(null)}
+      />
+    </>
   );
 }
