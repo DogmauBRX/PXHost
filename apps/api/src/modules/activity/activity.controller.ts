@@ -13,8 +13,8 @@ export class ActivityController {
 
   @Get()
   async list(@Param('serverId') serverId: string, @CurrentUser() user: AuthenticatedUser) {
-    const { can } = await this.access.resolve(user.id, serverId);
+    const { can } = await this.access.resolve(user.id, serverId, user.isAdmin);
     if (!can('activity.read')) throw new ForbiddenException('Missing permission: activity.read');
-    return this.activity.list(user.id, serverId);
+    return this.activity.list(user.id, serverId, user.isAdmin);
   }
 }

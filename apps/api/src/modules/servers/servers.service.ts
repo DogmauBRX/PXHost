@@ -26,7 +26,12 @@ export class ServersService {
     return this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
       tx.server.findMany({
         where: ownerId ? { ownerId } : undefined,
-        include: { node: { select: { id: true, name: true, fqdn: true } }, template: true, plan: true },
+        include: {
+          node: { select: { id: true, name: true, fqdn: true } },
+          template: true,
+          plan: true,
+          owner: { select: { id: true, username: true, email: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
     );
@@ -42,6 +47,7 @@ export class ServersService {
           plan: true,
           allocations: true,
           variables: { include: { variable: true } },
+          owner: { select: { id: true, username: true, email: true } },
         },
       }),
     );

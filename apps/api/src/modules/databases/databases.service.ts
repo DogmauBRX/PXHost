@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ServerAccessService } from '../authorization/server-access.service';
+import type { AccessActor } from '../authorization/server-access.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { CryptoService } from '../../core/crypto/crypto.service';
 import { DatabaseHostsService } from './database-hosts.service';
@@ -28,10 +29,10 @@ export class DatabasesService {
     return `databases:password_enc:${databaseId}`;
   }
 
-  async list(userId: string, serverId: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async list(actor: AccessActor, serverId: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('database.read')) throw new ForbiddenException('Missing permission: database.read');
-    return this.prisma.withRLS({ userId, isAdmin: false }, (tx) =>
+    return this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
       tx.database.findMany({
         where: { serverId: server.id },
         select: {
@@ -53,11 +54,11 @@ export class DatabasesService {
    * token, it's never re-servable after this response; only the
    * encrypted form persists (architecture doc 3.6).
    */
-  async create(userId: string, serverId: string, dto: CreateDatabaseDto) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async create(actor: AccessActor, serverId: string, dto: CreateDatabaseDto) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('database.create')) throw new ForbiddenException('Missing permission: database.create');
 
-    const existingCount = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) => tx.database.count({ where: { serverId: server.id } }));
+    const existingCount = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) => tx.database.count({ where: { serverId: server.id } }));
     if (existingCount >= server.maxDatabases) {
       throw new ConflictException('Database limit reached for this server’s plan');
     }
@@ -77,7 +78,7 @@ export class DatabasesService {
       const id = randomUUID();
       const enc = this.crypto.encrypt(dbPassword, DatabasesService.passwordAad(id));
       const keyVersion = Number(enc.slice(1, enc.indexOf('.')));
-      const created = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) =>
+      const created = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
         tx.database.create({
           data: {
             id,
@@ -95,10 +96,10 @@ export class DatabasesService {
         action: 'server.database.create',
         targetType: 'server',
         targetId: server.id,
-        actorId: userId,
+        actorId: actor.id,
         metadata: { databaseId: created.id, database, hostId },
       });
-      await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.database.create', properties: { databaseId: created.id, database } });
+      await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.database.create', properties: { databaseId: created.id, database } });
       return {
         id: created.id,
         database: created.database,
@@ -116,24 +117,24 @@ export class DatabasesService {
     }
   }
 
-  async delete(userId: string, serverId: string, databaseId: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async delete(actor: AccessActor, serverId: string, databaseId: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('database.delete')) throw new ForbiddenException('Missing permission: database.delete');
-    const db = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) => tx.database.findFirst({ where: { id: databaseId, serverId: server.id } }));
+    const db = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) => tx.database.findFirst({ where: { id: databaseId, serverId: server.id } }));
     if (!db) throw new NotFoundException('Database not found');
 
     const hostCreds = await this.hosts.decryptCredentials(db.hostId);
     await this.mysql.dropDatabaseAndUser(hostCreds, { database: db.database, dbUsername: db.username, remote: db.remote });
 
-    await this.prisma.withRLS({ userId, isAdmin: false }, (tx) => tx.database.delete({ where: { id: db.id } }));
+    await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) => tx.database.delete({ where: { id: db.id } }));
     await this.audit.record({
       action: 'server.database.delete',
       targetType: 'server',
       targetId: server.id,
-      actorId: userId,
+      actorId: actor.id,
       metadata: { databaseId: db.id, database: db.database },
     });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.database.delete', properties: { databaseId: db.id, database: db.database } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.database.delete', properties: { databaseId: db.id, database: db.database } });
   }
 
   /**

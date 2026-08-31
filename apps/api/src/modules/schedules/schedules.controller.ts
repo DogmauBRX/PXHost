@@ -10,33 +10,33 @@ export class SchedulesController {
 
   @Get()
   list(@Param('serverId') serverId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.schedules.list(user.id, serverId);
+    return this.schedules.list(user, serverId);
   }
 
   @Post()
   create(@Param('serverId') serverId: string, @Body() dto: CreateScheduleDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.schedules.create(user.id, serverId, dto);
+    return this.schedules.create(user, serverId, dto);
   }
 
   @Patch(':scheduleId')
   update(@Param('serverId') serverId: string, @Param('scheduleId') scheduleId: string, @Body() dto: UpdateScheduleDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.schedules.update(user.id, serverId, scheduleId, dto);
+    return this.schedules.update(user, serverId, scheduleId, dto);
   }
 
   @Delete(':scheduleId')
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('serverId') serverId: string, @Param('scheduleId') scheduleId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.schedules.remove(user.id, serverId, scheduleId);
+    return this.schedules.remove(user, serverId, scheduleId);
   }
 
   @Post(':scheduleId/tasks')
   addTask(@Param('serverId') serverId: string, @Param('scheduleId') scheduleId: string, @Body() dto: CreateTaskDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.schedules.addTask(user.id, serverId, scheduleId, dto);
+    return this.schedules.addTask(user, serverId, scheduleId, dto);
   }
 
   @Delete(':scheduleId/tasks/:taskId')
   @HttpCode(HttpStatus.NO_CONTENT)
   removeTask(@Param('serverId') serverId: string, @Param('scheduleId') scheduleId: string, @Param('taskId') taskId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.schedules.removeTask(user.id, serverId, scheduleId, taskId);
+    return this.schedules.removeTask(user, serverId, scheduleId, taskId);
   }
 }

@@ -11,24 +11,40 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as ClientRouteImport } from './routes/client'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminLocationsRouteImport } from './routes/admin.locations'
 import { Route as AdminLogsRouteImport } from './routes/admin.logs'
 import { Route as AdminNodesRouteImport } from './routes/admin.nodes'
 import { Route as AdminPlansRouteImport } from './routes/admin.plans'
-import { Route as AdminServersRouteImport } from './routes/admin.servers'
+import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
+import { Route as AdminSystemRouteImport } from './routes/admin.system'
 import { Route as AdminTemplatesRouteImport } from './routes/admin.templates'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
-import { Route as ServersIndexRouteImport } from './routes/servers.index'
-import { Route as ServersServerIdRouteImport } from './routes/servers.$serverId'
-import { Route as ServersServerIdIndexRouteImport } from './routes/servers.$serverId.index'
-import { Route as ServersServerIdActivityRouteImport } from './routes/servers.$serverId.activity'
-import { Route as ServersServerIdBackupsRouteImport } from './routes/servers.$serverId.backups'
-import { Route as ServersServerIdDatabasesRouteImport } from './routes/servers.$serverId.databases'
-import { Route as ServersServerIdFilesRouteImport } from './routes/servers.$serverId.files'
-import { Route as ServersServerIdSchedulesRouteImport } from './routes/servers.$serverId.schedules'
-import { Route as ServersServerIdSubusersRouteImport } from './routes/servers.$serverId.subusers'
+import { Route as ClientIndexRouteImport } from './routes/client.index'
+import { Route as ClientBillingRouteImport } from './routes/client.billing'
+import { Route as ClientPlanRouteImport } from './routes/client.plan'
+import { Route as ClientSettingsRouteImport } from './routes/client.settings'
+import { Route as ClientSupportRouteImport } from './routes/client.support'
+import { Route as AdminServersIndexRouteImport } from './routes/admin.servers.index'
+import { Route as AdminServersServerIdRouteImport } from './routes/admin.servers.$serverId'
+import { Route as ClientServersIndexRouteImport } from './routes/client.servers.index'
+import { Route as ClientServersServerIdRouteImport } from './routes/client.servers.$serverId'
+import { Route as AdminServersServerIdIndexRouteImport } from './routes/admin.servers.$serverId.index'
+import { Route as AdminServersServerIdActivityRouteImport } from './routes/admin.servers.$serverId.activity'
+import { Route as AdminServersServerIdBackupsRouteImport } from './routes/admin.servers.$serverId.backups'
+import { Route as AdminServersServerIdDatabasesRouteImport } from './routes/admin.servers.$serverId.databases'
+import { Route as AdminServersServerIdFilesRouteImport } from './routes/admin.servers.$serverId.files'
+import { Route as AdminServersServerIdSchedulesRouteImport } from './routes/admin.servers.$serverId.schedules'
+import { Route as AdminServersServerIdSubusersRouteImport } from './routes/admin.servers.$serverId.subusers'
+import { Route as ClientServersServerIdIndexRouteImport } from './routes/client.servers.$serverId.index'
+import { Route as ClientServersServerIdActivityRouteImport } from './routes/client.servers.$serverId.activity'
+import { Route as ClientServersServerIdBackupsRouteImport } from './routes/client.servers.$serverId.backups'
+import { Route as ClientServersServerIdDatabasesRouteImport } from './routes/client.servers.$serverId.databases'
+import { Route as ClientServersServerIdFilesRouteImport } from './routes/client.servers.$serverId.files'
+import { Route as ClientServersServerIdSchedulesRouteImport } from './routes/client.servers.$serverId.schedules'
+import { Route as ClientServersServerIdSubusersRouteImport } from './routes/client.servers.$serverId.subusers'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,19 +56,24 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ClientRoute = ClientRouteImport.update({
+  id: '/client',
+  path: '/client',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminLocationsRoute = AdminLocationsRouteImport.update({
+  id: '/locations',
+  path: '/locations',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminLogsRoute = AdminLogsRouteImport.update({
@@ -70,9 +91,14 @@ const AdminPlansRoute = AdminPlansRouteImport.update({
   path: '/plans',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminServersRoute = AdminServersRouteImport.update({
-  id: '/servers',
-  path: '/servers',
+const AdminSettingsRoute = AdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSystemRoute = AdminSystemRouteImport.update({
+  id: '/system',
+  path: '/system',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminTemplatesRoute = AdminTemplatesRouteImport.update({
@@ -85,193 +111,365 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
-const ServersIndexRoute = ServersIndexRouteImport.update({
-  id: '/servers/',
-  path: '/servers/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ServersServerIdRoute = ServersServerIdRouteImport.update({
-  id: '/servers/$serverId',
-  path: '/servers/$serverId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ServersServerIdIndexRoute = ServersServerIdIndexRouteImport.update({
+const ClientIndexRoute = ClientIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => ServersServerIdRoute,
+  getParentRoute: () => ClientRoute,
 } as any)
-const ServersServerIdActivityRoute = ServersServerIdActivityRouteImport.update({
-  id: '/activity',
-  path: '/activity',
-  getParentRoute: () => ServersServerIdRoute,
+const ClientBillingRoute = ClientBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => ClientRoute,
 } as any)
-const ServersServerIdBackupsRoute = ServersServerIdBackupsRouteImport.update({
-  id: '/backups',
-  path: '/backups',
-  getParentRoute: () => ServersServerIdRoute,
+const ClientPlanRoute = ClientPlanRouteImport.update({
+  id: '/plan',
+  path: '/plan',
+  getParentRoute: () => ClientRoute,
 } as any)
-const ServersServerIdDatabasesRoute =
-  ServersServerIdDatabasesRouteImport.update({
+const ClientSettingsRoute = ClientSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => ClientRoute,
+} as any)
+const ClientSupportRoute = ClientSupportRouteImport.update({
+  id: '/support',
+  path: '/support',
+  getParentRoute: () => ClientRoute,
+} as any)
+const AdminServersIndexRoute = AdminServersIndexRouteImport.update({
+  id: '/servers/',
+  path: '/servers/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminServersServerIdRoute = AdminServersServerIdRouteImport.update({
+  id: '/servers/$serverId',
+  path: '/servers/$serverId',
+  getParentRoute: () => AdminRoute,
+} as any)
+const ClientServersIndexRoute = ClientServersIndexRouteImport.update({
+  id: '/servers/',
+  path: '/servers/',
+  getParentRoute: () => ClientRoute,
+} as any)
+const ClientServersServerIdRoute = ClientServersServerIdRouteImport.update({
+  id: '/servers/$serverId',
+  path: '/servers/$serverId',
+  getParentRoute: () => ClientRoute,
+} as any)
+const AdminServersServerIdIndexRoute =
+  AdminServersServerIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AdminServersServerIdRoute,
+  } as any)
+const AdminServersServerIdActivityRoute =
+  AdminServersServerIdActivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
+    getParentRoute: () => AdminServersServerIdRoute,
+  } as any)
+const AdminServersServerIdBackupsRoute =
+  AdminServersServerIdBackupsRouteImport.update({
+    id: '/backups',
+    path: '/backups',
+    getParentRoute: () => AdminServersServerIdRoute,
+  } as any)
+const AdminServersServerIdDatabasesRoute =
+  AdminServersServerIdDatabasesRouteImport.update({
     id: '/databases',
     path: '/databases',
-    getParentRoute: () => ServersServerIdRoute,
+    getParentRoute: () => AdminServersServerIdRoute,
   } as any)
-const ServersServerIdFilesRoute = ServersServerIdFilesRouteImport.update({
-  id: '/files',
-  path: '/files',
-  getParentRoute: () => ServersServerIdRoute,
-} as any)
-const ServersServerIdSchedulesRoute =
-  ServersServerIdSchedulesRouteImport.update({
+const AdminServersServerIdFilesRoute =
+  AdminServersServerIdFilesRouteImport.update({
+    id: '/files',
+    path: '/files',
+    getParentRoute: () => AdminServersServerIdRoute,
+  } as any)
+const AdminServersServerIdSchedulesRoute =
+  AdminServersServerIdSchedulesRouteImport.update({
     id: '/schedules',
     path: '/schedules',
-    getParentRoute: () => ServersServerIdRoute,
+    getParentRoute: () => AdminServersServerIdRoute,
   } as any)
-const ServersServerIdSubusersRoute = ServersServerIdSubusersRouteImport.update({
-  id: '/subusers',
-  path: '/subusers',
-  getParentRoute: () => ServersServerIdRoute,
-} as any)
+const AdminServersServerIdSubusersRoute =
+  AdminServersServerIdSubusersRouteImport.update({
+    id: '/subusers',
+    path: '/subusers',
+    getParentRoute: () => AdminServersServerIdRoute,
+  } as any)
+const ClientServersServerIdIndexRoute =
+  ClientServersServerIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ClientServersServerIdRoute,
+  } as any)
+const ClientServersServerIdActivityRoute =
+  ClientServersServerIdActivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
+    getParentRoute: () => ClientServersServerIdRoute,
+  } as any)
+const ClientServersServerIdBackupsRoute =
+  ClientServersServerIdBackupsRouteImport.update({
+    id: '/backups',
+    path: '/backups',
+    getParentRoute: () => ClientServersServerIdRoute,
+  } as any)
+const ClientServersServerIdDatabasesRoute =
+  ClientServersServerIdDatabasesRouteImport.update({
+    id: '/databases',
+    path: '/databases',
+    getParentRoute: () => ClientServersServerIdRoute,
+  } as any)
+const ClientServersServerIdFilesRoute =
+  ClientServersServerIdFilesRouteImport.update({
+    id: '/files',
+    path: '/files',
+    getParentRoute: () => ClientServersServerIdRoute,
+  } as any)
+const ClientServersServerIdSchedulesRoute =
+  ClientServersServerIdSchedulesRouteImport.update({
+    id: '/schedules',
+    path: '/schedules',
+    getParentRoute: () => ClientServersServerIdRoute,
+  } as any)
+const ClientServersServerIdSubusersRoute =
+  ClientServersServerIdSubusersRouteImport.update({
+    id: '/subusers',
+    path: '/subusers',
+    getParentRoute: () => ClientServersServerIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/client': typeof ClientRouteWithChildren
   '/login': typeof LoginRoute
-  '/settings': typeof SettingsRoute
+  '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/nodes': typeof AdminNodesRoute
   '/admin/plans': typeof AdminPlansRoute
-  '/admin/servers': typeof AdminServersRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/system': typeof AdminSystemRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
-  '/servers/$serverId': typeof ServersServerIdRouteWithChildren
+  '/client/billing': typeof ClientBillingRoute
+  '/client/plan': typeof ClientPlanRoute
+  '/client/settings': typeof ClientSettingsRoute
+  '/client/support': typeof ClientSupportRoute
   '/admin/': typeof AdminIndexRoute
-  '/servers/': typeof ServersIndexRoute
-  '/servers/$serverId/activity': typeof ServersServerIdActivityRoute
-  '/servers/$serverId/backups': typeof ServersServerIdBackupsRoute
-  '/servers/$serverId/databases': typeof ServersServerIdDatabasesRoute
-  '/servers/$serverId/files': typeof ServersServerIdFilesRoute
-  '/servers/$serverId/schedules': typeof ServersServerIdSchedulesRoute
-  '/servers/$serverId/subusers': typeof ServersServerIdSubusersRoute
-  '/servers/$serverId/': typeof ServersServerIdIndexRoute
+  '/client/': typeof ClientIndexRoute
+  '/admin/servers/$serverId': typeof AdminServersServerIdRouteWithChildren
+  '/client/servers/$serverId': typeof ClientServersServerIdRouteWithChildren
+  '/admin/servers/': typeof AdminServersIndexRoute
+  '/client/servers/': typeof ClientServersIndexRoute
+  '/admin/servers/$serverId/activity': typeof AdminServersServerIdActivityRoute
+  '/admin/servers/$serverId/backups': typeof AdminServersServerIdBackupsRoute
+  '/admin/servers/$serverId/databases': typeof AdminServersServerIdDatabasesRoute
+  '/admin/servers/$serverId/files': typeof AdminServersServerIdFilesRoute
+  '/admin/servers/$serverId/schedules': typeof AdminServersServerIdSchedulesRoute
+  '/admin/servers/$serverId/subusers': typeof AdminServersServerIdSubusersRoute
+  '/client/servers/$serverId/activity': typeof ClientServersServerIdActivityRoute
+  '/client/servers/$serverId/backups': typeof ClientServersServerIdBackupsRoute
+  '/client/servers/$serverId/databases': typeof ClientServersServerIdDatabasesRoute
+  '/client/servers/$serverId/files': typeof ClientServersServerIdFilesRoute
+  '/client/servers/$serverId/schedules': typeof ClientServersServerIdSchedulesRoute
+  '/client/servers/$serverId/subusers': typeof ClientServersServerIdSubusersRoute
+  '/admin/servers/$serverId/': typeof AdminServersServerIdIndexRoute
+  '/client/servers/$serverId/': typeof ClientServersServerIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/settings': typeof SettingsRoute
+  '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/nodes': typeof AdminNodesRoute
   '/admin/plans': typeof AdminPlansRoute
-  '/admin/servers': typeof AdminServersRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/system': typeof AdminSystemRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
+  '/client/billing': typeof ClientBillingRoute
+  '/client/plan': typeof ClientPlanRoute
+  '/client/settings': typeof ClientSettingsRoute
+  '/client/support': typeof ClientSupportRoute
   '/admin': typeof AdminIndexRoute
-  '/servers': typeof ServersIndexRoute
-  '/servers/$serverId/activity': typeof ServersServerIdActivityRoute
-  '/servers/$serverId/backups': typeof ServersServerIdBackupsRoute
-  '/servers/$serverId/databases': typeof ServersServerIdDatabasesRoute
-  '/servers/$serverId/files': typeof ServersServerIdFilesRoute
-  '/servers/$serverId/schedules': typeof ServersServerIdSchedulesRoute
-  '/servers/$serverId/subusers': typeof ServersServerIdSubusersRoute
-  '/servers/$serverId': typeof ServersServerIdIndexRoute
+  '/client': typeof ClientIndexRoute
+  '/admin/servers': typeof AdminServersIndexRoute
+  '/client/servers': typeof ClientServersIndexRoute
+  '/admin/servers/$serverId/activity': typeof AdminServersServerIdActivityRoute
+  '/admin/servers/$serverId/backups': typeof AdminServersServerIdBackupsRoute
+  '/admin/servers/$serverId/databases': typeof AdminServersServerIdDatabasesRoute
+  '/admin/servers/$serverId/files': typeof AdminServersServerIdFilesRoute
+  '/admin/servers/$serverId/schedules': typeof AdminServersServerIdSchedulesRoute
+  '/admin/servers/$serverId/subusers': typeof AdminServersServerIdSubusersRoute
+  '/client/servers/$serverId/activity': typeof ClientServersServerIdActivityRoute
+  '/client/servers/$serverId/backups': typeof ClientServersServerIdBackupsRoute
+  '/client/servers/$serverId/databases': typeof ClientServersServerIdDatabasesRoute
+  '/client/servers/$serverId/files': typeof ClientServersServerIdFilesRoute
+  '/client/servers/$serverId/schedules': typeof ClientServersServerIdSchedulesRoute
+  '/client/servers/$serverId/subusers': typeof ClientServersServerIdSubusersRoute
+  '/admin/servers/$serverId': typeof AdminServersServerIdIndexRoute
+  '/client/servers/$serverId': typeof ClientServersServerIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/client': typeof ClientRouteWithChildren
   '/login': typeof LoginRoute
-  '/settings': typeof SettingsRoute
+  '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/nodes': typeof AdminNodesRoute
   '/admin/plans': typeof AdminPlansRoute
-  '/admin/servers': typeof AdminServersRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/system': typeof AdminSystemRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
-  '/servers/$serverId': typeof ServersServerIdRouteWithChildren
+  '/client/billing': typeof ClientBillingRoute
+  '/client/plan': typeof ClientPlanRoute
+  '/client/settings': typeof ClientSettingsRoute
+  '/client/support': typeof ClientSupportRoute
   '/admin/': typeof AdminIndexRoute
-  '/servers/': typeof ServersIndexRoute
-  '/servers/$serverId/activity': typeof ServersServerIdActivityRoute
-  '/servers/$serverId/backups': typeof ServersServerIdBackupsRoute
-  '/servers/$serverId/databases': typeof ServersServerIdDatabasesRoute
-  '/servers/$serverId/files': typeof ServersServerIdFilesRoute
-  '/servers/$serverId/schedules': typeof ServersServerIdSchedulesRoute
-  '/servers/$serverId/subusers': typeof ServersServerIdSubusersRoute
-  '/servers/$serverId/': typeof ServersServerIdIndexRoute
+  '/client/': typeof ClientIndexRoute
+  '/admin/servers/$serverId': typeof AdminServersServerIdRouteWithChildren
+  '/client/servers/$serverId': typeof ClientServersServerIdRouteWithChildren
+  '/admin/servers/': typeof AdminServersIndexRoute
+  '/client/servers/': typeof ClientServersIndexRoute
+  '/admin/servers/$serverId/activity': typeof AdminServersServerIdActivityRoute
+  '/admin/servers/$serverId/backups': typeof AdminServersServerIdBackupsRoute
+  '/admin/servers/$serverId/databases': typeof AdminServersServerIdDatabasesRoute
+  '/admin/servers/$serverId/files': typeof AdminServersServerIdFilesRoute
+  '/admin/servers/$serverId/schedules': typeof AdminServersServerIdSchedulesRoute
+  '/admin/servers/$serverId/subusers': typeof AdminServersServerIdSubusersRoute
+  '/client/servers/$serverId/activity': typeof ClientServersServerIdActivityRoute
+  '/client/servers/$serverId/backups': typeof ClientServersServerIdBackupsRoute
+  '/client/servers/$serverId/databases': typeof ClientServersServerIdDatabasesRoute
+  '/client/servers/$serverId/files': typeof ClientServersServerIdFilesRoute
+  '/client/servers/$serverId/schedules': typeof ClientServersServerIdSchedulesRoute
+  '/client/servers/$serverId/subusers': typeof ClientServersServerIdSubusersRoute
+  '/admin/servers/$serverId/': typeof AdminServersServerIdIndexRoute
+  '/client/servers/$serverId/': typeof ClientServersServerIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/admin'
+    | '/client'
     | '/login'
-    | '/settings'
+    | '/admin/locations'
     | '/admin/logs'
     | '/admin/nodes'
     | '/admin/plans'
-    | '/admin/servers'
+    | '/admin/settings'
+    | '/admin/system'
     | '/admin/templates'
     | '/admin/users'
-    | '/servers/$serverId'
+    | '/client/billing'
+    | '/client/plan'
+    | '/client/settings'
+    | '/client/support'
     | '/admin/'
-    | '/servers/'
-    | '/servers/$serverId/activity'
-    | '/servers/$serverId/backups'
-    | '/servers/$serverId/databases'
-    | '/servers/$serverId/files'
-    | '/servers/$serverId/schedules'
-    | '/servers/$serverId/subusers'
-    | '/servers/$serverId/'
+    | '/client/'
+    | '/admin/servers/$serverId'
+    | '/client/servers/$serverId'
+    | '/admin/servers/'
+    | '/client/servers/'
+    | '/admin/servers/$serverId/activity'
+    | '/admin/servers/$serverId/backups'
+    | '/admin/servers/$serverId/databases'
+    | '/admin/servers/$serverId/files'
+    | '/admin/servers/$serverId/schedules'
+    | '/admin/servers/$serverId/subusers'
+    | '/client/servers/$serverId/activity'
+    | '/client/servers/$serverId/backups'
+    | '/client/servers/$serverId/databases'
+    | '/client/servers/$serverId/files'
+    | '/client/servers/$serverId/schedules'
+    | '/client/servers/$serverId/subusers'
+    | '/admin/servers/$serverId/'
+    | '/client/servers/$serverId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
-    | '/settings'
+    | '/admin/locations'
     | '/admin/logs'
     | '/admin/nodes'
     | '/admin/plans'
-    | '/admin/servers'
+    | '/admin/settings'
+    | '/admin/system'
     | '/admin/templates'
     | '/admin/users'
+    | '/client/billing'
+    | '/client/plan'
+    | '/client/settings'
+    | '/client/support'
     | '/admin'
-    | '/servers'
-    | '/servers/$serverId/activity'
-    | '/servers/$serverId/backups'
-    | '/servers/$serverId/databases'
-    | '/servers/$serverId/files'
-    | '/servers/$serverId/schedules'
-    | '/servers/$serverId/subusers'
-    | '/servers/$serverId'
+    | '/client'
+    | '/admin/servers'
+    | '/client/servers'
+    | '/admin/servers/$serverId/activity'
+    | '/admin/servers/$serverId/backups'
+    | '/admin/servers/$serverId/databases'
+    | '/admin/servers/$serverId/files'
+    | '/admin/servers/$serverId/schedules'
+    | '/admin/servers/$serverId/subusers'
+    | '/client/servers/$serverId/activity'
+    | '/client/servers/$serverId/backups'
+    | '/client/servers/$serverId/databases'
+    | '/client/servers/$serverId/files'
+    | '/client/servers/$serverId/schedules'
+    | '/client/servers/$serverId/subusers'
+    | '/admin/servers/$serverId'
+    | '/client/servers/$serverId'
   id:
     | '__root__'
     | '/'
     | '/admin'
+    | '/client'
     | '/login'
-    | '/settings'
+    | '/admin/locations'
     | '/admin/logs'
     | '/admin/nodes'
     | '/admin/plans'
-    | '/admin/servers'
+    | '/admin/settings'
+    | '/admin/system'
     | '/admin/templates'
     | '/admin/users'
-    | '/servers/$serverId'
+    | '/client/billing'
+    | '/client/plan'
+    | '/client/settings'
+    | '/client/support'
     | '/admin/'
-    | '/servers/'
-    | '/servers/$serverId/activity'
-    | '/servers/$serverId/backups'
-    | '/servers/$serverId/databases'
-    | '/servers/$serverId/files'
-    | '/servers/$serverId/schedules'
-    | '/servers/$serverId/subusers'
-    | '/servers/$serverId/'
+    | '/client/'
+    | '/admin/servers/$serverId'
+    | '/client/servers/$serverId'
+    | '/admin/servers/'
+    | '/client/servers/'
+    | '/admin/servers/$serverId/activity'
+    | '/admin/servers/$serverId/backups'
+    | '/admin/servers/$serverId/databases'
+    | '/admin/servers/$serverId/files'
+    | '/admin/servers/$serverId/schedules'
+    | '/admin/servers/$serverId/subusers'
+    | '/client/servers/$serverId/activity'
+    | '/client/servers/$serverId/backups'
+    | '/client/servers/$serverId/databases'
+    | '/client/servers/$serverId/files'
+    | '/client/servers/$serverId/schedules'
+    | '/client/servers/$serverId/subusers'
+    | '/admin/servers/$serverId/'
+    | '/client/servers/$serverId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  ClientRoute: typeof ClientRouteWithChildren
   LoginRoute: typeof LoginRoute
-  SettingsRoute: typeof SettingsRoute
-  ServersServerIdRoute: typeof ServersServerIdRouteWithChildren
-  ServersIndexRoute: typeof ServersIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -290,6 +488,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/client': {
+      id: '/client'
+      path: '/client'
+      fullPath: '/client'
+      preLoaderRoute: typeof ClientRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -297,18 +502,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/admin/': {
       id: '/admin/'
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/locations': {
+      id: '/admin/locations'
+      path: '/locations'
+      fullPath: '/admin/locations'
+      preLoaderRoute: typeof AdminLocationsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/logs': {
@@ -332,11 +537,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPlansRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/servers': {
-      id: '/admin/servers'
-      path: '/servers'
-      fullPath: '/admin/servers'
-      preLoaderRoute: typeof AdminServersRouteImport
+    '/admin/settings': {
+      id: '/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AdminSettingsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/system': {
+      id: '/admin/system'
+      path: '/system'
+      fullPath: '/admin/system'
+      preLoaderRoute: typeof AdminSystemRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/templates': {
@@ -353,125 +565,276 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/servers/': {
-      id: '/servers/'
-      path: '/servers'
-      fullPath: '/servers/'
-      preLoaderRoute: typeof ServersIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/servers/$serverId': {
-      id: '/servers/$serverId'
-      path: '/servers/$serverId'
-      fullPath: '/servers/$serverId'
-      preLoaderRoute: typeof ServersServerIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/servers/$serverId/': {
-      id: '/servers/$serverId/'
+    '/client/': {
+      id: '/client/'
       path: '/'
-      fullPath: '/servers/$serverId/'
-      preLoaderRoute: typeof ServersServerIdIndexRouteImport
-      parentRoute: typeof ServersServerIdRoute
+      fullPath: '/client/'
+      preLoaderRoute: typeof ClientIndexRouteImport
+      parentRoute: typeof ClientRoute
     }
-    '/servers/$serverId/activity': {
-      id: '/servers/$serverId/activity'
+    '/client/billing': {
+      id: '/client/billing'
+      path: '/billing'
+      fullPath: '/client/billing'
+      preLoaderRoute: typeof ClientBillingRouteImport
+      parentRoute: typeof ClientRoute
+    }
+    '/client/plan': {
+      id: '/client/plan'
+      path: '/plan'
+      fullPath: '/client/plan'
+      preLoaderRoute: typeof ClientPlanRouteImport
+      parentRoute: typeof ClientRoute
+    }
+    '/client/settings': {
+      id: '/client/settings'
+      path: '/settings'
+      fullPath: '/client/settings'
+      preLoaderRoute: typeof ClientSettingsRouteImport
+      parentRoute: typeof ClientRoute
+    }
+    '/client/support': {
+      id: '/client/support'
+      path: '/support'
+      fullPath: '/client/support'
+      preLoaderRoute: typeof ClientSupportRouteImport
+      parentRoute: typeof ClientRoute
+    }
+    '/admin/servers/': {
+      id: '/admin/servers/'
+      path: '/servers'
+      fullPath: '/admin/servers/'
+      preLoaderRoute: typeof AdminServersIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/servers/$serverId': {
+      id: '/admin/servers/$serverId'
+      path: '/servers/$serverId'
+      fullPath: '/admin/servers/$serverId'
+      preLoaderRoute: typeof AdminServersServerIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/client/servers/': {
+      id: '/client/servers/'
+      path: '/servers'
+      fullPath: '/client/servers/'
+      preLoaderRoute: typeof ClientServersIndexRouteImport
+      parentRoute: typeof ClientRoute
+    }
+    '/client/servers/$serverId': {
+      id: '/client/servers/$serverId'
+      path: '/servers/$serverId'
+      fullPath: '/client/servers/$serverId'
+      preLoaderRoute: typeof ClientServersServerIdRouteImport
+      parentRoute: typeof ClientRoute
+    }
+    '/admin/servers/$serverId/': {
+      id: '/admin/servers/$serverId/'
+      path: '/'
+      fullPath: '/admin/servers/$serverId/'
+      preLoaderRoute: typeof AdminServersServerIdIndexRouteImport
+      parentRoute: typeof AdminServersServerIdRoute
+    }
+    '/admin/servers/$serverId/activity': {
+      id: '/admin/servers/$serverId/activity'
       path: '/activity'
-      fullPath: '/servers/$serverId/activity'
-      preLoaderRoute: typeof ServersServerIdActivityRouteImport
-      parentRoute: typeof ServersServerIdRoute
+      fullPath: '/admin/servers/$serverId/activity'
+      preLoaderRoute: typeof AdminServersServerIdActivityRouteImport
+      parentRoute: typeof AdminServersServerIdRoute
     }
-    '/servers/$serverId/backups': {
-      id: '/servers/$serverId/backups'
+    '/admin/servers/$serverId/backups': {
+      id: '/admin/servers/$serverId/backups'
       path: '/backups'
-      fullPath: '/servers/$serverId/backups'
-      preLoaderRoute: typeof ServersServerIdBackupsRouteImport
-      parentRoute: typeof ServersServerIdRoute
+      fullPath: '/admin/servers/$serverId/backups'
+      preLoaderRoute: typeof AdminServersServerIdBackupsRouteImport
+      parentRoute: typeof AdminServersServerIdRoute
     }
-    '/servers/$serverId/databases': {
-      id: '/servers/$serverId/databases'
+    '/admin/servers/$serverId/databases': {
+      id: '/admin/servers/$serverId/databases'
       path: '/databases'
-      fullPath: '/servers/$serverId/databases'
-      preLoaderRoute: typeof ServersServerIdDatabasesRouteImport
-      parentRoute: typeof ServersServerIdRoute
+      fullPath: '/admin/servers/$serverId/databases'
+      preLoaderRoute: typeof AdminServersServerIdDatabasesRouteImport
+      parentRoute: typeof AdminServersServerIdRoute
     }
-    '/servers/$serverId/files': {
-      id: '/servers/$serverId/files'
+    '/admin/servers/$serverId/files': {
+      id: '/admin/servers/$serverId/files'
       path: '/files'
-      fullPath: '/servers/$serverId/files'
-      preLoaderRoute: typeof ServersServerIdFilesRouteImport
-      parentRoute: typeof ServersServerIdRoute
+      fullPath: '/admin/servers/$serverId/files'
+      preLoaderRoute: typeof AdminServersServerIdFilesRouteImport
+      parentRoute: typeof AdminServersServerIdRoute
     }
-    '/servers/$serverId/schedules': {
-      id: '/servers/$serverId/schedules'
+    '/admin/servers/$serverId/schedules': {
+      id: '/admin/servers/$serverId/schedules'
       path: '/schedules'
-      fullPath: '/servers/$serverId/schedules'
-      preLoaderRoute: typeof ServersServerIdSchedulesRouteImport
-      parentRoute: typeof ServersServerIdRoute
+      fullPath: '/admin/servers/$serverId/schedules'
+      preLoaderRoute: typeof AdminServersServerIdSchedulesRouteImport
+      parentRoute: typeof AdminServersServerIdRoute
     }
-    '/servers/$serverId/subusers': {
-      id: '/servers/$serverId/subusers'
+    '/admin/servers/$serverId/subusers': {
+      id: '/admin/servers/$serverId/subusers'
       path: '/subusers'
-      fullPath: '/servers/$serverId/subusers'
-      preLoaderRoute: typeof ServersServerIdSubusersRouteImport
-      parentRoute: typeof ServersServerIdRoute
+      fullPath: '/admin/servers/$serverId/subusers'
+      preLoaderRoute: typeof AdminServersServerIdSubusersRouteImport
+      parentRoute: typeof AdminServersServerIdRoute
+    }
+    '/client/servers/$serverId/': {
+      id: '/client/servers/$serverId/'
+      path: '/'
+      fullPath: '/client/servers/$serverId/'
+      preLoaderRoute: typeof ClientServersServerIdIndexRouteImport
+      parentRoute: typeof ClientServersServerIdRoute
+    }
+    '/client/servers/$serverId/activity': {
+      id: '/client/servers/$serverId/activity'
+      path: '/activity'
+      fullPath: '/client/servers/$serverId/activity'
+      preLoaderRoute: typeof ClientServersServerIdActivityRouteImport
+      parentRoute: typeof ClientServersServerIdRoute
+    }
+    '/client/servers/$serverId/backups': {
+      id: '/client/servers/$serverId/backups'
+      path: '/backups'
+      fullPath: '/client/servers/$serverId/backups'
+      preLoaderRoute: typeof ClientServersServerIdBackupsRouteImport
+      parentRoute: typeof ClientServersServerIdRoute
+    }
+    '/client/servers/$serverId/databases': {
+      id: '/client/servers/$serverId/databases'
+      path: '/databases'
+      fullPath: '/client/servers/$serverId/databases'
+      preLoaderRoute: typeof ClientServersServerIdDatabasesRouteImport
+      parentRoute: typeof ClientServersServerIdRoute
+    }
+    '/client/servers/$serverId/files': {
+      id: '/client/servers/$serverId/files'
+      path: '/files'
+      fullPath: '/client/servers/$serverId/files'
+      preLoaderRoute: typeof ClientServersServerIdFilesRouteImport
+      parentRoute: typeof ClientServersServerIdRoute
+    }
+    '/client/servers/$serverId/schedules': {
+      id: '/client/servers/$serverId/schedules'
+      path: '/schedules'
+      fullPath: '/client/servers/$serverId/schedules'
+      preLoaderRoute: typeof ClientServersServerIdSchedulesRouteImport
+      parentRoute: typeof ClientServersServerIdRoute
+    }
+    '/client/servers/$serverId/subusers': {
+      id: '/client/servers/$serverId/subusers'
+      path: '/subusers'
+      fullPath: '/client/servers/$serverId/subusers'
+      preLoaderRoute: typeof ClientServersServerIdSubusersRouteImport
+      parentRoute: typeof ClientServersServerIdRoute
     }
   }
 }
 
+interface AdminServersServerIdRouteChildren {
+  AdminServersServerIdActivityRoute: typeof AdminServersServerIdActivityRoute
+  AdminServersServerIdBackupsRoute: typeof AdminServersServerIdBackupsRoute
+  AdminServersServerIdDatabasesRoute: typeof AdminServersServerIdDatabasesRoute
+  AdminServersServerIdFilesRoute: typeof AdminServersServerIdFilesRoute
+  AdminServersServerIdSchedulesRoute: typeof AdminServersServerIdSchedulesRoute
+  AdminServersServerIdSubusersRoute: typeof AdminServersServerIdSubusersRoute
+  AdminServersServerIdIndexRoute: typeof AdminServersServerIdIndexRoute
+}
+
+const AdminServersServerIdRouteChildren: AdminServersServerIdRouteChildren = {
+  AdminServersServerIdActivityRoute: AdminServersServerIdActivityRoute,
+  AdminServersServerIdBackupsRoute: AdminServersServerIdBackupsRoute,
+  AdminServersServerIdDatabasesRoute: AdminServersServerIdDatabasesRoute,
+  AdminServersServerIdFilesRoute: AdminServersServerIdFilesRoute,
+  AdminServersServerIdSchedulesRoute: AdminServersServerIdSchedulesRoute,
+  AdminServersServerIdSubusersRoute: AdminServersServerIdSubusersRoute,
+  AdminServersServerIdIndexRoute: AdminServersServerIdIndexRoute,
+}
+
+const AdminServersServerIdRouteWithChildren =
+  AdminServersServerIdRoute._addFileChildren(AdminServersServerIdRouteChildren)
+
 interface AdminRouteChildren {
+  AdminLocationsRoute: typeof AdminLocationsRoute
   AdminLogsRoute: typeof AdminLogsRoute
   AdminNodesRoute: typeof AdminNodesRoute
   AdminPlansRoute: typeof AdminPlansRoute
-  AdminServersRoute: typeof AdminServersRoute
+  AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminSystemRoute: typeof AdminSystemRoute
   AdminTemplatesRoute: typeof AdminTemplatesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminServersServerIdRoute: typeof AdminServersServerIdRouteWithChildren
+  AdminServersIndexRoute: typeof AdminServersIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminLocationsRoute: AdminLocationsRoute,
   AdminLogsRoute: AdminLogsRoute,
   AdminNodesRoute: AdminNodesRoute,
   AdminPlansRoute: AdminPlansRoute,
-  AdminServersRoute: AdminServersRoute,
+  AdminSettingsRoute: AdminSettingsRoute,
+  AdminSystemRoute: AdminSystemRoute,
   AdminTemplatesRoute: AdminTemplatesRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminServersServerIdRoute: AdminServersServerIdRouteWithChildren,
+  AdminServersIndexRoute: AdminServersIndexRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
-interface ServersServerIdRouteChildren {
-  ServersServerIdActivityRoute: typeof ServersServerIdActivityRoute
-  ServersServerIdBackupsRoute: typeof ServersServerIdBackupsRoute
-  ServersServerIdDatabasesRoute: typeof ServersServerIdDatabasesRoute
-  ServersServerIdFilesRoute: typeof ServersServerIdFilesRoute
-  ServersServerIdSchedulesRoute: typeof ServersServerIdSchedulesRoute
-  ServersServerIdSubusersRoute: typeof ServersServerIdSubusersRoute
-  ServersServerIdIndexRoute: typeof ServersServerIdIndexRoute
+interface ClientServersServerIdRouteChildren {
+  ClientServersServerIdActivityRoute: typeof ClientServersServerIdActivityRoute
+  ClientServersServerIdBackupsRoute: typeof ClientServersServerIdBackupsRoute
+  ClientServersServerIdDatabasesRoute: typeof ClientServersServerIdDatabasesRoute
+  ClientServersServerIdFilesRoute: typeof ClientServersServerIdFilesRoute
+  ClientServersServerIdSchedulesRoute: typeof ClientServersServerIdSchedulesRoute
+  ClientServersServerIdSubusersRoute: typeof ClientServersServerIdSubusersRoute
+  ClientServersServerIdIndexRoute: typeof ClientServersServerIdIndexRoute
 }
 
-const ServersServerIdRouteChildren: ServersServerIdRouteChildren = {
-  ServersServerIdActivityRoute: ServersServerIdActivityRoute,
-  ServersServerIdBackupsRoute: ServersServerIdBackupsRoute,
-  ServersServerIdDatabasesRoute: ServersServerIdDatabasesRoute,
-  ServersServerIdFilesRoute: ServersServerIdFilesRoute,
-  ServersServerIdSchedulesRoute: ServersServerIdSchedulesRoute,
-  ServersServerIdSubusersRoute: ServersServerIdSubusersRoute,
-  ServersServerIdIndexRoute: ServersServerIdIndexRoute,
+const ClientServersServerIdRouteChildren: ClientServersServerIdRouteChildren = {
+  ClientServersServerIdActivityRoute: ClientServersServerIdActivityRoute,
+  ClientServersServerIdBackupsRoute: ClientServersServerIdBackupsRoute,
+  ClientServersServerIdDatabasesRoute: ClientServersServerIdDatabasesRoute,
+  ClientServersServerIdFilesRoute: ClientServersServerIdFilesRoute,
+  ClientServersServerIdSchedulesRoute: ClientServersServerIdSchedulesRoute,
+  ClientServersServerIdSubusersRoute: ClientServersServerIdSubusersRoute,
+  ClientServersServerIdIndexRoute: ClientServersServerIdIndexRoute,
 }
 
-const ServersServerIdRouteWithChildren = ServersServerIdRoute._addFileChildren(
-  ServersServerIdRouteChildren,
-)
+const ClientServersServerIdRouteWithChildren =
+  ClientServersServerIdRoute._addFileChildren(
+    ClientServersServerIdRouteChildren,
+  )
+
+interface ClientRouteChildren {
+  ClientBillingRoute: typeof ClientBillingRoute
+  ClientPlanRoute: typeof ClientPlanRoute
+  ClientSettingsRoute: typeof ClientSettingsRoute
+  ClientSupportRoute: typeof ClientSupportRoute
+  ClientIndexRoute: typeof ClientIndexRoute
+  ClientServersServerIdRoute: typeof ClientServersServerIdRouteWithChildren
+  ClientServersIndexRoute: typeof ClientServersIndexRoute
+}
+
+const ClientRouteChildren: ClientRouteChildren = {
+  ClientBillingRoute: ClientBillingRoute,
+  ClientPlanRoute: ClientPlanRoute,
+  ClientSettingsRoute: ClientSettingsRoute,
+  ClientSupportRoute: ClientSupportRoute,
+  ClientIndexRoute: ClientIndexRoute,
+  ClientServersServerIdRoute: ClientServersServerIdRouteWithChildren,
+  ClientServersIndexRoute: ClientServersIndexRoute,
+}
+
+const ClientRouteWithChildren =
+  ClientRoute._addFileChildren(ClientRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  ClientRoute: ClientRouteWithChildren,
   LoginRoute: LoginRoute,
-  SettingsRoute: SettingsRoute,
-  ServersServerIdRoute: ServersServerIdRouteWithChildren,
-  ServersIndexRoute: ServersIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

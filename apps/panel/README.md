@@ -3,6 +3,109 @@
 Vite + React + TS. See [../../docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) section 5
 for the full design.
 
+## Status: Admin/Client separation (multi-tenant platform split)
+
+Goal: evolve from one shared authenticated area into two genuinely
+separate environments — `/admin` (operator, sees everything) and
+`/client` (customer, sees only their own) — with real backend isolation,
+not just hidden UI. The investigation that preceded this work found the
+isolation itself already correct: `ServerAccessService.resolve()` plus
+Postgres RLS (`can_access_server()`) already returned an identical 404 for
+"doesn't exist" and "not yours," and `AuthenticatedUser.isAdmin` was
+already re-derived from the database on every request, never trusted from
+the JWT. The actual gaps were narrower than the request implied:
+
+- **`ServerAccessService.resolve()` had no admin path.** An admin
+  literally could not open console/files/backups for a server they didn't
+  own — every client-facing service called `resolve()` with only the
+  caller's own id, and the owner/subuser branches were the only ones that
+  existed. Fixed by adding a third branch, gated on `isAdmin` (never a
+  route param — always the guard-derived boolean), that fetches under
+  `withRLS({ isAdmin: true })` and grants `can: () => true` unconditionally
+  (suspension gating deliberately doesn't apply to admin — inspecting and
+  reviving a suspended server is the operator's job). Threaded through
+  `files`, `backups`, `schedules`, `databases`, `subusers`, `activity`,
+  and `client-servers` — every `withRLS({ userId, isAdmin: false })`
+  internal to those six services became `{ userId: actor.id, isAdmin:
+  actor.isAdmin }`, so a resolved admin session doesn't get silently
+  RLS-filtered back down to zero rows one call later. `subusers.service.ts`
+  additionally needed its three `role !== 'owner'` checks widened to admit
+  `'admin'`, since subuser management was intentionally owner-only and an
+  admin's resolved `role` is `'admin'`, not `'owner'`.
+- **No admin CRUD for users at all.** `UsersService` was read-only by a
+  prior milestone's deliberate scope cut — no create, no edit, no
+  block/unblock existed anywhere, backend or frontend, despite being
+  explicitly requested. Added `POST /api/admin/users`,
+  `PATCH /api/admin/users/:id`, `POST /api/admin/users/:id/{block,unblock}`
+  — blocking takes effect on the very next request with no token
+  invalidation needed, since `JwtAuthGuard` already re-checks `isActive`
+  fresh from the database every time.
+- **No admin server power control, no admin server detail page.** Solved
+  together: rather than building a parallel admin-only files/backups/power
+  API surface, the SAME `/api/client/servers/:id/*` routes now serve an
+  admin caller too (via the `resolve()` bypass above) — the admin
+  drill-down page (`/admin/servers/$serverId/*`) reuses the exact same
+  `ConsolePage`/`FileManager`/`BackupsPage`/etc. components the customer
+  area uses, with an owner-context banner ("Cliente: … · Plano: … ·
+  Node: …") prepended.
+
+Two backend `include` additions, no migration: `ServersService.list/get`
+now selects `owner: { id, username, email }`;
+`ServerAccessService.listAccessible` now selects `template` and
+`allocations` so the customer's server cards can show game/IP:port instead
+of just node name and memory.
+
+Frontend: `nav.config.ts`'s single `NAV_SECTIONS` (filtered by an
+`adminOnly` flag) became two real arrays, `ADMIN_NAV_SECTIONS` and
+`CLIENT_NAV_SECTIONS` — `AppShell` takes an `area: 'admin' | 'client'`
+prop and resolves sections/panel-label/settings-target from it, rather
+than one sidebar hiding half its own items. Post-login routing reads
+`globalRole` directly (`!== 'user'` → `/admin`, else `/client`) — no
+manual picker. `/` became a permanent `beforeLoad`-only dispatcher rather
+than a page, so old bookmarks keep working. New `/client/*` route tree
+(dashboard, servers list, the full 7-tab per-server layout, settings,
+plus honest `Plano`/`Faturamento`/`Suporte` pages — the latter two are
+real "em breve" placeholders, not fake data, since no billing or
+ticketing system exists in this codebase). A brand new `/admin/system`
+page surfaces two backend modules that had zero UI before this: JWKS
+signing-key rotation and log-partition maintenance, plus `/readyz`
+(already public, already existed) for a Postgres/Redis health strip.
+
+**One real routing bug found live, same class already documented in this
+file for `servers.$serverId.tsx`:** `admin.servers.tsx` (the flat server
+list, no `<Outlet/>`) became an *implicit layout* the moment
+`admin.servers.$serverId.tsx` was added as a sibling — TanStack Router's
+flat-file convention treats a bare `admin.servers.tsx` as the parent of
+anything nested under that path once such a file exists. The URL updated
+correctly on navigation, but the list kept rendering with nowhere for the
+child route to go. Fixed the same way the original bug was fixed:
+renamed to `admin.servers.index.tsx`, an explicit index leaf that can't
+accidentally become a layout. Caught by clicking into a real server in
+the actual browser, not by inspection — the failure mode (URL right,
+content wrong) doesn't show up in `tsc` or in a route-tree diff.
+
+**Run for real, full stack:** created two live client accounts
+(`cliente-teste`, `cliente-b`) via the new admin UI, one server each on
+`demo-node-1`, and ran the isolation battery directly against the running
+API: client A got a real 404 on every one of B's resources (detail,
+console-token mint, files, backups, power, schedules, subusers,
+databases, activity) and a real 403 on every `/api/admin/*` route; the
+admin session got a real 200 on all of B's DB-backed resources through
+the *same* endpoints client A was just denied on. Blocking `cliente-teste`
+through the real UI, then attempting to log in as them via `curl`,
+correctly returned 401 immediately — confirmed the block takes effect
+without any session/token cleanup step. Logged in as each role through
+the real browser: admin lands on `/admin` with the "ADMIN PANEL" label,
+client lands on `/client` with "CLIENT PANEL" and sees only their own
+server (template, IP:port, node, memory — nothing of B's). The admin
+drill-down for that same server showed the correct owner banner and the
+real console/power controls, reusing the identical component the
+customer's own console page uses. `tsc` + oxlint clean on the panel,
+`tsc` clean on the API, 44 unit tests + all 98 e2e tests green
+(including `rls.e2e-spec.ts` and `client-servers.e2e-spec.ts`, both
+exercising exactly the cross-tenant paths this milestone touched) after
+every change, not just at the end.
+
 ## Status: M14 — Billing hooks (final roadmap milestone; no new panel bugs)
 
 Milestone DoD (architecture doc roadmap): **external payment event

@@ -13,13 +13,15 @@ export interface ServerSummary {
   memoryMb: number;
   diskMb: number;
   cpuLimitPercent: number;
+  createdAt: string;
   node: { id: string; name: string };
   plan: { id: string; name: string } | null;
+  template: { id: string; name: string } | null;
+  allocations: { ip: string; port: number; isPrimary: boolean }[];
 }
 
 export interface ServerDetail extends ServerSummary {
   node: { id: string; name: string; fqdn: string; scheme: string; daemonPort: number };
-  allocations: { ip: string; port: number; isPrimary: boolean }[];
 }
 
 export interface ConsoleTokenResponse {
@@ -249,6 +251,24 @@ export interface AdminServerSummary {
   status: string;
   node: { id: string; name: string };
   plan: { id: string; name: string } | null;
+  owner: { id: string; username: string; email: string } | null;
+}
+
+export interface AdminServerDetail {
+  id: string;
+  shortId: string;
+  name: string;
+  status: string;
+  powerState: string;
+  memoryMb: number;
+  diskMb: number;
+  cpuLimitPercent: number;
+  createdAt: string;
+  node: { id: string; name: string; fqdn: string };
+  plan: AdminPlan | null;
+  template: { id: string; name: string; author: string } | null;
+  allocations: { ip: string; port: number; isPrimary: boolean }[];
+  owner: { id: string; username: string; email: string } | null;
 }
 
 export interface ServerTransfer {
@@ -297,4 +317,23 @@ export interface AdminAuditLog {
   targetId: string | null;
   metadata: Record<string, unknown>;
   actor: { id: string; username: string; email: string } | null;
+}
+
+export interface SigningKey {
+  kid: string;
+  publicKey: string;
+  state: string;
+}
+
+export interface PartitionInfo {
+  table: string;
+  range: string | null;
+}
+
+export interface ReadyzResponse {
+  status: string;
+  dependencies: {
+    database: { ok: boolean; error?: string };
+    redis: { ok: boolean; error?: string };
+  };
 }

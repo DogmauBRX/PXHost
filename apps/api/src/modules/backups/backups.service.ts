@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { ServerAccessService } from '../authorization/server-access.service';
+import type { AccessActor } from '../authorization/server-access.service';
 import { AgentClient } from '../nodes/agent-client.service';
 import { CapabilityTokenService } from '../../core/capability-token/capability-token.service';
 import { AuditService } from '../audit/audit.service';
@@ -22,14 +23,14 @@ export class BackupsService {
     private readonly activity: ActivityService,
   ) {}
 
-  async list(userId: string, serverId: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async list(actor: AccessActor, serverId: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('backup.read')) throw new ForbiddenException('Missing permission: backup.read');
     return this.agent.listBackups(server.nodeId, server.id);
   }
 
-  async create(userId: string, serverId: string, ignorePatterns: string[] | undefined) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async create(actor: AccessActor, serverId: string, ignorePatterns: string[] | undefined) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('backup.create')) throw new ForbiddenException('Missing permission: backup.create');
     // Found while building M9's equivalent database quota: server.maxBackups
     // (snapshotted from the plan at creation time, architecture doc 2.6)
@@ -44,25 +45,25 @@ export class BackupsService {
       action: 'server.backup.create',
       targetType: 'server',
       targetId: server.id,
-      actorId: userId,
+      actorId: actor.id,
       metadata: { backupId: backup.id, sizeBytes: backup.sizeBytes },
     });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.backup.create', properties: { backupId: backup.id, sizeBytes: backup.sizeBytes } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.backup.create', properties: { backupId: backup.id, sizeBytes: backup.sizeBytes } });
     return backup;
   }
 
-  async delete(userId: string, serverId: string, backupId: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async delete(actor: AccessActor, serverId: string, backupId: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('backup.delete')) throw new ForbiddenException('Missing permission: backup.delete');
     await this.agent.deleteBackup(server.nodeId, server.id, backupId);
     await this.audit.record({
       action: 'server.backup.delete',
       targetType: 'server',
       targetId: server.id,
-      actorId: userId,
+      actorId: actor.id,
       metadata: { backupId },
     });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.backup.delete', properties: { backupId } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.backup.delete', properties: { backupId } });
   }
 
   /**
@@ -72,27 +73,27 @@ export class BackupsService {
    * with the same weight as a delete, not folded silently into a
    * generic "backup op" action.
    */
-  async restore(userId: string, serverId: string, backupId: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async restore(actor: AccessActor, serverId: string, backupId: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('backup.restore')) throw new ForbiddenException('Missing permission: backup.restore');
     await this.agent.restoreBackup(server.nodeId, server.id, backupId);
     await this.audit.record({
       action: 'server.backup.restore',
       targetType: 'server',
       targetId: server.id,
-      actorId: userId,
+      actorId: actor.id,
       metadata: { backupId },
     });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.backup.restore', properties: { backupId } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.backup.restore', properties: { backupId } });
   }
 
-  async mintDownloadLink(userId: string, serverId: string, backupId: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async mintDownloadLink(actor: AccessActor, serverId: string, backupId: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('backup.read')) throw new ForbiddenException('Missing permission: backup.read');
     const token = this.capabilityTokens.mint({
       serverUuid: server.id,
       nodeUuid: server.nodeId,
-      userId,
+      userId: actor.id,
       cap: 'backup.download',
       permissions: [],
       ttlSeconds: DOWNLOAD_TOKEN_TTL_SECONDS,

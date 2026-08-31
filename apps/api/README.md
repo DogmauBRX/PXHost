@@ -4,6 +4,99 @@ NestJS + Fastify + Prisma/PostgreSQL + Redis. See
 [../../docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) section 3 for the
 full design.
 
+## Status: Admin/Client separation (multi-tenant platform split)
+
+Goal: give the panel's new `/admin` vs `/client` split real backend teeth.
+An investigation pass before any code changed confirmed the tenant
+isolation itself was already correct — `ServerAccessService.resolve()`
+plus the `can_access_server()` RLS policy already made "not yours" and
+"doesn't exist" indistinguishable, and `AuthenticatedUser.isAdmin` was
+already re-derived from the database every request, never trusted from
+the JWT. What was missing was narrower: admin had no way to reach a
+server it didn't own, no user CRUD existed at all, and no admin power
+endpoint existed.
+
+- **`ServerAccessService.resolve(userId, serverId, isAdmin = false)`** —
+  new third parameter, defaulted so every pre-existing call site keeps
+  behaving exactly as before. `isAdmin: true` takes an entirely separate
+  path: fetches the server under `withRLS({ userId: null, isAdmin: true })`
+  (the same admin RLS context `ServersService` has always used) and
+  returns `role: 'admin'`, `can: () => true` — no `allowedWhenSuspended`
+  gating, since inspecting/reviving a suspended server is exactly what an
+  operator needs to do. The six services that call `resolve()`
+  (`files`, `backups`, `schedules`, `databases`, `subusers`, `activity`,
+  plus `client-servers`) were all updated to pass the caller's
+  `AuthenticatedUser.isAdmin` through, and every `withRLS` call *internal*
+  to those services that previously hardcoded `isAdmin: false` now uses
+  `actor.isAdmin` too — resolving as admin but then re-querying a child
+  row as a non-admin would silently RLS-filter it back to nothing.
+  `schedule-runner.service.ts` (the cron dispatcher) deliberately builds
+  a synthetic `{ id: ownerId, isAdmin: false }` actor instead — an
+  unattended scheduled task must behave exactly like the owner clicking
+  the same button, never with elevated access.
+- **`subusers.service.ts`**'s three owner-only checks
+  (`role !== 'owner'`) needed widening to `role !== 'owner' && role !==
+  'admin'` — subuser management is intentionally restricted to the owner
+  by a design decision from an earlier milestone, and an admin's resolved
+  `role` from the change above is `'admin'`, not `'owner'`, so it would
+  otherwise have been rejected by that specific check even with the
+  `resolve()` bypass in place.
+- **`activity.service.ts`.list()** had `isAdmin: false` hardcoded directly
+  (its ownership check lives in the controller, not the service — a
+  pre-existing inconsistency versus the other five modules, left as-is
+  rather than refactored under this milestone's scope). Added an
+  `isAdmin` parameter so an admin's activity-feed read actually reaches
+  rows outside their own actor id.
+- **New `UsersService.create/update/setActive`**, backing
+  `POST /api/admin/users`, `PATCH /api/admin/users/:id`, and
+  `POST /api/admin/users/:id/{block,unblock}` — this module was read-only
+  by a deliberate prior-milestone scope cut, and had no create/edit/block
+  path anywhere in the codebase, backend or frontend, despite being an
+  explicit requirement. `create` hashes the password through the existing
+  `PasswordService` (now exported from `AuthModule`) and pre-checks the
+  partial unique indexes on `email`/`username` (`users_email_uq`,
+  `users_username_uq` — both `WHERE deleted_at IS NULL`, not expressible
+  as a Prisma `@unique`) before inserting, matching `LocationsService`'s
+  existing pre-check style rather than catching a raw `P2002`. `setActive`
+  needs no token-invalidation step to take effect: `JwtAuthGuard` already
+  re-checks `isActive` fresh from the database on every request. Every
+  method writes to the append-only `AuditService` under a distinct action
+  name (`admin.user.create/update/block/unblock`) and every returned row
+  goes through the same explicit `SAFE_SELECT` (never `passwordHash`,
+  `totpSecretEnc`, or `recoveryCodesEnc`) the pre-existing `list()` method
+  already established.
+- Two additive `include` changes, no migration: `ServersService.list/get`
+  now selects `owner: { id, username, email }` (the admin server-detail
+  view had no client identity in it at all before this); `ServerAccessService
+  .listAccessible` now selects `template` and `allocations` for the
+  customer-facing server list.
+- **No new admin-only power/files/backups/console-token routes.** Once
+  the `resolve()` bypass existed, the pre-existing
+  `/api/client/servers/:id/*` routes already worked for an admin caller —
+  building a parallel admin surface for the same functionality would have
+  been pure duplication. The panel's admin drill-down UI calls these same
+  routes.
+
+**Run for real, against the live stack (not mocked):** created two real
+client accounts and one real server each via the running API, then
+exercised the isolation boundary directly with `curl` bearer tokens for
+each: client A got a genuine 404 from every one of client B's
+resource routes (`GET .../B`, `POST .../B/console-token`,
+`GET .../B/files`, `.../backups`, `POST .../B/power`, `.../schedules`,
+`.../subusers`, `.../databases`, `.../activity`) and a genuine 403 from
+every `/api/admin/*` route tried with client A's token
+(`/servers`, `/users`, `/nodes`). The admin token got a real 200 from
+every one of B's DB-backed resources through those *same* routes client
+A was just denied on — direct, live confirmation that the bypass reaches
+exactly the intended caller and no further. Created a user via the new
+`POST /api/admin/users`, blocked them via `POST .../block`, then
+attempted a real login with their password via `curl` — 401, immediately,
+no stale session to clean up. Full suite run after every change in this
+milestone, not just at the end: 44 unit tests and all 98 e2e specs green,
+including `rls.e2e-spec.ts` and `client-servers.e2e-spec.ts` — both of
+which exercise exactly the cross-tenant paths this milestone's changes
+touch.
+
 ## Status: M14 — Billing hooks (final roadmap milestone; four real bugs found, all fixed)
 
 Milestone DoD (architecture doc roadmap): **external payment event

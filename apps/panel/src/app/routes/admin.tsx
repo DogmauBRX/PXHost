@@ -14,7 +14,7 @@ export const Route = createFileRoute('/admin')({
 
 function AdminLayout() {
   return (
-    <AppShell>
+    <AppShell area="admin">
       <Outlet />
     </AppShell>
   );

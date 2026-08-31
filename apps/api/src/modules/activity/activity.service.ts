@@ -38,8 +38,8 @@ export class ActivityService {
     );
   }
 
-  async list(userId: string, serverId: string, limit = 50) {
-    return this.prisma.withRLS({ userId, isAdmin: false }, (tx) =>
+  async list(userId: string, serverId: string, isAdmin = false, limit = 50) {
+    return this.prisma.withRLS({ userId, isAdmin }, (tx) =>
       tx.activityLog.findMany({
         where: { serverId },
         take: Math.min(limit, 200),

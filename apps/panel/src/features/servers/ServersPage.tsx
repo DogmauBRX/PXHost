@@ -4,7 +4,7 @@ import { ServerList } from './ServerList';
 export function ServersPage() {
   return (
     <>
-      <PageHeader title="Servidores" subtitle="Todos os servidores aos quais você tem acesso." />
+      <PageHeader title="Meus Servidores" subtitle="Todos os servidores aos quais você tem acesso." />
       <ServerList />
     </>
   );

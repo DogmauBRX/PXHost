@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ServerAccessService } from '../authorization/server-access.service';
+import type { AccessActor } from '../authorization/server-access.service';
 import { AgentClient } from '../nodes/agent-client.service';
 import { CapabilityTokenService } from '../../core/capability-token/capability-token.service';
 import { AuditService } from '../audit/audit.service';
@@ -37,13 +38,13 @@ export class ClientServersService {
     return this.access.listAccessible(userId);
   }
 
-  async get(userId: string, serverId: string) {
-    const { server } = await this.access.resolve(userId, serverId);
+  async get(actor: AccessActor, serverId: string) {
+    const { server } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     return server;
   }
 
-  async power(userId: string, serverId: string, action: 'start' | 'stop' | 'restart' | 'kill') {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async power(actor: AccessActor, serverId: string, action: 'start' | 'stop' | 'restart' | 'kill') {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can(POWER_PERMISSION[action])) throw new ForbiddenException(`Missing permission: ${POWER_PERMISSION[action]}`);
 
     const result = await this.agent.power(server.nodeId, server.id, action);
@@ -51,10 +52,10 @@ export class ClientServersService {
       action: `server.power.${action}`,
       targetType: 'server',
       targetId: server.id,
-      actorId: userId,
-      metadata: { previous: result.previous, state: result.state },
+      actorId: actor.id,
+      metadata: { previous: result.previous, state: result.state, asAdmin: actor.isAdmin },
     });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: `server.power.${action}`, properties: { previous: result.previous, state: result.state } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: `server.power.${action}`, properties: { previous: result.previous, state: result.state } });
     return result;
   }
 
@@ -74,14 +75,18 @@ export class ClientServersService {
    * is in that group, so a suspended server's console token can't even
    * open the socket; the agent's own `Suspended()` check
    * (ws.go) is the second, independent enforcement of the same rule.
+   *
+   * An admin's token is unaffected by suspension (`can()` returns true
+   * unconditionally for role 'admin') — inspecting/reviving a suspended
+   * server's console is an operator action, not a customer one.
    */
-  async mintConsoleToken(userId: string, serverId: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async mintConsoleToken(actor: AccessActor, serverId: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     const permissions = WS_PERMISSION_KEYS.filter((key) => can(key));
     const token = this.capabilityTokens.mint({
       serverUuid: server.id,
       nodeUuid: server.nodeId,
-      userId,
+      userId: actor.id,
       cap: 'ws',
       permissions,
       ttlSeconds: CONSOLE_TOKEN_TTL_SECONDS,

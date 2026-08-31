@@ -35,7 +35,9 @@ export function LoginForm() {
         username: res.user.username,
         isAdmin: res.user.globalRole !== 'user',
       });
-      void navigate({ to: '/' });
+      // Determined by the account, never chosen manually — a role picker
+      // would just be an extra click to reach a foregone conclusion.
+      void navigate({ to: res.user.globalRole !== 'user' ? '/admin' : '/client' });
     } catch (err) {
       setServerError(err instanceof ApiError ? err.message : 'Não foi possível entrar. Tente novamente.');
     }

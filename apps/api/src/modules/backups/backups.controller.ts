@@ -10,29 +10,29 @@ export class BackupsController {
 
   @Get()
   list(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string) {
-    return this.backups.list(user.id, serverId);
+    return this.backups.list(user, serverId);
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Body() dto: CreateBackupDto) {
-    return this.backups.create(user.id, serverId, dto.ignorePatterns);
+    return this.backups.create(user, serverId, dto.ignorePatterns);
   }
 
   @Delete(':backupId')
   @HttpCode(HttpStatus.NO_CONTENT)
   delete(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Param('backupId') backupId: string) {
-    return this.backups.delete(user.id, serverId, backupId);
+    return this.backups.delete(user, serverId, backupId);
   }
 
   @Post(':backupId/restore')
   @HttpCode(HttpStatus.NO_CONTENT)
   restore(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Param('backupId') backupId: string) {
-    return this.backups.restore(user.id, serverId, backupId);
+    return this.backups.restore(user, serverId, backupId);
   }
 
   @Post(':backupId/download-link')
   downloadLink(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Param('backupId') backupId: string) {
-    return this.backups.mintDownloadLink(user.id, serverId, backupId);
+    return this.backups.mintDownloadLink(user, serverId, backupId);
   }
 }

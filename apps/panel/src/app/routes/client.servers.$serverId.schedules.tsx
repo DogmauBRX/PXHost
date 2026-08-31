@@ -1,11 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { SchedulesPage } from '@/features/schedules/SchedulesPage';
 
-export const Route = createFileRoute('/servers/$serverId/schedules')({
-  component: ServerSchedulesRoute,
+export const Route = createFileRoute('/client/servers/$serverId/schedules')({
+  component: ClientServerSchedulesRoute,
 });
 
-function ServerSchedulesRoute() {
+function ClientServerSchedulesRoute() {
   const { serverId } = Route.useParams();
   return <SchedulesPage serverId={serverId} />;
 }

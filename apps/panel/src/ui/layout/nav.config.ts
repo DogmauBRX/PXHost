@@ -1,13 +1,18 @@
 import {
+  CalendarClock,
+  CreditCard,
   HardDrive,
-  Layers,
   LayoutDashboard,
+  Layers,
+  LifeBuoy,
   MapPin,
   Package,
   ScrollText,
   Server,
   ServerCog,
   Settings,
+  ShieldCheck,
+  User,
   Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -17,7 +22,6 @@ export interface NavItem {
   label: string;
   to: LinkProps['to'];
   icon: LucideIcon;
-  adminOnly?: boolean;
   /** Match the path exactly rather than fuzzily — needed for index routes. */
   exact?: boolean;
 }
@@ -29,47 +33,67 @@ export interface NavSection {
 }
 
 /**
+ * Two genuinely separate trees, not one array filtered by role. Admin and
+ * client are different products wearing the same visual system — sharing a
+ * data structure between them just to delete half of it at render time was
+ * the old design's actual bug (a client and an admin landed on the exact
+ * same `/` before this rework), not a simplification worth keeping.
+ *
  * `as const` matters: `<Link to>` is typed against the generated route tree,
- * so a widened `string` would not compile. The existing TABS arrays use the
- * same trick for the same reason.
+ * so a widened `string` would not compile.
  */
-export const NAV_SECTIONS: readonly NavSection[] = [
+export const ADMIN_NAV_SECTIONS: readonly NavSection[] = [
   {
     id: 'principal',
     label: 'Principal',
     items: [
-      { label: 'Dashboard', to: '/', icon: LayoutDashboard, exact: true },
-      { label: 'Servidores', to: '/servers', icon: Server },
-      { label: 'Locations', to: '/admin', icon: MapPin, adminOnly: true, exact: true },
-      { label: 'Nodes', to: '/admin/nodes', icon: HardDrive, adminOnly: true },
+      { label: 'Dashboard', to: '/admin', icon: LayoutDashboard, exact: true },
+      { label: 'Servidores', to: '/admin/servers', icon: ServerCog },
+      { label: 'Nodes', to: '/admin/nodes', icon: HardDrive },
+      { label: 'Locations', to: '/admin/locations', icon: MapPin },
     ],
   },
   {
     id: 'gerenciamento',
     label: 'Gerenciamento',
     items: [
-      { label: 'Templates', to: '/admin/templates', icon: Package, adminOnly: true },
-      { label: 'Plans', to: '/admin/plans', icon: Layers, adminOnly: true },
-      // Distinct from "Servidores" above: that one is the customer's own
-      // list, this is the admin-wide view with transfer/suspend controls.
-      { label: 'Todos os servidores', to: '/admin/servers', icon: ServerCog, adminOnly: true },
-      { label: 'Clientes', to: '/admin/users', icon: Users, adminOnly: true },
+      { label: 'Clientes', to: '/admin/users', icon: Users },
+      { label: 'Templates', to: '/admin/templates', icon: Package },
+      { label: 'Plans', to: '/admin/plans', icon: Layers },
     ],
   },
   {
     id: 'sistema',
     label: 'Sistema',
     items: [
-      { label: 'Configurações', to: '/settings', icon: Settings },
-      { label: 'Logs', to: '/admin/logs', icon: ScrollText, adminOnly: true },
+      { label: 'Configurações', to: '/admin/settings', icon: Settings },
+      { label: 'Logs', to: '/admin/logs', icon: ScrollText },
+      { label: 'Sistema', to: '/admin/system', icon: ShieldCheck },
     ],
   },
 ];
 
-/** Drops admin-only entries (and any section left empty) for non-admins. */
-export function visibleSections(isAdmin: boolean): NavSection[] {
-  return NAV_SECTIONS.map((section) => ({
-    ...section,
-    items: section.items.filter((item) => !item.adminOnly || isAdmin),
-  })).filter((section) => section.items.length > 0);
-}
+export const CLIENT_NAV_SECTIONS: readonly NavSection[] = [
+  {
+    id: 'principal',
+    label: 'Principal',
+    items: [
+      { label: 'Dashboard', to: '/client', icon: LayoutDashboard, exact: true },
+      { label: 'Meus Servidores', to: '/client/servers', icon: Server },
+    ],
+  },
+  {
+    id: 'conta',
+    label: 'Conta',
+    items: [
+      { label: 'Minha Conta', to: '/client/settings', icon: User },
+      { label: 'Plano', to: '/client/plan', icon: CalendarClock },
+      { label: 'Faturamento', to: '/client/billing', icon: CreditCard },
+    ],
+  },
+  {
+    id: 'suporte',
+    label: 'Suporte',
+    items: [{ label: 'Suporte', to: '/client/support', icon: LifeBuoy }],
+  },
+];

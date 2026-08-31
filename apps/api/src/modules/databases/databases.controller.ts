@@ -10,17 +10,17 @@ export class DatabasesController {
 
   @Get()
   list(@Param('serverId') serverId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.databases.list(user.id, serverId);
+    return this.databases.list(user, serverId);
   }
 
   @Post()
   create(@Param('serverId') serverId: string, @Body() dto: CreateDatabaseDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.databases.create(user.id, serverId, dto);
+    return this.databases.create(user, serverId, dto);
   }
 
   @Delete(':databaseId')
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('serverId') serverId: string, @Param('databaseId') databaseId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.databases.delete(user.id, serverId, databaseId);
+    return this.databases.delete(user, serverId, databaseId);
   }
 }

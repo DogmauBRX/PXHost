@@ -1,18 +1,22 @@
-import { apiFetch } from '@/shared/api/client';
+import { apiFetch, API_URL } from '@/shared/api/client';
 import type {
   Allocation,
   AdminNode,
   AdminPlan,
   AdminAuditLog,
+  AdminServerDetail,
   AdminServerSummary,
   AdminTemplate,
   AdminUserSummary,
   BootstrapTokenResponse,
   Location,
   Paginated,
+  PartitionInfo,
   PlanApplyResult,
   PlanDriftReport,
+  ReadyzResponse,
   ServerTransfer,
+  SigningKey,
   TemplateGroup,
 } from '@/shared/api/types';
 
@@ -111,6 +115,7 @@ export const applyPlan = (id: string) => apiFetch<PlanApplyResult>(`/api/admin/p
 // ---- Servers (admin-side create, used to onboard a demo server if needed) ----
 
 export const listAdminServers = (ownerId?: string) => apiFetch<AdminServerSummary[]>(`/api/admin/servers${ownerId ? `?ownerId=${ownerId}` : ''}`);
+export const getAdminServer = (id: string) => apiFetch<AdminServerDetail>(`/api/admin/servers/${id}`);
 export const createAdminServer = (input: { ownerId: string; nodeId: string; templateId: string; planId: string; name: string }) =>
   apiFetch<{ id: string; shortId: string; status: string }>('/api/admin/servers', { method: 'POST', body: JSON.stringify(input) });
 
@@ -142,6 +147,30 @@ export interface ListUsersParams {
 export const listUsers = (params: ListUsersParams = {}) =>
   apiFetch<Paginated<AdminUserSummary>>(`/api/admin/users${qs(params)}`);
 
+export interface CreateUserInput {
+  email: string;
+  username: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
+  globalRole?: string;
+}
+export const createUser = (input: CreateUserInput) =>
+  apiFetch<AdminUserSummary>('/api/admin/users', { method: 'POST', body: JSON.stringify(input) });
+
+export interface UpdateUserInput {
+  email?: string;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  globalRole?: string;
+}
+export const updateUser = (id: string, input: UpdateUserInput) =>
+  apiFetch<AdminUserSummary>(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
+
+export const blockUser = (id: string) => apiFetch<void>(`/api/admin/users/${id}/block`, { method: 'POST' });
+export const unblockUser = (id: string) => apiFetch<void>(`/api/admin/users/${id}/unblock`, { method: 'POST' });
+
 // ---- Audit logs ----
 
 export interface ListAuditLogsParams {
@@ -154,3 +183,19 @@ export interface ListAuditLogsParams {
 }
 export const listAuditLogs = (params: ListAuditLogsParams = {}) =>
   apiFetch<Paginated<AdminAuditLog>>(`/api/admin/audit-logs${qs(params)}`);
+
+// ---- System: signing keys (JWKS) ----
+
+export const listSigningKeys = () => apiFetch<SigningKey[]>('/api/admin/security/signing-keys');
+export const rotateSigningKey = () => apiFetch<{ kid: string }>('/api/admin/security/signing-keys/rotate', { method: 'POST' });
+export const retireSigningKey = (kid: string) =>
+  apiFetch<void>(`/api/admin/security/signing-keys/${kid}/retire`, { method: 'POST' });
+
+// ---- System: log partitions ----
+
+export const listPartitions = () => apiFetch<PartitionInfo[]>('/api/admin/partitions');
+export const maintainPartitions = () => apiFetch<void>('/api/admin/partitions/maintain', { method: 'POST' });
+
+// ---- System: infra health (public endpoint, outside /api) ----
+
+export const getReadyz = () => fetch(`${API_URL}/readyz`).then((r) => r.json() as Promise<ReadyzResponse>);

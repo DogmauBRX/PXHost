@@ -3,6 +3,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { SchedulesService } from './schedules.service';
 import { ClientServersService } from '../servers/client-servers.service';
 import { BackupsService } from '../backups/backups.service';
+import type { AccessActor } from '../authorization/server-access.service';
 import type { TaskAction } from './dto/schedule.dto';
 
 function sleep(ms: number): Promise<void> {
@@ -76,15 +77,20 @@ export class ScheduleRunnerService {
   }
 
   private async runTask(ownerId: string, serverId: string, action: TaskAction, payload: string): Promise<void> {
+    // A schedule fires as its server's OWNER, never as an admin — matches
+    // this file's own doc comment: an unattended run must behave exactly
+    // like the customer clicking the same button, not a privileged path
+    // that could, say, restart a suspended server a real click couldn't.
+    const actor: AccessActor = { id: ownerId, isAdmin: false };
     switch (action) {
       case 'power':
         // payload selects which power verb — only 'restart' is exposed
         // by CreateTaskDto today, but AgentClient.power already supports
         // the other three, so this doesn't need to change when it is.
-        await this.clientServers.power(ownerId, serverId, (payload || 'restart') as 'start' | 'stop' | 'restart' | 'kill');
+        await this.clientServers.power(actor, serverId, (payload || 'restart') as 'start' | 'stop' | 'restart' | 'kill');
         return;
       case 'backup':
-        await this.backups.create(ownerId, serverId, undefined);
+        await this.backups.create(actor, serverId, undefined);
         return;
     }
   }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { History, ServerCog } from 'lucide-react';
 import { initiateTransfer, listAdminServers, listNodes, listTransfers, suspendServer, unsuspendServer } from './admin.api';
 import { ApiError } from '@/shared/api/client';
@@ -123,12 +124,19 @@ export function AdminServersPage() {
                 <CardBody className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="font-medium text-text">{s.name}</p>
+                      <Link
+                        to="/admin/servers/$serverId"
+                        params={{ serverId: s.id }}
+                        className="font-medium text-text hover:text-accent-strong hover:underline"
+                      >
+                        {s.name}
+                      </Link>
                       <StatusBadge status={s.status} />
                     </div>
                     <p className="mt-0.5 font-mono text-xs text-text-faint">
                       {s.shortId} · node: {s.node.name} · {STATUS_LABELS[s.status] ?? s.status}
                     </p>
+                    <p className="text-xs text-text-faint">Cliente: {s.owner ? `${s.owner.username} (${s.owner.email})` : '—'}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="w-44">

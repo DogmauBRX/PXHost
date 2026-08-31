@@ -59,10 +59,26 @@ function fetchOwned(tx: Prisma.TransactionClient, serverId: string) {
   });
 }
 
+/**
+ * The minimum every server-scoped service needs to know about its caller.
+ *
+ * Deliberately narrower than `AuthenticatedUser`: it keeps `sessionId`/`jti`
+ * out of the service layer (which has no use for them), and it lets the
+ * schedule runner build a synthetic system actor for a cron-triggered task —
+ * that runner acts AS THE SERVER OWNER, never as an admin, which a full
+ * `AuthenticatedUser` would have made awkward to express honestly.
+ * `AuthenticatedUser` is structurally assignable to this, so controllers
+ * pass their `@CurrentUser()` straight through.
+ */
+export interface AccessActor {
+  id: string;
+  isAdmin: boolean;
+}
+
 export interface ResolvedAccess {
   server: NonNullable<Awaited<ReturnType<typeof fetchOwned>>>;
-  role: 'owner' | 'subuser';
-  /** true for every permission key when role is 'owner' — ownership is the superset, never itself a stored permission list (architecture doc 2.5). */
+  role: 'owner' | 'subuser' | 'admin';
+  /** true for every permission key when role is 'owner' or 'admin' — ownership is the superset, never itself a stored permission list (architecture doc 2.5). */
   can(permission: string): boolean;
 }
 
@@ -90,7 +106,26 @@ export class ServerAccessService {
     private readonly redis: RedisService,
   ) {}
 
-  async resolve(userId: string, serverId: string): Promise<ResolvedAccess> {
+  /**
+   * `isAdmin` MUST come from `AuthenticatedUser.isAdmin`, which JwtAuthGuard
+   * recomputes from the database on every single request — never from a
+   * route param, body, or JWT claim. It defaults to false so every existing
+   * client-facing call site keeps the exact behaviour it had before admins
+   * could reach these routes at all: the owner/subuser paths below are
+   * untouched, and a client passing nothing still gets RLS-scoped access.
+   */
+  async resolve(userId: string, serverId: string, isAdmin = false): Promise<ResolvedAccess> {
+    if (isAdmin) {
+      // Platform operators reach any server, in the same admin RLS context
+      // ServersService already uses — this bypasses OWNERSHIP, not RLS.
+      // The suspension gate is deliberately not applied: inspecting and
+      // reviving a suspended server is precisely an operator's job, and
+      // `allowedWhenSuspended` exists to constrain customers, not staff.
+      const server = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => fetchOwned(tx, serverId));
+      if (!server) throw new NotFoundException('Server not found');
+      return { server, role: 'admin', can: () => true };
+    }
+
     const server = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) => fetchOwned(tx, serverId));
     if (!server) throw new NotFoundException('Server not found');
 
@@ -123,7 +158,12 @@ export class ServerAccessService {
         // an OR on subusers here would just be a slower, redundant
         // reimplementation of the same check the database already makes.
         orderBy: { createdAt: 'desc' },
-        include: { node: { select: { id: true, name: true } }, plan: { select: { id: true, name: true } } },
+        include: {
+          node: { select: { id: true, name: true } },
+          plan: { select: { id: true, name: true } },
+          template: { select: { id: true, name: true } },
+          allocations: { select: { ip: true, port: true, isPrimary: true } },
+        },
       }),
     );
   }

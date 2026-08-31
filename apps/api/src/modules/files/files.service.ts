@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ServerAccessService } from '../authorization/server-access.service';
+import type { AccessActor } from '../authorization/server-access.service';
 import { AgentClient } from '../nodes/agent-client.service';
 import { CapabilityTokenService } from '../../core/capability-token/capability-token.service';
 import { AuditService } from '../audit/audit.service';
@@ -22,63 +23,63 @@ export class FilesService {
     private readonly activity: ActivityService,
   ) {}
 
-  async list(userId: string, serverId: string, path: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async list(actor: AccessActor, serverId: string, path: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('file.read')) throw new ForbiddenException('Missing permission: file.read');
     return this.agent.listFiles(server.nodeId, server.id, path);
   }
 
-  async read(userId: string, serverId: string, path: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async read(actor: AccessActor, serverId: string, path: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('file.read')) throw new ForbiddenException('Missing permission: file.read');
     return this.agent.readFile(server.nodeId, server.id, path);
   }
 
-  async write(userId: string, serverId: string, path: string, content: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async write(actor: AccessActor, serverId: string, path: string, content: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('file.write')) throw new ForbiddenException('Missing permission: file.write');
     const result = await this.agent.writeFile(server.nodeId, server.id, path, content);
-    await this.audit.record({ action: 'server.file.write', targetType: 'server', targetId: server.id, actorId: userId, metadata: { path } });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.file.write', properties: { path } });
+    await this.audit.record({ action: 'server.file.write', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { path } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.file.write', properties: { path } });
     return result;
   }
 
-  async rename(userId: string, serverId: string, from: string, to: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async rename(actor: AccessActor, serverId: string, from: string, to: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('file.write')) throw new ForbiddenException('Missing permission: file.write');
     await this.agent.renameFile(server.nodeId, server.id, from, to);
-    await this.audit.record({ action: 'server.file.rename', targetType: 'server', targetId: server.id, actorId: userId, metadata: { from, to } });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.file.rename', properties: { from, to } });
+    await this.audit.record({ action: 'server.file.rename', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { from, to } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.file.rename', properties: { from, to } });
   }
 
-  async delete(userId: string, serverId: string, path: string, recursive: boolean) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async delete(actor: AccessActor, serverId: string, path: string, recursive: boolean) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('file.delete')) throw new ForbiddenException('Missing permission: file.delete');
     await this.agent.deleteFile(server.nodeId, server.id, path, recursive);
-    await this.audit.record({ action: 'server.file.delete', targetType: 'server', targetId: server.id, actorId: userId, metadata: { path, recursive } });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.file.delete', properties: { path, recursive } });
+    await this.audit.record({ action: 'server.file.delete', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { path, recursive } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.file.delete', properties: { path, recursive } });
   }
 
-  async mkdir(userId: string, serverId: string, path: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async mkdir(actor: AccessActor, serverId: string, path: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('file.write')) throw new ForbiddenException('Missing permission: file.write');
     await this.agent.mkdir(server.nodeId, server.id, path);
   }
 
-  async chmod(userId: string, serverId: string, path: string, mode: number) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async chmod(actor: AccessActor, serverId: string, path: string, mode: number) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('file.write')) throw new ForbiddenException('Missing permission: file.write');
     await this.agent.chmod(server.nodeId, server.id, path, mode);
   }
 
-  async compress(userId: string, serverId: string, paths: string[], dest: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async compress(actor: AccessActor, serverId: string, paths: string[], dest: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('file.write')) throw new ForbiddenException('Missing permission: file.write');
     await this.agent.compress(server.nodeId, server.id, paths, dest);
   }
 
-  async decompress(userId: string, serverId: string, path: string, dest: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async decompress(actor: AccessActor, serverId: string, path: string, dest: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('file.write')) throw new ForbiddenException('Missing permission: file.write');
     return this.agent.decompress(server.nodeId, server.id, path, dest);
   }
@@ -90,13 +91,13 @@ export class FilesService {
    * this API (architecture doc 3.4/4.4: the panel never proxies large
    * transfers).
    */
-  async mintDownloadLink(userId: string, serverId: string, path: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async mintDownloadLink(actor: AccessActor, serverId: string, path: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('file.read')) throw new ForbiddenException('Missing permission: file.read');
     const token = this.capabilityTokens.mint({
       serverUuid: server.id,
       nodeUuid: server.nodeId,
-      userId,
+      userId: actor.id,
       cap: 'file.download',
       permissions: [],
       ttlSeconds: DOWNLOAD_TOKEN_TTL_SECONDS,
@@ -106,14 +107,14 @@ export class FilesService {
     return { url: `${url}?path=${encodeURIComponent(path)}&token=${token}`, expiresIn: DOWNLOAD_TOKEN_TTL_SECONDS };
   }
 
-  async mintUploadLink(userId: string, serverId: string, path: string, maxBytes?: number) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async mintUploadLink(actor: AccessActor, serverId: string, path: string, maxBytes?: number) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('file.write')) throw new ForbiddenException('Missing permission: file.write');
     const cappedMaxBytes = Math.min(maxBytes ?? DEFAULT_UPLOAD_MAX_BYTES, DEFAULT_UPLOAD_MAX_BYTES);
     const token = this.capabilityTokens.mint({
       serverUuid: server.id,
       nodeUuid: server.nodeId,
-      userId,
+      userId: actor.id,
       cap: 'file.upload',
       permissions: [],
       ttlSeconds: UPLOAD_TOKEN_TTL_SECONDS,

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ServerAccessService } from '../authorization/server-access.service';
+import type { AccessActor } from '../authorization/server-access.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ActivityService } from '../activity/activity.service';
@@ -32,9 +33,9 @@ export class SubusersService {
     private readonly activity: ActivityService,
   ) {}
 
-  async list(userId: string, serverId: string) {
-    const { server } = await this.access.resolve(userId, serverId);
-    return this.prisma.withRLS({ userId, isAdmin: false }, (tx) =>
+  async list(actor: AccessActor, serverId: string) {
+    const { server } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    return this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
       tx.subuser.findMany({
         where: { serverId: server.id },
         select: { id: true, permissions: true, acceptedAt: true, createdAt: true, user: { select: { id: true, username: true, email: true } } },
@@ -43,38 +44,38 @@ export class SubusersService {
     );
   }
 
-  async invite(userId: string, serverId: string, dto: InviteSubuserDto) {
-    const { server, role } = await this.access.resolve(userId, serverId);
-    if (role !== 'owner') throw new ForbiddenException('Only the server owner can invite subusers');
+  async invite(actor: AccessActor, serverId: string, dto: InviteSubuserDto) {
+    const { server, role } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    if (role !== 'owner' && role !== 'admin') throw new ForbiddenException('Only the server owner can invite subusers');
     await this.assertValidPermissions(dto.permissions);
 
     const invitee = await this.prisma.user.findFirst({ where: { email: dto.email, deletedAt: null } });
     if (!invitee) throw new NotFoundException('No user found with that email');
     if (invitee.id === server.ownerId) throw new ConflictException('The owner cannot be invited as a subuser of their own server');
 
-    const existing = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) => tx.subuser.findFirst({ where: { serverId: server.id, userId: invitee.id } }));
+    const existing = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) => tx.subuser.findFirst({ where: { serverId: server.id, userId: invitee.id } }));
     if (existing) throw new ConflictException('That user is already a subuser of this server');
 
-    const created = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) =>
+    const created = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
       tx.subuser.create({
-        data: { serverId: server.id, userId: invitee.id, permissions: dto.permissions, invitedBy: userId, acceptedAt: new Date() },
+        data: { serverId: server.id, userId: invitee.id, permissions: dto.permissions, invitedBy: actor.id, acceptedAt: new Date() },
         select: { id: true, permissions: true, acceptedAt: true, createdAt: true, user: { select: { id: true, username: true, email: true } } },
       }),
     );
-    await this.audit.record({ action: 'server.subuser.invite', targetType: 'server', targetId: server.id, actorId: userId, metadata: { subuserId: created.id, email: dto.email, permissions: dto.permissions } });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.subuser.invite', properties: { subuserId: created.id, email: dto.email } });
+    await this.audit.record({ action: 'server.subuser.invite', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { subuserId: created.id, email: dto.email, permissions: dto.permissions } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.subuser.invite', properties: { subuserId: created.id, email: dto.email } });
     return created;
   }
 
-  async updatePermissions(userId: string, serverId: string, subuserId: string, dto: UpdateSubuserPermissionsDto) {
-    const { server, role } = await this.access.resolve(userId, serverId);
-    if (role !== 'owner') throw new ForbiddenException('Only the server owner can edit subuser permissions');
+  async updatePermissions(actor: AccessActor, serverId: string, subuserId: string, dto: UpdateSubuserPermissionsDto) {
+    const { server, role } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    if (role !== 'owner' && role !== 'admin') throw new ForbiddenException('Only the server owner can edit subuser permissions');
     await this.assertValidPermissions(dto.permissions);
 
-    const subuser = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) => tx.subuser.findFirst({ where: { id: subuserId, serverId: server.id } }));
+    const subuser = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) => tx.subuser.findFirst({ where: { id: subuserId, serverId: server.id } }));
     if (!subuser) throw new NotFoundException('Subuser not found');
 
-    const updated = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) =>
+    const updated = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
       tx.subuser.update({
         where: { id: subuser.id },
         data: { permissions: dto.permissions },
@@ -84,22 +85,22 @@ export class SubusersService {
     // Revoked permissions must never keep working off a stale cache
     // (architecture doc 2.5: "invalidated on subuser/... change").
     await this.access.invalidatePermissionCache(subuser.userId, server.id);
-    await this.audit.record({ action: 'server.subuser.update', targetType: 'server', targetId: server.id, actorId: userId, metadata: { subuserId: subuser.id, permissions: dto.permissions } });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.subuser.update', properties: { subuserId: subuser.id } });
+    await this.audit.record({ action: 'server.subuser.update', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { subuserId: subuser.id, permissions: dto.permissions } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.subuser.update', properties: { subuserId: subuser.id } });
     return updated;
   }
 
-  async remove(userId: string, serverId: string, subuserId: string) {
-    const { server, role } = await this.access.resolve(userId, serverId);
-    if (role !== 'owner') throw new ForbiddenException('Only the server owner can remove subusers');
+  async remove(actor: AccessActor, serverId: string, subuserId: string) {
+    const { server, role } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    if (role !== 'owner' && role !== 'admin') throw new ForbiddenException('Only the server owner can remove subusers');
 
-    const subuser = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) => tx.subuser.findFirst({ where: { id: subuserId, serverId: server.id } }));
+    const subuser = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) => tx.subuser.findFirst({ where: { id: subuserId, serverId: server.id } }));
     if (!subuser) throw new NotFoundException('Subuser not found');
 
-    await this.prisma.withRLS({ userId, isAdmin: false }, (tx) => tx.subuser.delete({ where: { id: subuser.id } }));
+    await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) => tx.subuser.delete({ where: { id: subuser.id } }));
     await this.access.invalidatePermissionCache(subuser.userId, server.id);
-    await this.audit.record({ action: 'server.subuser.remove', targetType: 'server', targetId: server.id, actorId: userId, metadata: { subuserId: subuser.id } });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.subuser.remove', properties: { subuserId: subuser.id } });
+    await this.audit.record({ action: 'server.subuser.remove', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { subuserId: subuser.id } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.subuser.remove', properties: { subuserId: subuser.id } });
   }
 
   listPermissionCatalog() {

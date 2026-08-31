@@ -10,12 +10,12 @@ export class FilesController {
 
   @Get()
   list(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Query('path') path = '.') {
-    return this.files.list(user.id, serverId, path);
+    return this.files.list(user, serverId, path);
   }
 
   @Get('contents')
   read(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Query('path') path: string) {
-    return this.files.read(user.id, serverId, path);
+    return this.files.read(user, serverId, path);
   }
 
   @Put('contents')
@@ -25,50 +25,50 @@ export class FilesController {
     @Query('path') path: string,
     @Body() dto: WriteFileDto,
   ) {
-    return this.files.write(user.id, serverId, path, dto.content);
+    return this.files.write(user, serverId, path, dto.content);
   }
 
   @Post('rename')
   rename(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Body() dto: RenameFileDto) {
-    return this.files.rename(user.id, serverId, dto.from, dto.to);
+    return this.files.rename(user, serverId, dto.from, dto.to);
   }
 
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
   delete(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Query() query: DeleteFileDto) {
-    return this.files.delete(user.id, serverId, query.path, query.recursive === 'true');
+    return this.files.delete(user, serverId, query.path, query.recursive === 'true');
   }
 
   @Post('mkdir')
   @HttpCode(HttpStatus.CREATED)
   mkdir(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Body() dto: MkdirDto) {
-    return this.files.mkdir(user.id, serverId, dto.path);
+    return this.files.mkdir(user, serverId, dto.path);
   }
 
   @Post('chmod')
   @HttpCode(HttpStatus.NO_CONTENT)
   chmod(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Body() dto: ChmodDto) {
-    return this.files.chmod(user.id, serverId, dto.path, dto.mode);
+    return this.files.chmod(user, serverId, dto.path, dto.mode);
   }
 
   @Post('compress')
   @HttpCode(HttpStatus.CREATED)
   compress(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Body() dto: CompressDto) {
-    return this.files.compress(user.id, serverId, dto.paths, dto.dest);
+    return this.files.compress(user, serverId, dto.paths, dto.dest);
   }
 
   @Post('decompress')
   decompress(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Body() dto: DecompressDto) {
-    return this.files.decompress(user.id, serverId, dto.path, dto.dest);
+    return this.files.decompress(user, serverId, dto.path, dto.dest);
   }
 
   @Post('download-link')
   downloadLink(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Body() dto: DownloadLinkDto) {
-    return this.files.mintDownloadLink(user.id, serverId, dto.path);
+    return this.files.mintDownloadLink(user, serverId, dto.path);
   }
 
   @Post('upload-link')
   uploadLink(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Body() dto: UploadLinkDto) {
-    return this.files.mintUploadLink(user.id, serverId, dto.path, dto.maxBytes);
+    return this.files.mintUploadLink(user, serverId, dto.path, dto.maxBytes);
   }
 }

@@ -10,23 +10,23 @@ export class SubusersController {
 
   @Get()
   list(@Param('serverId') serverId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.subusers.list(user.id, serverId);
+    return this.subusers.list(user, serverId);
   }
 
   @Post()
   invite(@Param('serverId') serverId: string, @Body() dto: InviteSubuserDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.subusers.invite(user.id, serverId, dto);
+    return this.subusers.invite(user, serverId, dto);
   }
 
   @Patch(':subuserId')
   updatePermissions(@Param('serverId') serverId: string, @Param('subuserId') subuserId: string, @Body() dto: UpdateSubuserPermissionsDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.subusers.updatePermissions(user.id, serverId, subuserId, dto);
+    return this.subusers.updatePermissions(user, serverId, subuserId, dto);
   }
 
   @Delete(':subuserId')
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('serverId') serverId: string, @Param('subuserId') subuserId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.subusers.remove(user.id, serverId, subuserId);
+    return this.subusers.remove(user, serverId, subuserId);
   }
 }
 

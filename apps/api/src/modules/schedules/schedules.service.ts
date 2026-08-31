@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { CronExpressionParser } from 'cron-parser';
 import { ServerAccessService } from '../authorization/server-access.service';
+import type { AccessActor } from '../authorization/server-access.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ActivityService } from '../activity/activity.service';
@@ -26,10 +27,10 @@ export class SchedulesService {
     }
   }
 
-  async list(userId: string, serverId: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async list(actor: AccessActor, serverId: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('schedule.read')) throw new ForbiddenException('Missing permission: schedule.read');
-    return this.prisma.withRLS({ userId, isAdmin: false }, (tx) =>
+    return this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
       tx.schedule.findMany({
         where: { serverId: server.id },
         include: { tasks: { orderBy: { sequenceNumber: 'asc' } } },
@@ -38,21 +39,21 @@ export class SchedulesService {
     );
   }
 
-  private async getOwned(userId: string, serverId: string, scheduleId: string, requiredPermission: string) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  private async getOwned(actor: AccessActor, serverId: string, scheduleId: string, requiredPermission: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can(requiredPermission)) throw new ForbiddenException(`Missing permission: ${requiredPermission}`);
-    const schedule = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) =>
+    const schedule = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
       tx.schedule.findFirst({ where: { id: scheduleId, serverId: server.id }, include: { tasks: { orderBy: { sequenceNumber: 'asc' } } } }),
     );
     if (!schedule) throw new NotFoundException('Schedule not found');
     return { server, schedule };
   }
 
-  async create(userId: string, serverId: string, dto: CreateScheduleDto) {
-    const { server, can } = await this.access.resolve(userId, serverId);
+  async create(actor: AccessActor, serverId: string, dto: CreateScheduleDto) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('schedule.create')) throw new ForbiddenException('Missing permission: schedule.create');
 
-    const existingCount = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) => tx.schedule.count({ where: { serverId: server.id } }));
+    const existingCount = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) => tx.schedule.count({ where: { serverId: server.id } }));
     if (existingCount >= server.maxSchedules) {
       throw new ConflictException('Schedule limit reached for this server’s plan');
     }
@@ -67,7 +68,7 @@ export class SchedulesService {
     const timezone = dto.timezone ?? 'America/Sao_Paulo';
     const nextRunAt = this.computeNextRunAt(fields, timezone);
 
-    const created = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) =>
+    const created = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
       tx.schedule.create({
         data: {
           serverId: server.id,
@@ -81,13 +82,13 @@ export class SchedulesService {
         include: { tasks: true },
       }),
     );
-    await this.audit.record({ action: 'server.schedule.create', targetType: 'server', targetId: server.id, actorId: userId, metadata: { scheduleId: created.id } });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.schedule.create', properties: { scheduleId: created.id, name: created.name } });
+    await this.audit.record({ action: 'server.schedule.create', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { scheduleId: created.id } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.schedule.create', properties: { scheduleId: created.id, name: created.name } });
     return created;
   }
 
-  async update(userId: string, serverId: string, scheduleId: string, dto: UpdateScheduleDto) {
-    const { server, schedule } = await this.getOwned(userId, serverId, scheduleId, 'schedule.update');
+  async update(actor: AccessActor, serverId: string, scheduleId: string, dto: UpdateScheduleDto) {
+    const { server, schedule } = await this.getOwned(actor, serverId, scheduleId, 'schedule.update');
 
     const fields = {
       cronMinute: dto.cronMinute ?? schedule.cronMinute,
@@ -102,29 +103,29 @@ export class SchedulesService {
     // to whatever cron/timezone fields the row actually carries right now.
     const nextRunAt = this.computeNextRunAt(fields, timezone);
 
-    const updated = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) =>
+    const updated = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
       tx.schedule.update({
         where: { id: schedule.id },
         data: { name: dto.name, ...fields, timezone, isActive: dto.isActive, onlyWhenOnline: dto.onlyWhenOnline, nextRunAt },
         include: { tasks: { orderBy: { sequenceNumber: 'asc' } } },
       }),
     );
-    await this.audit.record({ action: 'server.schedule.update', targetType: 'server', targetId: server.id, actorId: userId, metadata: { scheduleId: schedule.id } });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.schedule.update', properties: { scheduleId: schedule.id } });
+    await this.audit.record({ action: 'server.schedule.update', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { scheduleId: schedule.id } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.schedule.update', properties: { scheduleId: schedule.id } });
     return updated;
   }
 
-  async remove(userId: string, serverId: string, scheduleId: string) {
-    const { server, schedule } = await this.getOwned(userId, serverId, scheduleId, 'schedule.delete');
-    await this.prisma.withRLS({ userId, isAdmin: false }, (tx) => tx.schedule.delete({ where: { id: schedule.id } }));
-    await this.audit.record({ action: 'server.schedule.delete', targetType: 'server', targetId: server.id, actorId: userId, metadata: { scheduleId: schedule.id } });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.schedule.delete', properties: { scheduleId: schedule.id } });
+  async remove(actor: AccessActor, serverId: string, scheduleId: string) {
+    const { server, schedule } = await this.getOwned(actor, serverId, scheduleId, 'schedule.delete');
+    await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) => tx.schedule.delete({ where: { id: schedule.id } }));
+    await this.audit.record({ action: 'server.schedule.delete', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { scheduleId: schedule.id } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.schedule.delete', properties: { scheduleId: schedule.id } });
   }
 
-  async addTask(userId: string, serverId: string, scheduleId: string, dto: CreateTaskDto) {
-    const { server, schedule } = await this.getOwned(userId, serverId, scheduleId, 'schedule.update');
+  async addTask(actor: AccessActor, serverId: string, scheduleId: string, dto: CreateTaskDto) {
+    const { server, schedule } = await this.getOwned(actor, serverId, scheduleId, 'schedule.update');
     const nextSequence = schedule.tasks.length > 0 ? Math.max(...schedule.tasks.map((t) => t.sequenceNumber)) + 1 : 1;
-    const task = await this.prisma.withRLS({ userId, isAdmin: false }, (tx) =>
+    const task = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
       tx.task.create({
         data: {
           scheduleId: schedule.id,
@@ -136,17 +137,17 @@ export class SchedulesService {
         },
       }),
     );
-    await this.audit.record({ action: 'server.schedule.task.create', targetType: 'server', targetId: server.id, actorId: userId, metadata: { scheduleId: schedule.id, taskId: task.id, taskAction: dto.action } });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.schedule.task.create', properties: { scheduleId: schedule.id, taskId: task.id, taskAction: dto.action } });
+    await this.audit.record({ action: 'server.schedule.task.create', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { scheduleId: schedule.id, taskId: task.id, taskAction: dto.action } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.schedule.task.create', properties: { scheduleId: schedule.id, taskId: task.id, taskAction: dto.action } });
     return task;
   }
 
-  async removeTask(userId: string, serverId: string, scheduleId: string, taskId: string) {
-    const { server, schedule } = await this.getOwned(userId, serverId, scheduleId, 'schedule.update');
+  async removeTask(actor: AccessActor, serverId: string, scheduleId: string, taskId: string) {
+    const { server, schedule } = await this.getOwned(actor, serverId, scheduleId, 'schedule.update');
     const task = schedule.tasks.find((t) => t.id === taskId);
     if (!task) throw new NotFoundException('Task not found');
-    await this.prisma.withRLS({ userId, isAdmin: false }, (tx) => tx.task.delete({ where: { id: task.id } }));
-    await this.audit.record({ action: 'server.schedule.task.delete', targetType: 'server', targetId: server.id, actorId: userId, metadata: { scheduleId: schedule.id, taskId: task.id } });
-    await this.activity.record({ actorId: userId, serverId: server.id, event: 'server.schedule.task.delete', properties: { scheduleId: schedule.id, taskId: task.id } });
+    await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) => tx.task.delete({ where: { id: task.id } }));
+    await this.audit.record({ action: 'server.schedule.task.delete', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { scheduleId: schedule.id, taskId: task.id } });
+    await this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.schedule.task.delete', properties: { scheduleId: schedule.id, taskId: task.id } });
   }
 }

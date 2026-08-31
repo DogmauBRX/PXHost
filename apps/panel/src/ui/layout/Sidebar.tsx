@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
 import { Link, useMatchRoute, useNavigate, useRouterState } from '@tanstack/react-router';
+import type { LinkProps } from '@tanstack/react-router';
 import { LogOut, Settings as SettingsIcon } from 'lucide-react';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { useUiStore } from '@/shared/stores/ui.store';
 import { logout } from '@/features/auth/auth.api';
 import { Avatar } from '@/ui/primitives';
-import { visibleSections, type NavItem } from './nav.config';
+import type { NavItem, NavSection } from './nav.config';
 
 function NavLink({ item, onNavigate }: { item: NavItem; onNavigate: () => void }) {
   const matchRoute = useMatchRoute();
@@ -30,7 +31,13 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate: () => void }
   );
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  sections: readonly NavSection[];
+  panelLabel: string;
+  settingsTo: LinkProps['to'];
+}
+
+export function Sidebar({ sections, panelLabel, settingsTo }: SidebarProps) {
   const user = useAuthStore((s) => s.user);
   const clear = useAuthStore((s) => s.clear);
   const navigate = useNavigate();
@@ -53,8 +60,6 @@ export function Sidebar() {
     }
   }
 
-  const sections = visibleSections(Boolean(user?.isAdmin));
-
   return (
     <>
       {sidebarOpen && (
@@ -70,11 +75,14 @@ export function Sidebar() {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border px-5">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-sm font-bold text-accent-contrast">
-            P
-          </span>
-          <span className="text-[0.95rem] font-semibold tracking-tight text-text">PXHost</span>
+        <div className="flex h-14 shrink-0 flex-col justify-center gap-0.5 border-b border-border px-5">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-sm font-bold text-accent-contrast">
+              P
+            </span>
+            <span className="text-[0.95rem] font-semibold tracking-tight text-text">PXHost</span>
+          </div>
+          <span className="pl-[2.35rem] text-[0.62rem] font-medium tracking-widest text-text-faint uppercase">{panelLabel}</span>
         </div>
 
         {/* The rail is viewport-height and fixed; with three sections plus a
@@ -105,7 +113,7 @@ export function Sidebar() {
           </div>
           <div className="mt-1 flex gap-1">
             <Link
-              to="/settings"
+              to={settingsTo}
               onClick={closeSidebar}
               className="flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-2 hover:text-text"
             >
