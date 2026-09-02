@@ -6,6 +6,9 @@ import { useAuthStore } from '@/shared/stores/auth.store';
 import { useUiStore } from '@/shared/stores/ui.store';
 import { logout } from '@/features/auth/auth.api';
 import { Avatar } from '@/ui/primitives';
+import { Logo } from '@/ui/brand/Logo';
+import { Wordmark } from '@/ui/brand/Wordmark';
+import { CircuitPattern } from '@/ui/brand/CircuitPattern';
 import type { NavItem, NavSection } from './nav.config';
 
 function NavLink({ item, onNavigate }: { item: NavItem; onNavigate: () => void }) {
@@ -75,14 +78,13 @@ export function Sidebar({ sections, panelLabel, settingsTo }: SidebarProps) {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex h-14 shrink-0 flex-col justify-center gap-0.5 border-b border-border px-5">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-sm font-bold text-accent-contrast">
-              P
-            </span>
-            <span className="text-[0.95rem] font-semibold tracking-tight text-text">PXHost</span>
+        <div className="sidebar-brand flex h-20 shrink-0 flex-col justify-center gap-1 border-b border-border px-5">
+          <CircuitPattern className="sidebar-brand__circuit" />
+          <div className="relative flex items-center gap-3">
+            <Logo size={38} />
+            <Wordmark className="text-2xl" />
           </div>
-          <span className="pl-[2.35rem] text-[0.62rem] font-medium tracking-widest text-text-faint uppercase">{panelLabel}</span>
+          <span className="relative pl-[3.25rem] text-[0.62rem] font-medium tracking-widest text-text-faint uppercase">{panelLabel}</span>
         </div>
 
         {/* The rail is viewport-height and fixed; with three sections plus a

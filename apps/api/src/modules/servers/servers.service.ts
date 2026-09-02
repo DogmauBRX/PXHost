@@ -1,16 +1,21 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ServerTemplate } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AgentClient, CreateAgentServerRequest } from '../nodes/agent-client.service';
 import { AuditService } from '../audit/audit.service';
 import { DatabasesService } from '../databases/databases.service';
 import { ActivityService } from '../activity/activity.service';
+import { CapacityService } from '../capacity/capacity.service';
+import { assertNodeFits, assertSlots } from '../capacity/capacity.math';
+import { NodeSchedulerService, SchedulerCandidate } from '../scheduler/node-scheduler.service';
 import { CreateServerDto } from './dto/server.dto';
 import { generateShortId } from './short-id';
 
 const DEFAULT_INSTALL_IMAGE = 'ghcr.io/pxhost/installers:debian';
 const DEFAULT_INSTALL_ENTRYPOINT = 'bash';
-const UID_BASE = 100000;
+
+/** How many DIFFERENT nodes an automatic (no explicit `dto.nodeId`) create will try before giving up — see `ServersService.create`'s doc comment for why an explicit `nodeId` never retries at all. */
+const MAX_SCHEDULER_ATTEMPTS = 3;
 
 @Injectable()
 export class ServersService {
@@ -20,6 +25,8 @@ export class ServersService {
     private readonly audit: AuditService,
     private readonly databases: DatabasesService,
     private readonly activity: ActivityService,
+    private readonly capacity: CapacityService,
+    private readonly scheduler: NodeSchedulerService,
   ) {}
 
   async list(ownerId?: string) {
@@ -56,15 +63,19 @@ export class ServersService {
   }
 
   /**
-   * The M5 create transaction (architecture doc 2.6/4.4/roadmap M5):
-   * capacity check + allocation reservation + limit snapshot, all under
-   * one advisory lock on the node so two concurrent creates can never
-   * both pass the same capacity check — proven by
-   * servers.concurrency.spec.ts's race test, not just asserted here.
+   * Capacity plan Fase 5: `dto.nodeId` is now optional. Explicit vs.
+   * automatic is a hard branch, not a fallback chain:
    *
-   * The Docker-side work (pull, create, install) happens AFTER this
-   * transaction commits, via AgentClient — a slow or unreachable agent
-   * must never hold the node's capacity lock.
+   * - **Explicit `nodeId`**: goes straight to `createOnNode`, once, no
+   *   retry. Silently reallocating a server the admin deliberately
+   *   pinned to a node would be worse than the error.
+   * - **Automatic**: `NodeSchedulerService.selectNode` picks a
+   *   candidate (unlocked — a hint, see its own doc comment),
+   *   `createOnNode` re-verifies everything for real under lock. If
+   *   THAT fails for a reason other than `NO_SLOTS`, the chosen node is
+   *   excluded and selection runs again, in a brand-new transaction, up
+   *   to `MAX_SCHEDULER_ATTEMPTS` times. `NO_SLOTS` is never retried —
+   *   the plan is out of stock globally, and no other node changes that.
    */
   async create(dto: CreateServerDto): Promise<{ id: string; shortId: string; status: string }> {
     const owner = await this.prisma.user.findFirst({ where: { id: dto.ownerId, deletedAt: null } });
@@ -73,58 +84,114 @@ export class ServersService {
     const template = await this.prisma.serverTemplate.findFirst({ where: { id: dto.templateId, deletedAt: null } });
     if (!template) throw new NotFoundException('Template not found');
 
-    const plan = await this.prisma.plan.findFirst({ where: { id: dto.planId, deletedAt: null } });
-    if (!plan) throw new NotFoundException('Plan not found');
+    const planExists = await this.prisma.plan.findFirst({ where: { id: dto.planId, deletedAt: null }, select: { id: true } });
+    if (!planExists) throw new NotFoundException('Plan not found');
 
     const images = template.dockerImages as Record<string, string>;
     const [, dockerImage] = Object.entries(images)[0] ?? [undefined, undefined];
     if (!dockerImage) throw new ConflictException('Template has no docker images configured');
 
+    if (dto.nodeId) {
+      return this.createOnNode(dto, dto.nodeId, template, dockerImage, null);
+    }
+
+    const excluded: string[] = [];
+    for (let attempt = 1; attempt <= MAX_SCHEDULER_ATTEMPTS; attempt++) {
+      const selection = await this.scheduler.selectNode(dto.planId, { excludeNodeIds: excluded });
+      if (!selection.selected) {
+        throw new ConflictException('No eligible node found for this plan');
+      }
+      try {
+        return await this.createOnNode(dto, selection.selected.nodeId, template, dockerImage, selection.candidates);
+      } catch (err) {
+        if (err instanceof ConflictException && typeof err.message === 'string' && err.message.startsWith('NO_SLOTS:')) {
+          throw err; // plan is out of stock everywhere — trying another node never helps
+        }
+        excluded.push(selection.selected.nodeId);
+        if (attempt === MAX_SCHEDULER_ATTEMPTS) throw err;
+      }
+    }
+    // Unreachable — the loop above always returns or throws — but TypeScript
+    // can't see that a `for` loop with a `throw` on its last iteration is
+    // exhaustive.
+    throw new ConflictException('No eligible node found for this plan');
+  }
+
+  /**
+   * The M5 create transaction (architecture doc 2.6/4.4/roadmap M5):
+   * capacity check + allocation reservation + limit snapshot, all under
+   * one advisory lock on the node so two concurrent creates can never
+   * both pass the same capacity check — proven by
+   * servers.concurrency.spec.ts's race test, not just asserted here.
+   *
+   * Capacity plan Fase 4: a PLAN lock is now taken first, strictly
+   * before the node lock — see capacity.locks.ts's ordering invariant.
+   * Without it, two concurrent creates of the SAME plan on DIFFERENT
+   * nodes take disjoint node locks and can both read "one slot left"
+   * before either commits, overselling the plan even though each
+   * individual node's own capacity check was perfectly race-free.
+   *
+   * The Docker-side work (pull, create, install) happens AFTER this
+   * transaction commits, via AgentClient — a slow or unreachable agent
+   * must never hold the node's capacity lock.
+   */
+  private async createOnNode(
+    dto: CreateServerDto,
+    nodeId: string,
+    template: ServerTemplate,
+    dockerImage: string,
+    schedulerCandidates: SchedulerCandidate[] | null,
+  ): Promise<{ id: string; shortId: string; status: string }> {
     const created = await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
+      // Plan lock strictly before node lock (see this method's own doc
+      // comment). The plan row is re-read HERE, under the lock — not the
+      // `planExists` check above — so `maxSlots` (and every other field
+      // used to build the server below) reflects whatever an admin's
+      // concurrent edit last committed, the same freshness guarantee the
+      // node row already gets from its own re-read after `lockNode`.
+      await this.capacity.lockPlan(tx, dto.planId);
+      const plan = await tx.plan.findFirst({ where: { id: dto.planId, deletedAt: null } });
+      if (!plan) throw new NotFoundException('Plan not found');
+
+      const occupied = await this.capacity.occupiedSlots(tx, dto.planId);
+      assertSlots(occupied, plan.maxSlots);
+
+      const allowedOnNode = await this.capacity.isNodeAllowedForPlan(tx, dto.planId, nodeId);
+      if (!allowedOnNode) throw new ConflictException('This plan is not allowed on the requested node');
+
       // Every capacity check + allocation pick for this node is
       // serialized by this lock for the duration of the transaction —
       // this is what makes two concurrent creates unable to both read
       // "capacity available" before either has committed its own usage.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('node:' || ${dto.nodeId}))`;
+      await this.capacity.lockNode(tx, nodeId);
 
-      const node = await tx.node.findFirst({ where: { id: dto.nodeId, deletedAt: null } });
+      const node = await tx.node.findFirst({ where: { id: nodeId, deletedAt: null } });
       if (!node) throw new NotFoundException('Node not found');
       if (node.maintenanceMode) throw new ConflictException('Node is in maintenance mode');
 
-      const usage = await tx.server.aggregate({
-        where: { nodeId: dto.nodeId, status: { not: 'deleting' } },
-        _sum: { memoryMb: true, diskMb: true },
-      });
-      const usedMemory = usage._sum.memoryMb ?? 0;
-      const usedDisk = usage._sum.diskMb ?? 0;
-
-      assertCapacity('memory', usedMemory, plan.memoryMb, node.memoryTotalMb, node.memoryReservedMb, node.memoryOverallocatePct);
-      assertCapacity('disk', usedDisk, plan.diskMb, node.diskTotalMb, node.diskReservedMb, node.diskOverallocatePct);
-      // CPU is deliberately NOT capacity-checked when cpuOverallocatePct
-      // is -1 (the default) — CPU is time-shared; architecture doc 2.6
-      // is explicit that blocking sales on the nominal sum wastes
-      // hardware. A node opted into strict CPU accounting would need
-      // the same assertCapacity call here; out of scope for M5.
+      const usage = await this.capacity.usageForNode(tx, nodeId);
+      assertNodeFits(node, usage, { memoryMb: plan.memoryMb, diskMb: plan.diskMb, cpuPercent: plan.cpuLimitPercent });
 
       const allocation = dto.allocationId
-        ? await tx.allocation.findFirst({ where: { id: BigInt(dto.allocationId), nodeId: dto.nodeId, serverId: null } })
-        : await pickFreeAllocation(tx, dto.nodeId);
+        ? await tx.allocation.findFirst({ where: { id: BigInt(dto.allocationId), nodeId, serverId: null } })
+        : await this.capacity.pickFreeAllocation(tx, nodeId);
       if (!allocation) {
         throw new ConflictException(
           dto.allocationId ? 'Requested allocation is not free' : 'No free allocation available on this node',
         );
       }
 
-      const uid = UID_BASE + (await tx.server.count({ where: { nodeId: dto.nodeId } }));
+      const uid = await this.capacity.nextUid(tx, nodeId);
       const shortId = await generateUniqueShortId(tx);
 
       const server = await tx.server.create({
         data: {
           shortId,
           ownerId: dto.ownerId,
-          nodeId: dto.nodeId,
+          nodeId,
           templateId: dto.templateId,
           planId: dto.planId,
+          uid,
           name: dto.name,
           dockerImage,
           startupCommand: template.startupCommand,
@@ -161,10 +228,20 @@ export class ServersService {
       action: 'server.create',
       targetType: 'server',
       targetId: created.server.id,
-      metadata: { ownerId: dto.ownerId, nodeId: dto.nodeId, templateId: dto.templateId, planId: dto.planId },
+      metadata: {
+        ownerId: dto.ownerId,
+        nodeId,
+        templateId: dto.templateId,
+        planId: dto.planId,
+        // Only present for automatic selection — an explicit `nodeId`
+        // never invokes the scheduler at all. This is the only place
+        // that will still explain "why is this customer on NODE 02" six
+        // months from now.
+        ...(schedulerCandidates ? { scheduler: schedulerCandidates } : {}),
+      },
     });
 
-    await this.dispatchToAgent(created.server.id, dto.nodeId, {
+    await this.dispatchToAgent(created.server.id, nodeId, {
       uuid: created.server.id,
       uid: created.uid,
       image: dockerImage,
@@ -173,11 +250,11 @@ export class ServersService {
       declaredVariables: created.declaredNames,
       variables: created.resolvedValues,
       limits: {
-        cpuPercent: plan.cpuLimitPercent,
-        memoryMb: plan.memoryMb,
-        swapMb: plan.swapMb,
-        diskMb: plan.diskMb,
-        ioWeight: plan.ioWeight,
+        cpuPercent: created.server.cpuLimitPercent,
+        memoryMb: created.server.memoryMb,
+        swapMb: created.server.swapMb,
+        diskMb: created.server.diskMb,
+        ioWeight: created.server.ioWeight,
       },
       allocations: [{ ip: created.allocation.ip, port: created.allocation.port, primary: true }],
       installImage: template.installImage || DEFAULT_INSTALL_IMAGE,
@@ -335,44 +412,11 @@ export class ServersService {
   }
 }
 
-/** Exported for TransfersService (roadmap M13) — the target node's capacity check reuses the exact same math the create transaction uses. */
-export function assertCapacity(
-  label: string,
-  used: number,
-  requested: number,
-  totalMb: number,
-  reservedMb: number,
-  overallocatePct: number,
-): void {
-  if (overallocatePct === -1) return; // unlimited
-  const ceiling = (totalMb - reservedMb) * (1 + overallocatePct / 100);
-  if (used + requested > ceiling) {
-    throw new ConflictException(
-      `NO_CAPACITY: node ${label} would be ${used + requested}MB, ceiling is ${Math.floor(ceiling)}MB`,
-    );
-  }
-}
-
-/** Exported for TransfersService (roadmap M13) — picking the target node's allocation is the identical FOR UPDATE SKIP LOCKED query. */
-export async function pickFreeAllocation(tx: Prisma.TransactionClient, nodeId: string) {
-  // FOR UPDATE SKIP LOCKED under the node's advisory lock: even without
-  // the advisory lock this would prevent two transactions from picking
-  // the SAME row, but the advisory lock is still what makes the capacity
-  // check above race-free — allocation picking has its own, independent
-  // protection here as a second layer.
-  // host(ip), not ip::text: Postgres's inet type carries an implicit /32
-  // netmask, and ::text renders it ("203.0.113.50/32") — which Docker's
-  // daemon then rejects outright when building the container's port
-  // bindings (confirmed live: "ParseAddr(...): unexpected character (at
-  // "/32")"). host() strips the mask, returning the bare address the
-  // agent actually expects.
-  const rows = await tx.$queryRaw<{ id: bigint; ip: string; port: number }[]>`
-    SELECT id, host(ip) as ip, port FROM allocations
-    WHERE node_id = ${nodeId}::uuid AND server_id IS NULL
-    ORDER BY id ASC LIMIT 1 FOR UPDATE SKIP LOCKED
-  `;
-  return rows[0] ?? null;
-}
+// assertCapacity and pickFreeAllocation moved to
+// ../capacity/capacity.math.ts and ../capacity/capacity.service.ts
+// (capacity plan Fase 1) — CapacityService.usageForNode/assertNodeFits/
+// pickFreeAllocation/nextUid are the shared building blocks now, used
+// identically by this file and transfers.service.ts.
 
 async function generateUniqueShortId(tx: Prisma.TransactionClient): Promise<string> {
   for (let attempt = 0; attempt < 5; attempt++) {

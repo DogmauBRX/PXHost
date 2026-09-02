@@ -6,7 +6,25 @@ import { useServerSocket } from '@/shared/realtime/useServerSocket';
 import { Terminal } from './Terminal';
 import { StatsChart, type StatsChartHandle } from './StatsChart';
 import { PowerControls } from './PowerControls';
+import { ResourceAdvisory } from '@/features/client/ResourceAdvisory';
+import { combineSeverity, cpuSeverity, memorySeverity, SUSTAINED_FRAMES, type Severity } from '@/features/client/advisory';
 import { Alert, Button, Input, StatusBadge } from '@/ui/primitives';
+import type { ServerStatsSnapshot } from '@/shared/api/types';
+
+function buildLiveSnapshot(usage: { memoryBytes: number; memoryLimitBytes: number; cpuPercent: number; cpuLimitPercent: number }, state: string): ServerStatsSnapshot {
+  return {
+    online: true,
+    state,
+    cpuPercent: usage.cpuPercent,
+    cpuLimitPercent: usage.cpuLimitPercent,
+    memoryBytes: usage.memoryBytes,
+    memoryLimitBytes: usage.memoryLimitBytes,
+    networkRxBytes: null,
+    networkTxBytes: null,
+    uptimeMs: null,
+    measuredAt: new Date().toISOString(),
+  };
+}
 
 const CONN_LABEL: Record<string, string> = {
   idle: 'Iniciando…',
@@ -24,6 +42,29 @@ export function ConsolePage({ serverId }: { serverId: string }) {
   const termRef = useRef<XTerm | null>(null);
   const statsRef = useRef<StatsChartHandle>(null);
 
+  // Raw usage numbers live in a ref, never state — a stats frame arrives
+  // every 2s and its numbers fluctuate almost every time, so putting them
+  // in useState would re-render this page every 2s, exactly what
+  // architecture doc 5.2 forbids. `liveSeverity` is the one thing derived
+  // from each frame that DOES go through setState, because it's a
+  // low-cardinality string ('none' the overwhelming majority of the time)
+  // — React's same-value bailout means calling setState with an unchanged
+  // string costs nothing, the same trick `setPowerState` above already
+  // relies on.
+  const latestUsageRef = useRef<{ memoryBytes: number; memoryLimitBytes: number; cpuPercent: number; cpuLimitPercent: number } | null>(null);
+  // The sustain-over-N-frames streak itself ALSO has to live in a ref, not
+  // a hook: once `liveSeverity` settles at 'warn', every further frame
+  // computes the same string and setState bails out — this component
+  // simply never re-renders again for as long as usage stays flat at
+  // 'warn'. A hook-based counter (one that only advances when its own
+  // input prop changes between renders) would then never see those later
+  // frames at all, so it could never reach `requiredSamples`. Counting
+  // here, on every frame regardless of whether a render happens, is what
+  // makes "sustained" mean "N consecutive frames," not "N consecutive
+  // renders."
+  const severityStreakRef = useRef<{ severity: Severity; count: number }>({ severity: 'none', count: 0 });
+  const [liveSeverity, setLiveSeverity] = useState<Severity>('none');
+
   const { connectionState, permissions, lastError, sendCommand, sendPower } = useServerSocket({
     serverId,
     terminal: termRef.current,
@@ -39,6 +80,20 @@ export function ConsolePage({ serverId }: { serverId: string }) {
     onStats: (frame) => {
       statsRef.current?.pushFrame(frame);
       setPowerState(frame.state);
+      latestUsageRef.current = {
+        memoryBytes: frame.memory_bytes,
+        memoryLimitBytes: frame.memory_limit_bytes,
+        cpuPercent: frame.cpu_percent,
+        cpuLimitPercent: frame.cpu_limit_percent,
+      };
+      const raw = combineSeverity(memorySeverity(frame.memory_bytes, frame.memory_limit_bytes), cpuSeverity(frame.cpu_percent, frame.cpu_limit_percent));
+      const streak = severityStreakRef.current;
+      if (raw === streak.severity) streak.count += 1;
+      else {
+        streak.severity = raw;
+        streak.count = 1;
+      }
+      setLiveSeverity(streak.count >= SUSTAINED_FRAMES ? raw : 'none');
     },
     onStatus: (data) => setPowerState(data.state),
   });
@@ -69,6 +124,16 @@ export function ConsolePage({ serverId }: { serverId: string }) {
       <PowerControls state={displayState} permissions={permissions} onAction={sendPower} />
 
       {lastError && <Alert>{lastError}</Alert>}
+
+      {liveSeverity !== 'none' && latestUsageRef.current && (
+        <ResourceAdvisory
+          serverId={serverId}
+          software={server?.software}
+          // Already sustained above, over real frames rather than renders — 1 means "trust it immediately."
+          requiredSamples={1}
+          stats={buildLiveSnapshot(latestUsageRef.current, displayState)}
+        />
+      )}
 
       <StatsChart ref={statsRef} />
 

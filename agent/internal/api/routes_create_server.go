@@ -53,21 +53,9 @@ type agentAllocation struct {
 // exactly this same env/limits/allocations translation with none of
 // handleCreateServer's install-specific fields.
 func buildServerSpec(uuid string, uid int, image, imageDigest, startupTemplate, stopSignal string, declaredVars []string, variables map[string]string, limits agentLimits, allocations []agentAllocation) (spec.Server, error) {
-	env, _, err := spec.BuildEnv(declaredVars, variables, map[string]string{
-		"SERVER_UUID": uuid,
-		"HOME":        "/home/container",
-		"USER":        "container",
-		"TZ":          "UTC",
-		"LANG":        "C.UTF-8",
-		"TERM":        "xterm",
-	})
+	envMap, err := buildEnvMap(uuid, declaredVars, variables)
 	if err != nil {
 		return spec.Server{}, err
-	}
-	envMap := make(map[string]string, len(env))
-	for _, kv := range env {
-		k, v := splitEnvKV(kv)
-		envMap[k] = v
 	}
 
 	fullImage := image
@@ -192,6 +180,32 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 	}
 	s.manager.Remove(uuid)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// buildEnvMap turns the panel-supplied declared/variables pair into the
+// final env map, injecting the same reserved keys (SERVER_UUID, HOME,
+// USER, TZ, LANG, TERM) every server gets regardless of its template —
+// shared by both a fresh create and a variables-only recreate
+// (routes_server.go's handleUpdateVariables) so the two paths can never
+// drift on what "the environment" means for a server.
+func buildEnvMap(uuid string, declaredVars []string, variables map[string]string) (map[string]string, error) {
+	env, _, err := spec.BuildEnv(declaredVars, variables, map[string]string{
+		"SERVER_UUID": uuid,
+		"HOME":        "/home/container",
+		"USER":        "container",
+		"TZ":          "UTC",
+		"LANG":        "C.UTF-8",
+		"TERM":        "xterm",
+	})
+	if err != nil {
+		return nil, err
+	}
+	envMap := make(map[string]string, len(env))
+	for _, kv := range env {
+		k, v := splitEnvKV(kv)
+		envMap[k] = v
+	}
+	return envMap, nil
 }
 
 func splitEnvKV(kv string) (string, string) {

@@ -10,6 +10,7 @@ import (
 	"github.com/pxhost/agent/internal/auth"
 	"github.com/pxhost/agent/internal/config"
 	"github.com/pxhost/agent/internal/dockerx"
+	"github.com/pxhost/agent/internal/fsx"
 	"github.com/pxhost/agent/internal/panel"
 	"github.com/pxhost/agent/internal/spec"
 	"github.com/pxhost/agent/internal/srv"
@@ -190,18 +191,53 @@ func runHeartbeatLoop(ctx context.Context, nf config.NodeFile, tokenStore *api.T
 	client := panel.New(nf.PanelURL)
 	started := time.Now()
 
+	// dockerx.Info (host mem/cpu/os/kernel/container-count) changes slowly
+	// and costs a real daemon round trip, so it's cached across ticks —
+	// disk free space is refreshed every tick instead, since it's the
+	// number that actually moves and a syscall.Statfs call is cheap
+	// (capacity plan Fase 7).
+	const infoCacheTTL = 5 * time.Minute
+	var cachedInfo dockerx.SystemInfo
+	var cachedInfoAt time.Time
+
 	send := func() {
 		dockerVersion := ""
 		if v, err := dc.Version(ctx); err == nil {
 			dockerVersion = v
 		}
-		reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		_, err := client.Heartbeat(reqCtx, tokenStore.Get(), panel.HeartbeatRequest{
+
+		req := panel.HeartbeatRequest{
 			AgentVersion:  agentVersion,
 			DockerVersion: dockerVersion,
 			UptimeSeconds: int64(time.Since(started).Seconds()),
-		})
+		}
+
+		// Every telemetry source below is independently best-effort — a
+		// failure just leaves that tick's fields at zero (omitted from
+		// the JSON body via `omitempty`), never blocks or fails the
+		// heartbeat itself.
+		if cachedInfoAt.IsZero() || time.Since(cachedInfoAt) > infoCacheTTL {
+			if info, err := dc.Info(ctx); err == nil {
+				cachedInfo = info
+				cachedInfoAt = time.Now()
+			}
+		}
+		if !cachedInfoAt.IsZero() {
+			req.ReportedMemoryTotalMb = cachedInfo.MemTotalBytes / (1024 * 1024)
+			req.ReportedCPUCount = cachedInfo.NCPU
+			req.ReportedOS = cachedInfo.OperatingSystem
+			req.ReportedKernel = cachedInfo.KernelVersion
+			req.ReportedContainersRunning = cachedInfo.ContainersRunning
+		}
+
+		if total, free, err := fsx.DiskUsage(nf.DataDir); err == nil {
+			req.ReportedDiskTotalMb = int64(total / (1024 * 1024))
+			req.ReportedDiskFreeMb = int64(free / (1024 * 1024))
+		}
+
+		reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		_, err := client.Heartbeat(reqCtx, tokenStore.Get(), req)
 		if err != nil {
 			fmt.Printf("heartbeat failed (will retry in %s): %v\n", interval, err)
 		}

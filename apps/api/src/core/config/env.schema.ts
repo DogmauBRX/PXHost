@@ -49,6 +49,20 @@ export const envSchema = z.object({
   // process any event at USE time if this is unset, rather than
   // silently accepting an unverified payload.
   BILLING_WEBHOOK_SECRET: z.string().min(1).optional(),
+
+  // Client-features Fase 8: which AssistantProvider answers
+  // /api/client/assistant/chat. 'kb' (default) is the deterministic
+  // knowledge base — no external calls, no cost, no key needed. 'llm' is
+  // a future adapter behind the SAME AssistantProvider interface;
+  // ASSISTANT_LLM_API_KEY is optional here (unlike every REQUIRED secret
+  // above) because requiring it would force every dev/test deployment to
+  // configure an LLM key just to boot — AssistantModule's provider
+  // factory falls back to 'kb' with a boot warning if 'llm' is requested
+  // without a key, deliberately different from BillingWebhookService's
+  // refuse-at-use-time: a customer-facing assistant that 500s on every
+  // message is worse than one that quietly answers from the catalog.
+  ASSISTANT_PROVIDER: z.enum(['kb', 'llm']).default('kb'),
+  ASSISTANT_LLM_API_KEY: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

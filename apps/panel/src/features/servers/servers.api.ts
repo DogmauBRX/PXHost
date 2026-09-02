@@ -1,5 +1,5 @@
 import { apiFetch } from '@/shared/api/client';
-import type { ConsoleTokenResponse, PowerAction, ServerDetail, ServerSummary } from '@/shared/api/types';
+import type { ConsoleTokenResponse, PowerAction, ServerDetail, ServerStatsSnapshot, ServerSummary } from '@/shared/api/types';
 
 export function listServers() {
   return apiFetch<ServerSummary[]>('/api/client/servers');
@@ -18,4 +18,8 @@ export function sendPowerAction(id: string, action: PowerAction) {
 
 export function mintConsoleToken(id: string) {
   return apiFetch<ConsoleTokenResponse>(`/api/client/servers/${id}/console-token`, { method: 'POST' });
+}
+
+export function getServerStats(id: string) {
+  return apiFetch<ServerStatsSnapshot>(`/api/client/servers/${id}/stats`);
 }

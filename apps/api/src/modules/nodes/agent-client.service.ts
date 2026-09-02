@@ -42,6 +42,37 @@ export interface AgentFileEntry {
   modTime: string;
 }
 
+// Mirrors agent/internal/stats/frame.go's json tags exactly. disk_bytes /
+// disk_limit_bytes are ALWAYS 0 — the agent passes a nil diskBytesFn to
+// its stats collector (srv/server.go), so the collector skips the disk
+// calculation entirely rather than doing a per-tick recursive tree walk.
+// Never surface these two fields to a customer as if they were real.
+export interface AgentStatsFrame {
+  state: string;
+  cpu_percent: number;
+  cpu_limit_percent: number;
+  memory_bytes: number;
+  memory_limit_bytes: number;
+  disk_bytes: number;
+  disk_limit_bytes: number;
+  network_rx_bytes: number;
+  network_tx_bytes: number;
+  uptime_ms: number;
+}
+
+// Mirrors handleGetServer's response shape (agent/internal/api/routes_server.go).
+// `stats` is absent (not null) until the agent has pushed at least one
+// frame for this container — e.g. a server that was created but never started.
+export interface AgentServerStatus {
+  uuid: string;
+  state: string;
+  containerId: string;
+  memoryLimitMb: number;
+  cpuLimitPercent: number;
+  consoleSubscribers: number;
+  stats?: AgentStatsFrame;
+}
+
 export interface AgentBackup {
   id: string;
   sizeBytes: number;
@@ -108,6 +139,32 @@ export class AgentClient {
       ioWeight: limits.ioWeight,
       pidsLimit: limits.pidsLimit,
     });
+  }
+
+  /**
+   * The agent's half of the Configurações tab (client-features Fase 7):
+   * Docker env is immutable after a container is created, so this removes
+   * and recreates the container with a new environment — see
+   * agent/internal/srv/server.go's UpdateVariables doc comment for why the
+   * data directory and the in-memory Server handle both survive that.
+   * Callers must confirm the server is stopped BEFORE calling this — the
+   * agent itself refuses otherwise, but the panel-side check exists so a
+   * 409 is the rare case, not the expected one.
+   */
+  async updateVariables(nodeId: string, serverUuid: string, declaredVariables: string[], variables: Record<string, string>): Promise<{ updated: boolean }> {
+    return this.call(nodeId, 'PATCH', `/api/servers/${serverUuid}/variables`, { declaredVariables, variables });
+  }
+
+  /**
+   * The agent's cached last stats frame (`agent/internal/api/routes_server.go`'s
+   * `handleGetServer`, `target.LatestStats()`) — it's already collecting
+   * this every 2s for the console's WS push; this just asks for the copy
+   * it's already holding. Costs no new agent code. `stats` is absent when
+   * the agent hasn't pushed a frame yet (e.g. a server that was just
+   * created and never started).
+   */
+  getServerStatus(nodeId: string, serverUuid: string): Promise<AgentServerStatus> {
+    return this.call(nodeId, 'GET', `/api/servers/${serverUuid}`, undefined);
   }
 
   /** The browser's direct connection target (architecture doc 4.5/5.2) — never proxied through this API. */

@@ -159,6 +159,77 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     expect(body.healthStatus).toBe('online');
     expect(body.agentVersion).toBe('v0.4.0-e2e');
     expect(body.dockerVersion).toBe('27.1.0');
+    // Capacity plan Fase 7: `uptimeSeconds` has been ACCEPTED since M4 but
+    // was silently discarded until now — the previous heartbeat sent it
+    // (42) with none of the new reported_* fields, proving both halves at
+    // once: an old-format heartbeat still works AND now actually persists.
+    expect(body.agentUptimeSeconds).toBe(42);
+    expect(body.reportedMemoryTotalMb).toBeNull();
+    expect(body.reportedAt).toBeNull();
+    expect(body.telemetryDivergence).toEqual({ memory: 'unknown', disk: 'unknown', cpu: 'unknown' });
+  });
+
+  it('a heartbeat with full telemetry persists every reported_* column without ever touching the declared ones', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remote/nodes/heartbeat',
+      headers: { authorization: `Bearer ${nodeToken}` },
+      payload: {
+        agentVersion: 'v0.4.0-e2e',
+        dockerVersion: '27.1.0',
+        uptimeSeconds: 99,
+        reportedMemoryTotalMb: 32768,
+        reportedCpuCount: 8,
+        reportedDiskTotalMb: 500000,
+        reportedDiskFreeMb: 400000,
+        reportedOs: 'linux',
+        reportedKernel: '6.1.0-e2e',
+        reportedContainersRunning: 3,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+
+    const node = await authed(`/api/admin/nodes/${nodeId}`);
+    const body = JSON.parse(node.body);
+    expect(body.reportedMemoryTotalMb).toBe(32768);
+    expect(body.reportedCpuCount).toBe(8);
+    expect(body.reportedDiskTotalMb).toBe(500000);
+    expect(body.reportedDiskFreeMb).toBe(400000);
+    expect(body.reportedOs).toBe('linux');
+    expect(body.reportedKernel).toBe('6.1.0-e2e');
+    expect(body.reportedContainersRunning).toBe(3);
+    expect(body.reportedAt).not.toBeNull();
+    expect(body.agentUptimeSeconds).toBe(99);
+    // Declared (test setup used memoryTotalMb: 4096, diskTotalMb: 20480 —
+    // both well under what was just reported) never changed.
+    expect(body.memoryTotalMb).toBe(4096);
+    expect(body.diskTotalMb).toBe(20480);
+    expect(body.telemetryDivergence).toEqual({ memory: 'ok', disk: 'ok', cpu: 'unknown' }); // cpu still unknown: cpuTotalPercent defaults to 0 (accounting off)
+  });
+
+  it('declaring more than the agent actually reports flags "over" — the one dangerous direction', async () => {
+    const patchRes = await authed(`/api/admin/nodes/${nodeId}`, { method: 'PATCH', payload: { memoryTotalMb: 65536 } }); // now above the 32768 reported above
+    expect(patchRes.statusCode).toBe(200);
+
+    const node = await authed(`/api/admin/nodes/${nodeId}`);
+    const body = JSON.parse(node.body);
+    expect(body.telemetryDivergence.memory).toBe('over');
+    expect(body.telemetryDivergence.disk).toBe('ok'); // untouched — still well under what was reported
+  });
+
+  it('a heartbeat with NO reported_* fields at all leaves the previously-reported values untouched', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remote/nodes/heartbeat',
+      headers: { authorization: `Bearer ${nodeToken}` },
+      payload: { agentVersion: 'v0.4.0-e2e-old-agent' }, // simulates an agent binary older than this milestone
+    });
+    expect(res.statusCode).toBe(201);
+
+    const node = await authed(`/api/admin/nodes/${nodeId}`);
+    const body = JSON.parse(node.body);
+    expect(body.reportedMemoryTotalMb).toBe(32768); // still the value from two tests ago — never zeroed
+    expect(body.agentVersion).toBe('v0.4.0-e2e-old-agent');
   });
 
   it('a heartbeat with a garbage token is rejected — never silently accepted', async () => {

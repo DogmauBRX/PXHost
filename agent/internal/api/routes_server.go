@@ -137,6 +137,45 @@ func (s *Server) handleSuspend(w http.ResponseWriter, r *http.Request) {
 	writeJSONResp(w, http.StatusOK, map[string]any{"suspended": req.Suspended, "state": string(target.State)})
 }
 
+type updateVariablesRequest struct {
+	DeclaredVars []string          `json:"declaredVariables"`
+	Variables    map[string]string `json:"variables"`
+}
+
+// handleUpdateVariables is the agent's half of the panel's Configurações
+// tab (Fase 7 of the client-features plan): Docker env is immutable after
+// a container is created, so applying an edited variable means removing
+// and recreating the container — see srv.Server.UpdateVariables's doc
+// comment for why that's safe (the data directory, jail, and this
+// Server's identity in the manager are untouched) and why it refuses a
+// running server outright rather than trying to reconcile a live swap.
+func (s *Server) handleUpdateVariables(w http.ResponseWriter, r *http.Request) {
+	uuid := pathParam(r, "uuid")
+	target, ok := s.manager.Get(uuid)
+	if !ok {
+		writeErrorResp(w, http.StatusNotFound, "SERVER_NOT_FOUND", "no server registered with that uuid")
+		return
+	}
+
+	var req updateVariablesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorResp(w, http.StatusUnprocessableEntity, "INVALID_BODY", err.Error())
+		return
+	}
+
+	env, err := buildEnvMap(uuid, req.DeclaredVars, req.Variables)
+	if err != nil {
+		writeErrorResp(w, http.StatusUnprocessableEntity, "INVALID_VARIABLES", err.Error())
+		return
+	}
+
+	if err := target.UpdateVariables(r.Context(), s.dc, env); err != nil {
+		writeErrorResp(w, http.StatusConflict, "UPDATE_VARIABLES_FAILED", err.Error())
+		return
+	}
+	writeJSONResp(w, http.StatusOK, map[string]any{"updated": true})
+}
+
 func writeJSONResp(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

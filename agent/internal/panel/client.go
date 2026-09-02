@@ -59,6 +59,21 @@ type HeartbeatRequest struct {
 	AgentVersion  string `json:"agentVersion,omitempty"`
 	DockerVersion string `json:"dockerVersion,omitempty"`
 	UptimeSeconds int64  `json:"uptimeSeconds,omitempty"`
+
+	// Capacity plan Fase 7 — what the agent ACTUALLY reports about its
+	// host, distinct from and never influencing the admin's DECLARED
+	// commercial capacity. All omitempty: an old agent binary (or one
+	// mid-tick where a source failed — see serve.go's `send()`, every
+	// source here is independently best-effort) simply omits whatever it
+	// doesn't have, and the panel leaves those columns untouched rather
+	// than zeroing them.
+	ReportedMemoryTotalMb     int64  `json:"reportedMemoryTotalMb,omitempty"`
+	ReportedCPUCount          int    `json:"reportedCpuCount,omitempty"`
+	ReportedDiskTotalMb       int64  `json:"reportedDiskTotalMb,omitempty"`
+	ReportedDiskFreeMb        int64  `json:"reportedDiskFreeMb,omitempty"`
+	ReportedOS                string `json:"reportedOs,omitempty"`
+	ReportedKernel            string `json:"reportedKernel,omitempty"`
+	ReportedContainersRunning int    `json:"reportedContainersRunning,omitempty"`
 }
 
 type HeartbeatResponse struct {

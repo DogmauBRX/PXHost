@@ -1,8 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { Activity, HardDrive, MemoryStick, Server, Users } from 'lucide-react';
 import { useAuthStore } from '@/shared/stores/auth.store';
-import { listNodes, listAdminServers, listUsers, listAuditLogs } from '@/features/admin/admin.api';
+import { getCapacityDashboard, listNodes, listUsers, listAuditLogs } from '@/features/admin/admin.api';
 import { Badge, Card, CardBody, CardHeader, CardTitle, EmptyState, PageHeader, StatCard } from '@/ui/primitives';
+
+const CAPACITY_TONE: Record<'normal' | 'warning' | 'critical', 'ok' | 'warn' | 'fail'> = {
+  normal: 'ok',
+  warning: 'warn',
+  critical: 'fail',
+};
 
 const HEALTH_TONE: Record<string, 'ok' | 'warn' | 'fail' | 'neutral'> = {
   online: 'ok',
@@ -10,6 +16,12 @@ const HEALTH_TONE: Record<string, 'ok' | 'warn' | 'fail' | 'neutral'> = {
   offline: 'fail',
   unknown: 'neutral',
 };
+
+function worstStatus(statuses: ('normal' | 'warning' | 'critical')[]): 'normal' | 'warning' | 'critical' {
+  if (statuses.includes('critical')) return 'critical';
+  if (statuses.includes('warning')) return 'warning';
+  return 'normal';
+}
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -26,35 +38,40 @@ export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
 
   const nodes = useQuery({ queryKey: ['admin', 'nodes'], queryFn: listNodes });
-  const servers = useQuery({ queryKey: ['admin', 'servers'], queryFn: () => listAdminServers() });
+  const capacity = useQuery({ queryKey: ['admin', 'capacity', 'dashboard'], queryFn: getCapacityDashboard });
   const users = useQuery({ queryKey: ['admin', 'users', { limit: 1 }], queryFn: () => listUsers({ limit: 1 }) });
   const activity = useQuery({ queryKey: ['admin', 'audit-logs', { limit: 8 }], queryFn: () => listAuditLogs({ limit: 8 }) });
 
-  const onlineNodes = nodes.data?.filter((n) => n.healthStatus === 'online').length ?? 0;
-  const totalMemoryGb = nodes.data ? Math.round(nodes.data.reduce((sum, n) => sum + n.memoryTotalMb, 0) / 1024) : 0;
+  // Real, from `/api/admin/capacity` — replaces what used to be a
+  // client-side sum of `node.memoryTotalMb` (labeled "capacidade total
+  // declarada"), which ignored reserve/overallocate entirely and never
+  // showed how much of that capacity was actually allocated.
+  const memoryGb = capacity.data ? Math.round(capacity.data.memory.commercial / 1024) : 0;
+  const memoryUsedPct = capacity.data && capacity.data.memory.commercial > 0 ? Math.round((capacity.data.memory.allocated / capacity.data.memory.commercial) * 100) : 0;
+  const memoryStatus = capacity.data ? worstStatus(capacity.data.perNode.map((n) => n.memory.status)) : 'normal';
 
   return (
     <>
       <PageHeader title={`Olá, ${user?.username ?? 'Admin'}`} subtitle="Aqui está um resumo da sua infraestrutura." />
 
       <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Servidores" value={servers.data?.length ?? 0} icon={Server} tone="accent" loading={servers.isPending} />
+        <StatCard label="Servidores" value={capacity.data?.servers.total ?? 0} icon={Server} tone="accent" loading={capacity.isPending} hint={capacity.data ? `${capacity.data.servers.active} ativos` : undefined} />
         <StatCard
           label="Nodes"
-          value={nodes.data?.length ?? 0}
+          value={capacity.data?.nodes.total ?? nodes.data?.length ?? 0}
           icon={HardDrive}
           tone="info"
-          loading={nodes.isPending}
-          hint={`${onlineNodes} online`}
+          loading={capacity.isPending}
+          hint={capacity.data ? `${capacity.data.nodes.online} online` : undefined}
         />
         <StatCard label="Clientes" value={users.data?.total ?? 0} icon={Users} tone="ok" loading={users.isPending} />
         <StatCard
           label="RAM dos nodes"
-          value={`${totalMemoryGb} GB`}
+          value={`${memoryGb} GB`}
           icon={MemoryStick}
-          tone="warn"
-          loading={nodes.isPending}
-          hint="Capacidade total declarada"
+          tone={CAPACITY_TONE[memoryStatus]}
+          loading={capacity.isPending}
+          hint={`${memoryUsedPct}% alocado${capacity.data?.memory.commercialIsFloor ? ' · pelo menos' : ' da capacidade comercial'}`}
         />
       </div>
 

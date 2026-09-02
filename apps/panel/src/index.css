@@ -101,8 +101,29 @@ html[data-theme="dark"] {
   color-scheme: dark;
 }
 
+/*
+ * A wallpaper across every page — not a decoration competing with
+ * content, since every card/table sits on opaque `bg-surface` above it,
+ * but genuinely visible in the gutters/empty space rather than a barely-
+ * there tint. Three layers: two opposing brand-orange mesh-gradient
+ * glows (top-left + bottom-right, so the viewport reads as "designed"
+ * from any scroll position, not just the very top of a page) and an
+ * accent-tinted dot grid for texture in between. All three use
+ * `color-mix()` against the theme's own tokens, so light/dark and any
+ * future palette swap need no changes here. `background-attachment:
+ * fixed` pins every layer to the viewport — the page (not `<main>`)
+ * scrolls, per AppShell's own doc comment, so a `scroll`-attached layer
+ * would slide out of view on any page taller than one screen.
+ */
 body {
   background: var(--color-bg);
+  background-image:
+    radial-gradient(60% 55% at 8% -10%, color-mix(in srgb, var(--color-accent) 24%, transparent) 0%, transparent 70%),
+    radial-gradient(50% 48% at 100% 105%, color-mix(in srgb, var(--color-accent) 18%, transparent) 0%, transparent 70%),
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--color-accent) 45%, transparent) 1.5px, transparent 0);
+  background-size: 100% 100%, 100% 100%, 32px 32px;
+  background-repeat: no-repeat, no-repeat, repeat;
+  background-attachment: fixed, fixed, fixed;
   color: var(--color-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -112,6 +133,110 @@ body {
 ::selection {
   background: var(--color-accent-tint);
   color: var(--color-accent-strong);
+}
+
+/*
+ * The login page's "hero" treatment — the one screen where the brand gets
+ * a full-bleed moment. Four soft accent "aurora" blobs (no hard edges, no
+ * grid lines — a crisp repeating lattice was tried here first and read as
+ * busy rather than beautiful) breathing slowly: the single keyframe below
+ * nudges all four gradient positions in DIFFERENT directions each half-
+ * cycle, so the blobs drift apart and back together rather than moving in
+ * lockstep. `color-mix()` against the theme's own tokens means light/dark
+ * need no separate rule. `prefers-reduced-motion` turns the drift off
+ * entirely rather than slowing it down.
+ */
+.login-hero {
+  position: relative;
+  background-image:
+    radial-gradient(38% 40% at 18% 22%, color-mix(in srgb, var(--color-accent) 32%, transparent) 0%, transparent 72%),
+    radial-gradient(34% 36% at 86% 14%, color-mix(in srgb, var(--color-accent-strong) 26%, transparent) 0%, transparent 72%),
+    radial-gradient(42% 44% at 82% 88%, color-mix(in srgb, var(--color-accent) 28%, transparent) 0%, transparent 72%),
+    radial-gradient(36% 38% at 12% 90%, color-mix(in srgb, var(--color-accent-strong) 22%, transparent) 0%, transparent 72%);
+  background-repeat: no-repeat;
+  animation: aurora-drift-a 24s ease-in-out infinite;
+}
+
+@keyframes aurora-drift-a {
+  0%,
+  100% {
+    background-position:
+      0% 0%,
+      0% 0%,
+      0% 0%,
+      0% 0%;
+  }
+  50% {
+    background-position:
+      4% 5%,
+      -3% 4%,
+      -4% -4%,
+      3% -5%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-hero {
+    animation: none;
+  }
+}
+
+/*
+ * The animated brand wordmark shared by the login hero and the sidebar
+ * header — a gradient wider than the text, slid continuously via
+ * `background-position` so the "shine" sweeps left to right and loops
+ * seamlessly (the gradient repeats its own start pattern at -200%).
+ */
+.brand-wordmark {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-accent) 0%,
+    var(--color-accent-strong) 25%,
+    var(--color-accent) 50%,
+    var(--color-accent-strong) 75%,
+    var(--color-accent) 100%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: wordmark-shimmer 5s linear infinite;
+}
+
+@keyframes wordmark-shimmer {
+  to {
+    background-position: -220% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-wordmark {
+    animation: none;
+  }
+}
+
+/*
+ * The sidebar header's "featured panel" treatment (client account
+ * management follow-up: "destaque dentro do título do painel") — a
+ * contained circuit-board backdrop (CircuitPattern.tsx) behind the
+ * logo+wordmark, on a faint accent-tinted panel so the brand block reads
+ * as a distinct, lit-up module rather than blending into the rest of the
+ * sidebar's plain surface.
+ */
+.sidebar-brand {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 7%, var(--color-surface)) 0%, var(--color-surface) 100%);
+}
+
+.sidebar-brand__circuit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.5;
+  mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
 }
 
 /* xterm.js ships its own base styles; this just lets it size to its flex parent */

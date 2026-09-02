@@ -12,7 +12,22 @@ import {
   updateTemplate,
 } from './admin.api';
 import { ApiError } from '@/shared/api/client';
-import type { AdminTemplate, AdminTemplateVariable } from '@/shared/api/types';
+import type { AdminTemplate, AdminTemplateVariable, SoftwareKind } from '@/shared/api/types';
+
+const SOFTWARE_OPTIONS: { value: SoftwareKind; label: string }[] = [
+  { value: 'paper', label: 'Paper' },
+  { value: 'purpur', label: 'Purpur' },
+  { value: 'spigot', label: 'Spigot' },
+  { value: 'bukkit', label: 'Bukkit' },
+  { value: 'fabric', label: 'Fabric' },
+  { value: 'forge', label: 'Forge' },
+  { value: 'neoforge', label: 'NeoForge' },
+  { value: 'vanilla', label: 'Vanilla' },
+  { value: 'bungeecord', label: 'BungeeCord' },
+  { value: 'velocity', label: 'Velocity' },
+  { value: 'other', label: 'Outro' },
+];
+const SOFTWARE_LABEL: Record<SoftwareKind, string> = Object.fromEntries(SOFTWARE_OPTIONS.map((o) => [o.value, o.label])) as Record<SoftwareKind, string>;
 import {
   Alert,
   Badge,
@@ -119,6 +134,7 @@ interface TemplateFormValues {
   installImage: string;
   installEntrypoint: string;
   installScript: string;
+  softwareKind: SoftwareKind | '';
 }
 
 const EMPTY_FORM: TemplateFormValues = {
@@ -133,6 +149,7 @@ const EMPTY_FORM: TemplateFormValues = {
   installImage: '',
   installEntrypoint: 'sh',
   installScript: '#!/bin/sh\n',
+  softwareKind: '',
 };
 
 function templateToForm(t: AdminTemplate): TemplateFormValues {
@@ -149,6 +166,7 @@ function templateToForm(t: AdminTemplate): TemplateFormValues {
     installImage: t.installImage ?? '',
     installEntrypoint: t.installEntrypoint ?? '',
     installScript: t.installScript,
+    softwareKind: t.softwareKind ?? '',
   };
 }
 
@@ -184,6 +202,16 @@ function TemplateFormFields({
           </Field>
           <Field label="Descrição" htmlFor="tpl-description">
             <Input id="tpl-description" value={values.description} onChange={(e) => onChange({ description: e.target.value })} />
+          </Field>
+          <Field label="Software" htmlFor="tpl-software" hint="Determina se o cliente vê a aba de Mods ou de Plugins, e onde o assistente diz para colocar os arquivos.">
+            <Select id="tpl-software" value={values.softwareKind} onChange={(e) => onChange({ softwareKind: e.target.value as SoftwareKind | '' })}>
+              <option value="">— não definido —</option>
+              {SOFTWARE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
           </Field>
         </div>
       </fieldset>
@@ -306,6 +334,7 @@ function CreateTemplateModal({
         installScript: values.installScript,
         installImage: values.installImage.trim() || undefined,
         installEntrypoint: values.installEntrypoint.trim() || undefined,
+        softwareKind: values.softwareKind || undefined,
       });
       // Keeps image/install config, clears the rest — lets an operator create
       // several templates against the same base image back to back.
@@ -380,6 +409,7 @@ function EditTemplateModal({
         installImage: values.installImage.trim(),
         installEntrypoint: values.installEntrypoint.trim(),
         installScript: values.installScript,
+        softwareKind: values.softwareKind || undefined,
       });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'templates'] });
       onClose();
@@ -533,6 +563,11 @@ export function TemplatesPage() {
                       <p className="font-medium text-text">{t.name}</p>
                       <span className="text-xs text-text-faint">por {t.author}</span>
                       {groupNameById.get(t.groupId) && <Badge>{groupNameById.get(t.groupId)}</Badge>}
+                      {t.softwareKind ? (
+                        <Badge tone="ok">{SOFTWARE_LABEL[t.softwareKind]}</Badge>
+                      ) : (
+                        <Badge tone="warn">software não definido</Badge>
+                      )}
                       {!t.isActive && <Badge tone="neutral">inativo</Badge>}
                     </div>
                     <p className="mt-1 font-mono text-xs text-text-faint">{Object.values(t.dockerImages).join(', ')}</p>

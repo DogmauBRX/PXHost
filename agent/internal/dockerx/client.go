@@ -277,6 +277,39 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 	return v.Version, nil
 }
 
+// SystemInfo is the narrow subset of the daemon's `/info` response the
+// heartbeat's telemetry (capacity plan Fase 7) actually needs — never the
+// full system.Info, which carries daemon config that has no business
+// leaving the node.
+type SystemInfo struct {
+	MemTotalBytes     int64
+	NCPU              int
+	OperatingSystem   string
+	KernelVersion     string
+	ContainersRunning int
+}
+
+// Info reports what the Docker daemon sees of its OWN host — the agent
+// runs directly on the Proxmox host (capacity plan's Fase 0 topology
+// decision), so this is genuinely the physical machine's numbers, not a
+// container's. Distinct from, and never copied into, the admin's
+// DECLARED commercial capacity (Node.memoryTotalMb etc.) — see the
+// panel-side `reported_*` columns' own doc comment for why that
+// separation is load-bearing.
+func (c *Client) Info(ctx context.Context) (SystemInfo, error) {
+	info, err := c.cli.Info(ctx)
+	if err != nil {
+		return SystemInfo{}, fmt.Errorf("dockerx: info: %w", err)
+	}
+	return SystemInfo{
+		MemTotalBytes:     info.MemTotal,
+		NCPU:              info.NCPU,
+		OperatingSystem:   info.OperatingSystem,
+		KernelVersion:     info.KernelVersion,
+		ContainersRunning: info.ContainersRunning,
+	}, nil
+}
+
 // WaitContainer blocks until the container exits (or ctx is cancelled —
 // callers are expected to pass a context.WithTimeout for install runs, per
 // architecture doc 3.6's hard wall-clock timeout on installers) and

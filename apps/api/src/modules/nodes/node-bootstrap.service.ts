@@ -158,7 +158,30 @@ export class NodeBootstrapService {
     return this.issueBootstrapToken(nodeId, actorId);
   }
 
+  /**
+   * Capacity plan Fase 7: `dto`'s `reported_*` fields (and `uptimeSeconds`,
+   * accepted-and-discarded since M4) are now actually persisted. Every
+   * field is passed straight through as `undefined` when the agent
+   * didn't send it — Prisma's `update` leaves an `undefined` field
+   * completely untouched rather than nulling it out, so a heartbeat from
+   * an agent binary older than this milestone (or one where a single
+   * telemetry source failed this tick — see the agent's own `send()`)
+   * changes nothing about columns it has no data for. `reportedAt` is
+   * the one exception: it's only bumped when at least one `reported_*`
+   * field actually arrived, so it stays a true "last real telemetry"
+   * timestamp instead of updating on every heartbeat regardless of
+   * content.
+   */
   async heartbeat(nodeId: string, dto: HeartbeatDto): Promise<{ status: string }> {
+    const hasReportedFields =
+      dto.reportedMemoryTotalMb !== undefined ||
+      dto.reportedCpuCount !== undefined ||
+      dto.reportedDiskTotalMb !== undefined ||
+      dto.reportedDiskFreeMb !== undefined ||
+      dto.reportedOs !== undefined ||
+      dto.reportedKernel !== undefined ||
+      dto.reportedContainersRunning !== undefined;
+
     const node = await this.prisma.node.update({
       where: { id: nodeId },
       data: {
@@ -166,6 +189,15 @@ export class NodeBootstrapService {
         healthStatus: 'online',
         agentVersion: dto.agentVersion,
         dockerVersion: dto.dockerVersion,
+        agentUptimeSeconds: dto.uptimeSeconds,
+        reportedMemoryTotalMb: dto.reportedMemoryTotalMb,
+        reportedCpuCount: dto.reportedCpuCount,
+        reportedDiskTotalMb: dto.reportedDiskTotalMb,
+        reportedDiskFreeMb: dto.reportedDiskFreeMb,
+        reportedOs: dto.reportedOs,
+        reportedKernel: dto.reportedKernel,
+        reportedContainersRunning: dto.reportedContainersRunning,
+        ...(hasReportedFields ? { reportedAt: new Date() } : {}),
       },
     });
     return { status: deriveHealthStatus(node.lastHeartbeatAt) };

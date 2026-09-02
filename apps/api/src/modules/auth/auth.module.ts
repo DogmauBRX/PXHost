@@ -5,6 +5,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
+import { SessionRevocationService } from './session-revocation.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuditModule } from '../audit/audit.module';
 
@@ -25,7 +26,7 @@ import { AuditModule } from '../audit/audit.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PasswordService, TokenService, JwtAuthGuard],
-  exports: [AuthService, PasswordService, TokenService, JwtAuthGuard],
+  providers: [AuthService, PasswordService, TokenService, SessionRevocationService, JwtAuthGuard],
+  exports: [AuthService, PasswordService, TokenService, SessionRevocationService, JwtAuthGuard],
 })
 export class AuthModule {}

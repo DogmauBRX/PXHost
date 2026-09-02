@@ -9,10 +9,14 @@ import type { AuthenticatedUser } from '../../auth/guards/jwt-auth.guard';
  * customer actions, and are audited separately — this is that surface's
  * front door).
  *
- * Fine-grained admin permission strings (admin.nodes.*, admin.plans.*,
- * ...) are a later milestone; for M4 this is deliberately coarse —
- * `root_admin` / `admin` / `support` all pass, `user` never does — matching
- * how little admin surface exists so far (nodes, locations, templates).
+ * Deliberately coarse: `root_admin` / `admin` / `support` all pass,
+ * `user` never does. Fine-grained gating for a SPECIFIC mutating action
+ * (e.g. resetting a password, changing a role) is
+ * `@RequireAdminPermission()` + `AdminPermissionGuard`
+ * (admin-permissions.ts) layered on top of this one, not a replacement
+ * for it — most read-only admin surface (nodes, locations, templates)
+ * has no finer permission than "is staff at all," and this guard remains
+ * that check.
  */
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -21,6 +25,12 @@ export class AdminGuard implements CanActivate {
     const user: AuthenticatedUser | undefined = request.user;
     if (!user?.isAdmin) {
       throw new ForbiddenException('Admin access required');
+    }
+    // Fails closed on an impersonated token (client account management
+    // plan, Fase 6's seam) — see AdminPermissionGuard's identical check
+    // for why this branch is dead code today and load-bearing later.
+    if (user.impersonatorId) {
+      throw new ForbiddenException('Impersonated sessions cannot access admin routes');
     }
     return true;
   }

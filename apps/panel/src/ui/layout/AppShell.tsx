@@ -28,8 +28,12 @@ export function AppShell({ children, area }: { children: ReactNode; area: 'admin
   const panelLabel = area === 'admin' ? 'ADMIN PANEL' : 'CLIENT PANEL';
   const settingsTo = area === 'admin' ? '/admin/settings' : '/client/settings';
 
+  // No `bg-bg` on this div — it would paint solid over `body`'s wallpaper
+  // (index.css) the instant React mounts, which is why it was only ever
+  // visible for a flash before hydration. `body` already carries the same
+  // base color, so leaving this transparent is enough.
   return (
-    <div className="min-h-screen bg-bg">
+    <div className="min-h-screen">
       <Sidebar sections={sections} panelLabel={panelLabel} settingsTo={settingsTo} />
       <div className="lg:pl-64">
         <Topbar />

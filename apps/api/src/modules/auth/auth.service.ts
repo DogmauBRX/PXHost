@@ -5,6 +5,7 @@ import { RedisService } from '../../core/redis/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
+import { SessionRevocationService } from './session-revocation.service';
 
 export interface RequestMeta {
   ip?: string | null;
@@ -31,6 +32,7 @@ export class AuthService {
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
     private readonly config: ConfigService,
+    private readonly sessionRevocation: SessionRevocationService,
   ) {}
 
   async login(email: string, plainPassword: string, meta: RequestMeta): Promise<LoginResult> {
@@ -164,11 +166,7 @@ export class AuthService {
     await this.redis.denylistSession(sessionId, accessTtl);
 
     if (allDevices) {
-      await this.prisma.session.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      await this.prisma.user.update({ where: { id: userId }, data: { tokensValidAfter: new Date() } });
+      await this.sessionRevocation.revokeAllForUser(userId, 'logout_all');
     } else {
       await this.prisma.session.update({ where: { id: sessionId }, data: { revokedAt: new Date() } }).catch(() => undefined);
     }

@@ -1,8 +1,10 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { PasswordService } from '../auth/password.service';
 import { AuditService } from '../audit/audit.service';
+import type { AuthenticatedUser } from '../auth/guards/jwt-auth.guard';
+import { canActOnRole, canAssignRole } from '../admin/admin-permissions';
 import { ListUsersDto } from './dto/list-users.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -69,20 +71,7 @@ export class UsersService {
           orderBy: { createdAt: 'desc' },
           take,
           skip,
-          select: {
-            id: true,
-            email: true,
-            username: true,
-            firstName: true,
-            lastName: true,
-            globalRole: true,
-            isActive: true,
-            emailVerifiedAt: true,
-            lastLoginAt: true,
-            totpEnabledAt: true,
-            createdAt: true,
-            _count: { select: { ownedServers: true } },
-          },
+          select: { ...SAFE_SELECT, _count: { select: { ownedServers: true } } },
         }),
         tx.user.count({ where }),
       ]);
@@ -109,7 +98,19 @@ export class UsersService {
     });
   }
 
-  async create(dto: CreateUserDto, actorId: string) {
+  /**
+   * `dto.globalRole` (defaulting to `'user'`) is being ASSIGNED, not acted
+   * on — there is no existing target row to rank-check against yet, so
+   * the only hierarchy question here is whether the actor may hand out
+   * that role at all (`canAssignRole`), the same check `update()` applies
+   * when a role is part of the diff.
+   */
+  async create(dto: CreateUserDto, actor: AuthenticatedUser) {
+    const roleToAssign = dto.globalRole ?? 'user';
+    if (!canAssignRole(actor.globalRole, roleToAssign)) {
+      throw new ForbiddenException(`Cannot create a user with role "${roleToAssign}"`);
+    }
+
     const existing = await this.findActiveByEmailOrUsername(dto.email, dto.username);
     if (existing) throw new ConflictException('A user with that email or username already exists');
 
@@ -121,18 +122,38 @@ export class UsersService {
         passwordHash,
         firstName: dto.firstName,
         lastName: dto.lastName,
-        globalRole: dto.globalRole ?? 'user',
+        globalRole: roleToAssign,
       },
       select: SAFE_SELECT,
     });
 
-    await this.audit.record({ action: 'admin.user.create', actorId, targetType: 'user', targetId: created.id, metadata: { email: created.email, globalRole: created.globalRole } });
+    await this.audit.record({
+      action: 'admin.user.create',
+      actorId: actor.id,
+      targetType: 'user',
+      targetId: created.id,
+      metadata: { email: created.email, username: created.username, globalRole: created.globalRole },
+    });
     return { ...created, serverCount: 0, twoFactorEnabled: false };
   }
 
-  async update(id: string, dto: UpdateUserDto, actorId: string) {
-    const target = await this.prisma.user.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+  async update(id: string, dto: UpdateUserDto, actor: AuthenticatedUser) {
+    const target = await this.prisma.user.findFirst({ where: { id, deletedAt: null }, select: { id: true, globalRole: true } });
     if (!target) throw new NotFoundException('User not found');
+
+    // Rank checks (client account management plan, Fase 1): an actor may
+    // only touch a strictly-lower-ranked target, may only assign a role
+    // <= their own rank, and may never change their OWN role — the same
+    // reasoning as the self-block refusal in setActive() below, applied
+    // to the more powerful "become someone else's rank" action.
+    if (id === actor.id) {
+      if (dto.globalRole !== undefined) throw new ConflictException('You cannot change your own role');
+    } else if (!canActOnRole(actor.globalRole, target.globalRole)) {
+      throw new ForbiddenException('Cannot modify a user of equal or higher rank');
+    }
+    if (dto.globalRole !== undefined && !canAssignRole(actor.globalRole, dto.globalRole)) {
+      throw new ForbiddenException(`Cannot assign role "${dto.globalRole}"`);
+    }
 
     if (dto.email || dto.username) {
       const clash = await this.prisma.user.findFirst({
@@ -158,7 +179,24 @@ export class UsersService {
       select: { ...SAFE_SELECT, _count: { select: { ownedServers: true } } },
     });
 
-    await this.audit.record({ action: 'admin.user.update', actorId, targetType: 'user', targetId: id, metadata: dto as Record<string, unknown> });
+    // An explicit key allow-list, never a spread of the raw DTO — this
+    // table is append-only with DELETE revoked from the app role
+    // (migrations/0002_rls_policies), so any field ever added to
+    // UpdateUserDto that shouldn't live there forever (a password, a
+    // token) would otherwise be permanent the moment it's added.
+    await this.audit.record({
+      action: 'admin.user.update',
+      actorId: actor.id,
+      targetType: 'user',
+      targetId: id,
+      metadata: {
+        email: dto.email,
+        username: dto.username,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        globalRole: dto.globalRole,
+      },
+    });
     const { _count, totpEnabledAt, ...rest } = updated;
     return { ...rest, serverCount: _count.ownedServers, twoFactorEnabled: totpEnabledAt !== null };
   }
@@ -169,12 +207,16 @@ export class UsersService {
    * database on every single request (never trusted from the JWT), so an
    * already-issued access token stops working the instant this commits.
    */
-  async setActive(id: string, isActive: boolean, actorId: string) {
-    const target = await this.prisma.user.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+  async setActive(id: string, isActive: boolean, actor: AuthenticatedUser) {
+    const target = await this.prisma.user.findFirst({ where: { id, deletedAt: null }, select: { id: true, globalRole: true } });
     if (!target) throw new NotFoundException('User not found');
-    if (id === actorId && !isActive) throw new ConflictException('You cannot block your own account');
+    if (id === actor.id) {
+      if (!isActive) throw new ConflictException('You cannot block your own account');
+    } else if (!canActOnRole(actor.globalRole, target.globalRole)) {
+      throw new ForbiddenException('Cannot modify a user of equal or higher rank');
+    }
 
     await this.prisma.user.update({ where: { id }, data: { isActive } });
-    await this.audit.record({ action: isActive ? 'admin.user.unblock' : 'admin.user.block', actorId, targetType: 'user', targetId: id });
+    await this.audit.record({ action: isActive ? 'admin.user.unblock' : 'admin.user.block', actorId: actor.id, targetType: 'user', targetId: id });
   }
 }

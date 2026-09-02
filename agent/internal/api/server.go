@@ -136,6 +136,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /api/servers/{uuid}/power", s.requireNodeToken(http.HandlerFunc(s.handlePower)))
 	mux.Handle("PATCH /api/servers/{uuid}/limits", s.requireNodeToken(http.HandlerFunc(s.handleUpdateLimits)))
 	mux.Handle("PATCH /api/servers/{uuid}/suspend", s.requireNodeToken(http.HandlerFunc(s.handleSuspend)))
+	mux.Handle("PATCH /api/servers/{uuid}/variables", s.requireNodeToken(http.HandlerFunc(s.handleUpdateVariables)))
 
 	// The WS endpoint is NOT gated by requireNodeToken: per architecture
 	// doc 4.5, its authentication is the panel-signed capability token

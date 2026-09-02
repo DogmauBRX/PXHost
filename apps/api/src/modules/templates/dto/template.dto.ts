@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsInt, IsObject, IsOptional, IsString, Length, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, Length, ValidateNested } from 'class-validator';
+import { SOFTWARE_KINDS, type SoftwareKind } from '../software';
 
 export class CreateTemplateGroupDto {
   @IsString()
@@ -85,6 +86,14 @@ export class CreateServerTemplateDto {
   @IsString()
   installScript!: string;
 
+  // Drives which addon directory (/plugins vs /mods) the client-facing
+  // Add-ons page and the assistant point the customer at — see
+  // modules/templates/software.ts. Optional: an admin can classify a
+  // template later from the Templates page.
+  @IsOptional()
+  @IsIn(SOFTWARE_KINDS)
+  softwareKind?: SoftwareKind;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -134,6 +143,10 @@ export class UpdateServerTemplateDto {
   @IsOptional()
   @IsString()
   installScript?: string;
+
+  @IsOptional()
+  @IsIn(SOFTWARE_KINDS)
+  softwareKind?: SoftwareKind;
 
   @IsOptional()
   @IsBoolean()

@@ -4,8 +4,12 @@ export class CreateServerDto {
   @IsUUID()
   ownerId!: string;
 
+  // Capacity plan Fase 5: omitted ⇒ automatic node selection
+  // (NodeSchedulerService). Every existing caller already sends this,
+  // so nothing changes for them.
+  @IsOptional()
   @IsUUID()
-  nodeId!: string;
+  nodeId?: string;
 
   @IsUUID()
   templateId!: string;

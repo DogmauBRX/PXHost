@@ -10,6 +10,8 @@ export { PromptDialog } from './PromptDialog';
 export { Alert, EmptyState, Spinner, LoadingRow, Skeleton } from './Feedback';
 export { PageHeader } from './PageHeader';
 export { StatCard } from './StatCard';
+export { Meter } from './Meter';
+export { Toggle } from './Toggle';
 export { CodeEditor } from './CodeEditor';
 export { Avatar } from './Avatar';
 export { RouteTabs } from './RouteTabs';

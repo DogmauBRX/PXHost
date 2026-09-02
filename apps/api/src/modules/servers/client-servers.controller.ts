@@ -29,6 +29,12 @@ export class ClientServersController {
     return this.servers.get(user, id);
   }
 
+  /** Cheap, 10s-cached usage snapshot — powers the resource advisory without opening a WebSocket. See ClientServersService.stats's doc comment for the offline/suspended semantics. */
+  @Get(':id/stats')
+  stats(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.servers.stats(user, id);
+  }
+
   @Post(':id/power')
   power(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: PowerActionDto) {
     return this.servers.power(user, id, dto.action);

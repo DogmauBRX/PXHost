@@ -38,6 +38,11 @@ const SUSPENDED_BLOCKED_KEYS = [
   'backup.restore',
   'database.create',
   'database.delete',
+  // Not in the architecture doc's original table (startup.* didn't exist
+  // yet) but the same reasoning applies: a suspended customer can see WHY
+  // (startup.read passes via the generic `.read` rule) but not change
+  // anything while suspended.
+  'startup.update',
 ];
 
 function allowedWhenSuspended(status: string, permission: string): boolean {
@@ -47,13 +52,45 @@ function allowedWhenSuspended(status: string, permission: string): boolean {
   return !SUSPENDED_BLOCKED_KEYS.includes(permission);
 }
 
+// What a customer may see of their plan — the advisory recommendation
+// fields plus the commercial ones, never the node-tuning columns
+// (cpuPinning, blockIoReadBps/WriteBps, maxSlots, the PlanNode
+// eligibility list). Shared between
+// `fetchOwned` and `listAccessible` so the dashboard (N servers) and the
+// server page (one server) always agree on what a plan looks like.
+export const PLAN_CLIENT_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  description: true,
+  memoryMb: true,
+  diskMb: true,
+  cpuLimitPercent: true,
+  maxBackups: true,
+  maxDatabases: true,
+  backupRetentionDays: true,
+  priceCents: true,
+  currency: true,
+  billingPeriod: true,
+  maxServers: true,
+  recommendedPlayersMin: true,
+  recommendedPlayersMax: true,
+  recommendedModsMin: true,
+  recommendedModsMax: true,
+  recommendedPluginsMin: true,
+  recommendedPluginsMax: true,
+} satisfies Prisma.PlanSelect;
+
 function fetchOwned(tx: Prisma.TransactionClient, serverId: string) {
   return tx.server.findFirst({
     where: { id: serverId },
     include: {
       node: { select: { id: true, name: true, fqdn: true, scheme: true, daemonPort: true } },
-      template: { select: { id: true, name: true } },
-      plan: { select: { id: true, name: true } },
+      // softwareKind is what lets the response derive `software` (see
+      // servers/software.ts's describeSoftware) — the one signal the
+      // Add-ons page and the assistant both key off of.
+      template: { select: { id: true, name: true, softwareKind: true } },
+      plan: { select: PLAN_CLIENT_SELECT },
       allocations: { select: { ip: true, port: true, isPrimary: true } },
     },
   });
@@ -160,8 +197,8 @@ export class ServerAccessService {
         orderBy: { createdAt: 'desc' },
         include: {
           node: { select: { id: true, name: true } },
-          plan: { select: { id: true, name: true } },
-          template: { select: { id: true, name: true } },
+          plan: { select: PLAN_CLIENT_SELECT },
+          template: { select: { id: true, name: true, softwareKind: true } },
           allocations: { select: { ip: true, port: true, isPrimary: true } },
         },
       }),

@@ -10,6 +10,19 @@ export interface AuthenticatedUser {
   sessionId: string;
   jti: string;
   isAdmin: boolean;
+  /** Raw `users.global_role` — `isAdmin` stays as the coarse boolean ~40 call sites already depend on; this is what rank/permission checks (client account management plan, admin/admin-permissions.ts) read instead of re-querying. */
+  globalRole: string;
+  /** Raw `users.admin_permissions` column — additive over the role's own defaults, never subtractive. Resolve with `resolveAdminPermissions()`, never read directly for an authorization decision. */
+  adminPermissions: string[];
+  /**
+   * Reserved for impersonation (client account management plan, Fase 6),
+   * never populated today — nothing in this codebase mints a token that
+   * sets this. `AdminGuard`/`AdminPermissionGuard` refuse any token that
+   * DOES carry it, so an impersonated session is structurally unable to
+   * reach an admin route the day this seam is ever used, before the rest
+   * of that feature (a two-token panel session model) exists at all.
+   */
+  impersonatorId?: string;
 }
 
 /**
@@ -60,7 +73,7 @@ export class JwtAuthGuard implements CanActivate {
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, isActive: true, deletedAt: true, tokensValidAfter: true, globalRole: true },
+      select: { id: true, isActive: true, deletedAt: true, tokensValidAfter: true, globalRole: true, adminPermissions: true },
     });
     if (!user || !user.isActive || user.deletedAt) {
       throw new UnauthorizedException('Account is not active');
@@ -87,6 +100,9 @@ export class JwtAuthGuard implements CanActivate {
       sessionId: payload.sid,
       jti: payload.jti,
       isAdmin: user.globalRole !== 'user',
+      globalRole: user.globalRole,
+      adminPermissions: user.adminPermissions,
+      // impersonatorId intentionally omitted — nothing populates payload.act yet (Fase 6 seam).
     };
     request.user = authedUser;
     return true;

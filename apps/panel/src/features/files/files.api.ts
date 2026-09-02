@@ -37,3 +37,18 @@ export function mintDownloadLink(serverId: string, path: string) {
 export function mintUploadLink(serverId: string, path: string, maxBytes?: number) {
   return apiFetch<TransferLink>(`${base(serverId)}/upload-link`, { method: 'POST', body: JSON.stringify({ path, maxBytes }) });
 }
+
+export function chmod(serverId: string, path: string, mode: number) {
+  return apiFetch<void>(`${base(serverId)}/chmod`, { method: 'POST', body: JSON.stringify({ path, mode }) });
+}
+
+export function compress(serverId: string, paths: string[], dest: string) {
+  return apiFetch<void>(`${base(serverId)}/compress`, { method: 'POST', body: JSON.stringify({ paths, dest }) });
+}
+
+export function decompress(serverId: string, path: string, dest: string) {
+  return apiFetch<{ extracted: number; skipped: string[] }>(`${base(serverId)}/decompress`, {
+    method: 'POST',
+    body: JSON.stringify({ path, dest }),
+  });
+}

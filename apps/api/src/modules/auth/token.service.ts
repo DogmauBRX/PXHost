@@ -9,6 +9,24 @@ export interface AccessTokenPayload {
   jti: string;
   scp: 'session';
   adm: boolean; // cheap admin hint only — real permissions are always re-checked against the DB
+  /**
+   * Reserved for impersonation (client account management plan, Fase 6),
+   * modeled on RFC 8693's actor claim — never set today; `signAccessToken`
+   * has no parameter that produces it. When that feature is eventually
+   * built, the mandatory order is: (1) rework the panel to a two-token
+   * session model (`useAuthStore` holding both the admin's own token and
+   * an impersonation token, with `apiFetch`'s 401-refresh path refusing
+   * to run while impersonating — today it silently re-mints the ADMIN's
+   * own token via the always-sent refresh cookie and leaves the UI
+   * showing the impersonated client, see auth.store.ts/client.ts), THEN
+   * (2) an endpoint that populates this claim. An impersonated token must
+   * never carry a `Session` row, never accept a refresh, and expire in
+   * minutes — `AdminGuard`/`AdminPermissionGuard` already refuse any
+   * token whose resolved `AuthenticatedUser.impersonatorId` is set, so
+   * until this claim is actually minted, no token can ever reach an
+   * admin route this way regardless of what else is built first.
+   */
+  act?: { sub: string; jti: string };
   iat: number;
   exp: number;
   iss: string;

@@ -1,4 +1,5 @@
 import {
+  Bot,
   CalendarClock,
   CreditCard,
   HardDrive,
@@ -94,6 +95,9 @@ export const CLIENT_NAV_SECTIONS: readonly NavSection[] = [
   {
     id: 'suporte',
     label: 'Suporte',
-    items: [{ label: 'Suporte', to: '/client/support', icon: LifeBuoy }],
+    items: [
+      { label: 'Assistente', to: '/client/assistant', icon: Bot },
+      { label: 'Suporte', to: '/client/support', icon: LifeBuoy },
+    ],
   },
 ];

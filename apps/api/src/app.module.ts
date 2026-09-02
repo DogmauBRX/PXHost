@@ -26,6 +26,7 @@ import { TransfersModule } from './modules/transfers/transfers.module';
 import { SecurityModule } from './modules/security/security.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { UsersModule } from './modules/users/users.module';
+import { AssistantModule } from './modules/assistant/assistant.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { UsersModule } from './modules/users/users.module';
     SecurityModule,
     BillingModule,
     UsersModule,
+    AssistantModule,
   ],
   providers: [
     // JwtAuthGuard is global: every route requires authentication unless

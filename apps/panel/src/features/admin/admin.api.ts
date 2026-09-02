@@ -9,11 +9,16 @@ import type {
   AdminTemplate,
   AdminUserSummary,
   BootstrapTokenResponse,
+  CapacityDashboard,
+  CapacitySimulateResult,
   Location,
+  NodeCapacitySnapshot,
   Paginated,
   PartitionInfo,
   PlanApplyResult,
   PlanDriftReport,
+  PlanOccupancy,
+  SoftwareKind,
   ReadyzResponse,
   ServerTransfer,
   SigningKey,
@@ -38,9 +43,34 @@ export interface CreateNodeInput {
   diskTotalMb: number;
 }
 
+// Capacity plan Fase 3 — every field a node's commercial-capacity edit
+// screen can touch. Deliberately a separate interface from
+// `CreateNodeInput` (matches `UpdateTemplateInput`'s sibling pattern,
+// not `Partial<CreateNodeInput>`): the backend's `UpdateNodeDto` covers
+// a different field set than create does (no locationId/fqdn/scheme —
+// those aren't editable post-bootstrap — but adds maintenanceMode and
+// every reserve/overallocate/cpuTotal field create also has).
+export interface UpdateNodeInput {
+  name?: string;
+  description?: string;
+  isPublic?: boolean;
+  maintenanceMode?: boolean;
+  memoryTotalMb?: number;
+  memoryReservedMb?: number;
+  memoryOverallocatePct?: number;
+  diskTotalMb?: number;
+  diskReservedMb?: number;
+  diskOverallocatePct?: number;
+  cpuTotalPercent?: number;
+  cpuReservedPercent?: number;
+  cpuOverallocatePct?: number;
+}
+
 export const listNodes = () => apiFetch<AdminNode[]>('/api/admin/nodes');
 export const getNode = (id: string) => apiFetch<AdminNode>(`/api/admin/nodes/${id}`);
 export const createNode = (input: CreateNodeInput) => apiFetch<AdminNode>('/api/admin/nodes', { method: 'POST', body: JSON.stringify(input) });
+export const updateNode = (id: string, input: UpdateNodeInput) => apiFetch<AdminNode>(`/api/admin/nodes/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
+export const deleteNode = (id: string) => apiFetch<void>(`/api/admin/nodes/${id}`, { method: 'DELETE' });
 export const issueBootstrapToken = (nodeId: string) => apiFetch<BootstrapTokenResponse>(`/api/admin/nodes/${nodeId}/bootstrap-token`, { method: 'POST' });
 /** Compromise response (roadmap M13): kills the node's current token immediately and returns a fresh bootstrap token for manual re-onboarding — same response shape as issueBootstrapToken. */
 export const rotateNodeToken = (nodeId: string) => apiFetch<BootstrapTokenResponse>(`/api/admin/nodes/${nodeId}/rotate-token`, { method: 'POST' });
@@ -65,6 +95,7 @@ export interface CreateTemplateInput {
   installImage?: string;
   installEntrypoint?: string;
   installScript: string;
+  softwareKind?: SoftwareKind;
 }
 export const createTemplate = (input: CreateTemplateInput) => apiFetch<AdminTemplate>('/api/admin/eggs', { method: 'POST', body: JSON.stringify(input) });
 export const addTemplateVariable = (
@@ -84,6 +115,7 @@ export interface UpdateTemplateInput {
   installImage?: string;
   installEntrypoint?: string;
   installScript?: string;
+  softwareKind?: SoftwareKind;
   isActive?: boolean;
 }
 export const updateTemplate = (id: string, input: UpdateTemplateInput) =>
@@ -97,6 +129,8 @@ export interface CreatePlanInput {
   name: string;
   slug: string;
   description?: string;
+  isPublic?: boolean;
+  sortOrder?: number;
   cpuLimitPercent?: number;
   memoryMb: number;
   swapMb?: number;
@@ -106,17 +140,45 @@ export interface CreatePlanInput {
   maxBackups?: number;
   maxAllocations?: number;
   maxSchedules?: number;
+  backupRetentionDays?: number;
+  priceCents?: number;
+  currency?: string;
+  billingPeriod?: string;
+  maxServers?: number;
+  maxSlots?: number;
+  recommendedPlayersMin?: number;
+  recommendedPlayersMax?: number;
+  recommendedModsMin?: number;
+  recommendedModsMax?: number;
+  recommendedPluginsMin?: number;
+  recommendedPluginsMax?: number;
 }
 export const createPlan = (input: CreatePlanInput) => apiFetch<AdminPlan>('/api/admin/plans', { method: 'POST', body: JSON.stringify(input) });
 export const updatePlan = (id: string, input: Partial<CreatePlanInput>) => apiFetch<AdminPlan>(`/api/admin/plans/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
 export const getPlanDrift = (id: string) => apiFetch<PlanDriftReport>(`/api/admin/plans/${id}/drift`);
 export const applyPlan = (id: string) => apiFetch<PlanApplyResult>(`/api/admin/plans/${id}/apply`, { method: 'POST' });
 
+// ---- Capacity (read-only — see apps/api/src/modules/capacity) ----
+
+export const getCapacityDashboard = () => apiFetch<CapacityDashboard>('/api/admin/capacity');
+export const getNodeCapacity = (nodeId: string) => apiFetch<NodeCapacitySnapshot>(`/api/admin/capacity/nodes/${nodeId}`);
+export const getPlanCapacity = () => apiFetch<PlanOccupancy[]>('/api/admin/capacity/plans');
+export const simulateCapacity = (input: { planId: string; nodeId?: string }) =>
+  apiFetch<CapacitySimulateResult>('/api/admin/capacity/simulate', { method: 'POST', body: JSON.stringify(input) });
+
 // ---- Servers (admin-side create, used to onboard a demo server if needed) ----
 
 export const listAdminServers = (ownerId?: string) => apiFetch<AdminServerSummary[]>(`/api/admin/servers${ownerId ? `?ownerId=${ownerId}` : ''}`);
 export const getAdminServer = (id: string) => apiFetch<AdminServerDetail>(`/api/admin/servers/${id}`);
-export const createAdminServer = (input: { ownerId: string; nodeId: string; templateId: string; planId: string; name: string }) =>
+export interface CreateAdminServerInput {
+  ownerId: string;
+  // Capacity plan Fase 5: omitted ⇒ automatic node selection (NodeSchedulerService).
+  nodeId?: string;
+  templateId: string;
+  planId: string;
+  name: string;
+}
+export const createAdminServer = (input: CreateAdminServerInput) =>
   apiFetch<{ id: string; shortId: string; status: string }>('/api/admin/servers', { method: 'POST', body: JSON.stringify(input) });
 
 // ---- Node-to-node transfer (roadmap M13) ----

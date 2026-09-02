@@ -69,6 +69,25 @@ export class CreateNodeDto {
   @Min(-1)
   diskOverallocatePct?: number;
 
+  // Physical/commercial CPU capacity, in "percent of a core" — the same
+  // unit as `cpuLimitPercent` on plans/servers (100 = 1 core). Optional
+  // and defaults to 0 (accounting off) so a node created before capacity
+  // Fase 2 behaves identically to one created after it without this
+  // field set: `ceilingFor`'s `total <= 0` rule and the
+  // `nodes_cpu_accounting_check` DB constraint both treat "0 total" as
+  // "CPU isn't being enforced here," never as "0 CPU available."
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  cpuTotalPercent?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  cpuReservedPercent?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -143,6 +162,18 @@ export class UpdateNodeDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
+  @Min(0)
+  cpuTotalPercent?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  cpuReservedPercent?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
   @Min(-1)
   cpuOverallocatePct?: number;
 }
@@ -185,6 +216,49 @@ export class HeartbeatDto {
   @IsInt()
   @Min(0)
   uptimeSeconds?: number;
+
+  // Capacity plan Fase 7 — what the agent ACTUALLY reports about its
+  // host. All optional: an agent binary older than this milestone simply
+  // never sends these, and NodesService.heartbeat only writes a
+  // reported_* column when its field is present (see that method's own
+  // doc comment) — never zeroes it out for an old agent.
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reportedMemoryTotalMb?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reportedCpuCount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reportedDiskTotalMb?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reportedDiskFreeMb?: number;
+
+  @IsOptional()
+  @IsString()
+  reportedOs?: string;
+
+  @IsOptional()
+  @IsString()
+  reportedKernel?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reportedContainersRunning?: number;
 }
 
 export class CreateAllocationRangeDto {

@@ -3,10 +3,10 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AgentClient } from '../nodes/agent-client.service';
 import { CapabilityTokenService } from '../../core/capability-token/capability-token.service';
-import { assertCapacity, pickFreeAllocation } from '../servers/servers.service';
+import { CapacityService } from '../capacity/capacity.service';
+import { assertNodeFits } from '../capacity/capacity.math';
 import { TransferQueueService } from './transfer-queue.service';
 
-const UID_BASE = 100000;
 const ARCHIVE_TOKEN_TTL_SECONDS = 60 * 60; // 1h — generous for a large archive's fetch time, single-use regardless (jti burned on first GET)
 
 /**
@@ -30,6 +30,7 @@ export class TransfersService {
     private readonly audit: AuditService,
     private readonly capabilityToken: CapabilityTokenService,
     private readonly queue: TransferQueueService,
+    private readonly capacity: CapacityService,
   ) {}
 
   async initiate(serverId: string, targetNodeId: string, targetAllocationId: string | undefined, actorId: string) {
@@ -43,28 +44,36 @@ export class TransfersService {
       // as ServersService.create — the target node's capacity can't be
       // double-booked by a transfer racing a fresh create, or two
       // transfers racing each other, any more than two creates can.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('node:' || ${targetNodeId}))`;
+      await this.capacity.lockNode(tx, targetNodeId);
 
       const targetNode = await tx.node.findFirst({ where: { id: targetNodeId, deletedAt: null } });
       if (!targetNode) throw new NotFoundException('Target node not found');
       if (targetNode.maintenanceMode) throw new ConflictException('Target node is in maintenance mode');
 
-      const usage = await tx.server.aggregate({
-        where: { nodeId: targetNodeId, status: { not: 'deleting' } },
-        _sum: { memoryMb: true, diskMb: true },
-      });
-      assertCapacity('memory', usage._sum.memoryMb ?? 0, server.memoryMb, targetNode.memoryTotalMb, targetNode.memoryReservedMb, targetNode.memoryOverallocatePct);
-      assertCapacity('disk', usage._sum.diskMb ?? 0, server.diskMb, targetNode.diskTotalMb, targetNode.diskReservedMb, targetNode.diskOverallocatePct);
+      // usageForNode already includes any OTHER transfer currently in
+      // flight toward this same target — this transfer's own server is
+      // still on its SOURCE node at this point (nodeId only flips in
+      // handleResult), so it is correctly excluded from its own check.
+      const usage = await this.capacity.usageForNode(tx, targetNodeId);
+      assertNodeFits(targetNode, usage, { memoryMb: server.memoryMb, diskMb: server.diskMb, cpuPercent: server.cpuLimitPercent });
 
       const allocation = targetAllocationId
         ? await tx.allocation.findFirst({ where: { id: BigInt(targetAllocationId), nodeId: targetNodeId, serverId: null } })
-        : await pickFreeAllocation(tx, targetNodeId);
+        : await this.capacity.pickFreeAllocation(tx, targetNodeId);
       if (!allocation) {
         throw new ConflictException(targetAllocationId ? 'Requested allocation is not free' : 'No free allocation available on the target node');
       }
 
+      // The target uid is decided HERE, under the same lock, for the same
+      // reason the allocation is reserved here rather than later in the
+      // pipeline: runPipeline (unlocked, minutes later) bakes this exact
+      // value into the container the target agent actually creates, and
+      // handleResult persists it onto servers.uid only once the transfer
+      // succeeds — see ServerTransfer.targetUid's doc comment.
+      const targetUid = await this.capacity.nextUid(tx, targetNodeId);
+
       const transfer = await tx.serverTransfer.create({
-        data: { serverId, sourceNodeId: server.nodeId, targetNodeId, targetAllocationId: allocation.id, status: 'pending' },
+        data: { serverId, sourceNodeId: server.nodeId, targetNodeId, targetAllocationId: allocation.id, targetUid, status: 'pending' },
       });
       // Reserve the target allocation NOW, under the same lock — not at
       // the end of the pipeline — for the same race-freedom reason
@@ -162,10 +171,33 @@ export class TransfersService {
       });
       const sourceUrl = this.agent.transferDownloadUrl(sourceNode.scheme, sourceNode.fqdn, sourceNode.daemonPort, transfer.serverId, archive.id);
 
-      const uidCount = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.server.count({ where: { nodeId: transfer.targetNodeId } }));
+      // Decided once, under the target node's advisory lock, back in
+      // initiate() — never re-derived here for a transfer created after
+      // this change. The fallback below only matters for a transfer row
+      // that was already "pending" in the queue at deploy time (created
+      // before `targetUid` existed) — vanishingly rare, but re-deriving
+      // unconditionally would risk computing a DIFFERENT uid than
+      // whatever handleResult later persists onto servers.uid once this
+      // container already exists under the value baked in below.
+      let targetUid = transfer.targetUid;
+      if (targetUid == null) {
+        const computedUid = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+          this.capacity.lockNode(tx, transfer.targetNodeId).then(() => this.capacity.nextUid(tx, transfer.targetNodeId)),
+        );
+        // Persisted immediately — handleResult reads transfer.targetUid
+        // fresh from the DB, not this in-memory value, so without this
+        // write it would see NULL again and lose the uid this container
+        // was actually created with.
+        await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.serverTransfer.update({ where: { id: transferId }, data: { targetUid: computedUid } }));
+        targetUid = computedUid;
+      }
+      // Narrowed to a concrete number above; a fresh const avoids relying
+      // on control-flow narrowing of `targetUid` across the awaits above.
+      const resolvedUid: number = targetUid;
+
       await this.agent.importTransfer(transfer.targetNodeId, {
         uuid: transfer.serverId,
-        uid: UID_BASE + uidCount,
+        uid: resolvedUid,
         image: server.dockerImage,
         startupTemplate: server.startupCommand,
         declaredVariables: variableRows.map((v) => v.variable.envVariable),
@@ -204,7 +236,11 @@ export class TransfersService {
         if (transfer.targetAllocationId) {
           await tx.allocation.update({ where: { id: transfer.targetAllocationId }, data: { isPrimary: true } });
         }
-        await tx.server.update({ where: { id: transfer.serverId }, data: { nodeId: transfer.targetNodeId, status: 'ready' } });
+        // uid flips here, alongside nodeId — the persisted value must
+        // always match what the container on the NEW node was actually
+        // created with, and stays whatever it was on the old node until
+        // this exact moment the move is confirmed.
+        await tx.server.update({ where: { id: transfer.serverId }, data: { nodeId: transfer.targetNodeId, uid: transfer.targetUid, status: 'ready' } });
         await tx.serverTransfer.update({ where: { id: transferId }, data: { status: 'success', completedAt: new Date() } });
       });
       await this.audit.record({ action: 'server.transfer.succeeded', targetType: 'server', targetId: transfer.serverId, metadata: { sourceNodeId: transfer.sourceNodeId, targetNodeId: transfer.targetNodeId } });

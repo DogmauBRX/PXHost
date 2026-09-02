@@ -276,6 +276,48 @@ func (s *Server) Kill(ctx context.Context, dc dockerFull) error {
 	return nil
 }
 
+// UpdateVariables rebuilds the container with a new environment — Docker
+// env is immutable after creation, so a variable edit is a remove+recreate
+// of the CONTAINER only. Unlike Remove (the real-deletion path), this
+// deliberately never cancels bgCtx or closes the Jail: the data directory,
+// this Server's identity in the manager, and its console Hub/history all
+// survive untouched, exactly the same way Remove already leaves the data
+// directory on disk for a later re-create.
+//
+// Requires the server to already be stopped. Recreating a running
+// container out from under an attached console pump and stats collector
+// is a different, harder problem this endpoint doesn't attempt — the
+// caller (panel) is expected to refuse the edit in the UI while running,
+// but this guard is the real enforcement point per architecture doc 2.5.
+func (s *Server) UpdateVariables(ctx context.Context, dc dockerFull, newEnv map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.State != StateOffline {
+		return fmt.Errorf("srv: server %s must be stopped before its variables can be updated", s.UUID)
+	}
+
+	if s.ContainerID != "" {
+		if err := dc.RemoveContainer(ctx, s.ContainerID, true); err != nil {
+			return fmt.Errorf("srv: removing old container before recreate: %w", err)
+		}
+		s.ContainerID = ""
+	}
+
+	s.spec.Env = newEnv
+
+	cfg, hostCfg, netCfg, err := spec.BuildContainerSpec(s.spec, s.node)
+	if err != nil {
+		return fmt.Errorf("srv: building spec for %s: %w", s.UUID, err)
+	}
+	id, err := dc.CreateContainer(ctx, s.ContainerName, cfg, hostCfg, netCfg)
+	if err != nil {
+		return fmt.Errorf("srv: recreating container: %w", err)
+	}
+	s.ContainerID = id
+	return nil
+}
+
 // Remove force-removes the container. It does not touch the server's data
 // directory — deletion of on-disk data is a separate, explicit operation
 // (fsx, later milestone), never implied by removing the container.

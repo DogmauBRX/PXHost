@@ -66,6 +66,7 @@ export class TemplatesService {
         installImage: dto.installImage ?? 'ghcr.io/pxhost/installers:debian',
         installEntrypoint: dto.installEntrypoint ?? 'bash',
         installScript: dto.installScript,
+        softwareKind: dto.softwareKind,
         variables: dto.variables
           ? { create: dto.variables.map((v, i) => toVariableCreateInput(v, i)) }
           : undefined,

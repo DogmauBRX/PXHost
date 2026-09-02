@@ -46,12 +46,15 @@ async function main(): Promise<void> {
 
   await seedLocationAndTemplate();
   await seedPermissionCatalog();
+  await seedPlans();
 }
 
-// architecture doc 2.5's permission groups, scoped to what M11 actually
-// enforces (allocation.*/startup.*/settings.* aren't listed — nothing in
-// the panel lets a customer touch those yet, so seeding permission keys
-// for them would just be dead data with no code path checking them).
+// architecture doc 2.5's permission groups, scoped to what the panel
+// actually enforces (allocation.*/settings.* still aren't listed — nothing
+// lets a customer touch those yet, so seeding keys for them would just be
+// dead data with no code path checking them). startup.* was in that same
+// dead-data category until the Configurações tab (client-features Fase 7)
+// gave it a real code path — server-variables.service.ts.
 // "permission_catalog is data, not code" (doc 2.1) — adding a key here
 // is the only change needed to make a new permission exist; no migration.
 const PERMISSION_CATALOG: { key: string; groupKey: string; i18nKey: string; isDangerous?: boolean; sortOrder: number }[] = [
@@ -61,6 +64,18 @@ const PERMISSION_CATALOG: { key: string; groupKey: string; i18nKey: string; isDa
   { key: 'control.stop', groupKey: 'control', i18nKey: 'permission.control.stop', sortOrder: 3 },
   { key: 'control.restart', groupKey: 'control', i18nKey: 'permission.control.restart', sortOrder: 4 },
   { key: 'control.kill', groupKey: 'control', i18nKey: 'permission.control.kill', isDangerous: true, sortOrder: 5 },
+  // Read-only usage snapshot (client-features roadmap) — a `.read` key, so
+  // allowedWhenSuspended() passes it unconditionally: a suspended customer
+  // can still see WHY they're suspended (e.g. memory pressure) instead of
+  // just a dead console.
+  { key: 'server.read', groupKey: 'server', i18nKey: 'permission.server.read', sortOrder: 6 },
+
+  // Startup variables (client-features Fase 7). `.update` requires the
+  // server to be stopped (enforced in server-variables.service.ts, not
+  // here) — a permission key doesn't encode WHEN an action is allowed,
+  // only WHO can attempt it.
+  { key: 'startup.read', groupKey: 'startup', i18nKey: 'permission.startup.read', sortOrder: 7 },
+  { key: 'startup.update', groupKey: 'startup', i18nKey: 'permission.startup.update', isDangerous: true, sortOrder: 8 },
 
   { key: 'file.read', groupKey: 'file', i18nKey: 'permission.file.read', sortOrder: 10 },
   { key: 'file.write', groupKey: 'file', i18nKey: 'permission.file.write', sortOrder: 11 },
@@ -134,6 +149,11 @@ async function seedLocationAndTemplate(): Promise<void> {
         installEntrypoint: 'bash',
         installScript: PAPER_INSTALL_SCRIPT,
         features: ['eula', 'java_version'],
+        // Explicit here, not left to migration 0008's ILIKE backfill — that
+        // backfill only ever runs once, against rows that already existed
+        // at migration time. A template created by THIS seed script on a
+        // brand-new database never goes through it.
+        softwareKind: 'paper',
         variables: {
           create: [
             {
@@ -186,6 +206,285 @@ async function seedLocationAndTemplate(): Promise<void> {
     // eslint-disable-next-line no-console
     console.log(`Template "Paper" already present — skipped`);
   }
+
+  // Fabric (mods) and Vanilla (no add-ons) alongside Paper (plugins) so
+  // the software-mismatch and "no add-ons" code paths — the Add-ons tab
+  // hiding itself, the assistant's addons.unsupported topic — are
+  // actually reachable in a fresh install instead of only provable by
+  // hand-editing a template's software_kind after the fact.
+  const existingFabric = await prisma.serverTemplate.findFirst({ where: { groupId: group.id, name: 'Fabric' } });
+  if (!existingFabric) {
+    await prisma.serverTemplate.create({
+      data: {
+        groupId: group.id,
+        name: 'Fabric',
+        author: 'pxhost',
+        description: 'Modded Minecraft: Java Edition server running the Fabric mod loader.',
+        dockerImages: { 'Java 21': 'ghcr.io/pxhost/yolks:java_21' },
+        startupCommand: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui',
+        stopCommand: 'stop',
+        installImage: 'ghcr.io/pxhost/installers:debian',
+        installEntrypoint: 'bash',
+        installScript: FABRIC_INSTALL_SCRIPT,
+        features: ['eula', 'java_version'],
+        softwareKind: 'fabric',
+        variables: {
+          create: [
+            {
+              name: 'Server Jar File',
+              description: 'The name of the server jar to execute.',
+              envVariable: 'SERVER_JARFILE',
+              defaultValue: 'fabric-server-launch.jar',
+              rules: 'required|string|max:64',
+              isUserViewable: true,
+              isUserEditable: true,
+              sortOrder: 0,
+            },
+            {
+              name: 'Minecraft Version',
+              description: 'The version of Minecraft to install. Use "latest" for the newest release.',
+              envVariable: 'MINECRAFT_VERSION',
+              defaultValue: 'latest',
+              rules: 'required|string|max:16',
+              isUserViewable: true,
+              isUserEditable: true,
+              sortOrder: 1,
+            },
+            {
+              name: 'Fabric Loader Version',
+              description: 'The Fabric loader version to install. Use "latest" for the newest stable release.',
+              envVariable: 'FABRIC_LOADER_VERSION',
+              defaultValue: 'latest',
+              rules: 'required|string|max:16',
+              isUserViewable: true,
+              isUserEditable: true,
+              sortOrder: 2,
+            },
+            {
+              name: 'Server Memory (MB)',
+              description: "The container's memory limit, substituted into -Xmx. Set by the plan, not directly editable.",
+              envVariable: 'SERVER_MEMORY',
+              defaultValue: '1024',
+              rules: 'required|integer|min:512',
+              isUserViewable: true,
+              isUserEditable: false,
+              sortOrder: 3,
+            },
+          ],
+        },
+      },
+    });
+    // eslint-disable-next-line no-console
+    console.log('Seeded template "Fabric"');
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('Template "Fabric" already present — skipped');
+  }
+
+  const existingVanilla = await prisma.serverTemplate.findFirst({ where: { groupId: group.id, name: 'Vanilla' } });
+  if (!existingVanilla) {
+    await prisma.serverTemplate.create({
+      data: {
+        groupId: group.id,
+        name: 'Vanilla',
+        author: 'pxhost',
+        description: 'Unmodified, official Minecraft: Java Edition server — no plugins or mods.',
+        dockerImages: { 'Java 21': 'ghcr.io/pxhost/yolks:java_21' },
+        startupCommand: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui',
+        stopCommand: 'stop',
+        installImage: 'ghcr.io/pxhost/installers:debian',
+        installEntrypoint: 'bash',
+        installScript: VANILLA_INSTALL_SCRIPT,
+        features: ['eula', 'java_version'],
+        softwareKind: 'vanilla',
+        variables: {
+          create: [
+            {
+              name: 'Server Jar File',
+              description: 'The name of the server jar to execute.',
+              envVariable: 'SERVER_JARFILE',
+              defaultValue: 'server.jar',
+              rules: 'required|string|max:64',
+              isUserViewable: true,
+              isUserEditable: true,
+              sortOrder: 0,
+            },
+            {
+              name: 'Minecraft Version',
+              description: 'The version of Minecraft to install. Use "latest" for the newest release.',
+              envVariable: 'MINECRAFT_VERSION',
+              defaultValue: 'latest',
+              rules: 'required|string|max:16',
+              isUserViewable: true,
+              isUserEditable: true,
+              sortOrder: 1,
+            },
+            {
+              name: 'Server Memory (MB)',
+              description: "The container's memory limit, substituted into -Xmx. Set by the plan, not directly editable.",
+              envVariable: 'SERVER_MEMORY',
+              defaultValue: '1024',
+              rules: 'required|integer|min:512',
+              isUserViewable: true,
+              isUserEditable: false,
+              sortOrder: 2,
+            },
+          ],
+        },
+      },
+    });
+    // eslint-disable-next-line no-console
+    console.log('Seeded template "Vanilla"');
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('Template "Vanilla" already present — skipped');
+  }
+}
+
+interface PlanSeed {
+  name: string;
+  slug: string;
+  description: string;
+  sortOrder: number;
+  memoryMb: number;
+  diskMb: number;
+  cpuLimitPercent: number;
+  maxDatabases: number;
+  maxBackups: number;
+  maxAllocations: number;
+  maxSchedules: number;
+  backupRetentionDays: number;
+  priceCents: number;
+  maxServers: number;
+  recommendedPlayersMin: number;
+  recommendedPlayersMax: number | null;
+  recommendedModsMin: number | null;
+  recommendedModsMax: number | null;
+  recommendedPluginsMin: number | null;
+  recommendedPluginsMax: number | null;
+}
+
+// Prices are placeholders (R$ 19,90 / 49,90 / 99,90) — adjustable on the
+// admin Plans screen (client-features Fase 2) without touching code.
+// Recommendation ranges are the ones from the client-features request
+// itself: 5-10 / 15-30 / 40-60 players, 10-30 / 30-80 / 80+ mods or
+// plugins (mods and plugins share the same recommended count — the
+// distinction is which directory they land in, not how many are
+// reasonable).
+const PLAN_SEEDS: PlanSeed[] = [
+  {
+    name: 'Básico',
+    slug: 'basico',
+    description: 'Ideal para grupos pequenos de amigos.',
+    sortOrder: 0,
+    memoryMb: 2048,
+    diskMb: 5120,
+    cpuLimitPercent: 100,
+    maxDatabases: 1,
+    maxBackups: 3,
+    maxAllocations: 1,
+    maxSchedules: 3,
+    backupRetentionDays: 7,
+    priceCents: 1990,
+    maxServers: 1,
+    recommendedPlayersMin: 5,
+    recommendedPlayersMax: 10,
+    recommendedModsMin: 10,
+    recommendedModsMax: 30,
+    recommendedPluginsMin: 10,
+    recommendedPluginsMax: 30,
+  },
+  {
+    name: 'Médio',
+    slug: 'medio',
+    description: 'Para comunidades em crescimento, com mais mods e plugins.',
+    sortOrder: 1,
+    memoryMb: 6144,
+    diskMb: 15360,
+    cpuLimitPercent: 200,
+    maxDatabases: 2,
+    maxBackups: 5,
+    maxAllocations: 2,
+    maxSchedules: 5,
+    backupRetentionDays: 14,
+    priceCents: 4990,
+    maxServers: 2,
+    recommendedPlayersMin: 15,
+    recommendedPlayersMax: 30,
+    recommendedModsMin: 30,
+    recommendedModsMax: 80,
+    recommendedPluginsMin: 30,
+    recommendedPluginsMax: 80,
+  },
+  {
+    name: 'Avançado',
+    slug: 'avancado',
+    description: 'Para servidores grandes, com muitos jogadores e mods pesados.',
+    sortOrder: 2,
+    memoryMb: 12288,
+    diskMb: 30720,
+    cpuLimitPercent: 400,
+    maxDatabases: 4,
+    maxBackups: 10,
+    maxAllocations: 3,
+    maxSchedules: 10,
+    backupRetentionDays: 30,
+    priceCents: 9990,
+    maxServers: 3,
+    recommendedPlayersMin: 40,
+    recommendedPlayersMax: 60,
+    recommendedModsMin: 80,
+    recommendedModsMax: null,
+    recommendedPluginsMin: 80,
+    recommendedPluginsMax: null,
+  },
+];
+
+// `slug` has no @unique constraint Prisma can `upsert` against (see the
+// root-admin seed's own note on the same limitation for `email`) — find
+// by slug, then create-if-missing. Deliberately skip-not-update on a
+// second run: an admin may have already edited a seeded plan's price or
+// recommendations through the Fase 2 UI, and a re-seed silently
+// clobbering that would be a worse surprise than a plan just not existing
+// yet.
+async function seedPlans(): Promise<void> {
+  for (const p of PLAN_SEEDS) {
+    const existing = await prisma.plan.findFirst({ where: { slug: p.slug, deletedAt: null } });
+    if (existing) {
+      // eslint-disable-next-line no-console
+      console.log(`Plan "${p.name}" already present — skipped`);
+      continue;
+    }
+    await prisma.plan.create({
+      data: {
+        name: p.name,
+        slug: p.slug,
+        description: p.description,
+        isPublic: true,
+        sortOrder: p.sortOrder,
+        cpuLimitPercent: p.cpuLimitPercent,
+        memoryMb: p.memoryMb,
+        diskMb: p.diskMb,
+        maxDatabases: p.maxDatabases,
+        maxBackups: p.maxBackups,
+        maxAllocations: p.maxAllocations,
+        maxSchedules: p.maxSchedules,
+        backupRetentionDays: p.backupRetentionDays,
+        priceCents: p.priceCents,
+        currency: 'BRL',
+        billingPeriod: 'monthly',
+        maxServers: p.maxServers,
+        recommendedPlayersMin: p.recommendedPlayersMin,
+        recommendedPlayersMax: p.recommendedPlayersMax,
+        recommendedModsMin: p.recommendedModsMin,
+        recommendedModsMax: p.recommendedModsMax,
+        recommendedPluginsMin: p.recommendedPluginsMin,
+        recommendedPluginsMax: p.recommendedPluginsMax,
+      },
+    });
+    // eslint-disable-next-line no-console
+    console.log(`Seeded plan "${p.name}"`);
+  }
 }
 
 async function findOrCreate<T>(find: () => Promise<T | null>, create: () => Promise<T>): Promise<T> {
@@ -211,6 +510,56 @@ fi
 
 DOWNLOAD_URL="https://api.papermc.io/v2/projects/paper/versions/\${MINECRAFT_VERSION}/builds/\${PAPER_BUILD}/downloads/paper-\${MINECRAFT_VERSION}-\${PAPER_BUILD}.jar"
 echo "Downloading Paper \${MINECRAFT_VERSION} build \${PAPER_BUILD}..."
+curl -sSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
+
+echo "eula=true" > eula.txt
+echo "Install complete."
+`;
+
+const FABRIC_INSTALL_SCRIPT = `#!/bin/bash
+set -euo pipefail
+cd /mnt/server
+
+: "\${MINECRAFT_VERSION:=latest}"
+: "\${FABRIC_LOADER_VERSION:=latest}"
+: "\${SERVER_JARFILE:=fabric-server-launch.jar}"
+
+if [ "$MINECRAFT_VERSION" == "latest" ]; then
+  MINECRAFT_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/game | jq -r '[.[] | select(.stable == true)][0].version')
+fi
+if [ "$FABRIC_LOADER_VERSION" == "latest" ]; then
+  FABRIC_LOADER_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/loader | jq -r '[.[] | select(.stable == true)][0].version')
+fi
+INSTALLER_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/installer | jq -r '[.[] | select(.stable == true)][0].version')
+
+echo "Downloading Fabric installer \${INSTALLER_VERSION}..."
+curl -sSL -o fabric-installer.jar "https://maven.fabricmc.net/net/fabricmc/fabric-installer/\${INSTALLER_VERSION}/fabric-installer-\${INSTALLER_VERSION}.jar"
+java -jar fabric-installer.jar server -mcversion "$MINECRAFT_VERSION" -loader "$FABRIC_LOADER_VERSION" -downloadMinecraft
+rm -f fabric-installer.jar
+
+if [ -f server.jar ] && [ "\${SERVER_JARFILE}" != "server.jar" ]; then
+  mv server.jar "\${SERVER_JARFILE}"
+fi
+
+echo "eula=true" > eula.txt
+echo "Install complete."
+`;
+
+const VANILLA_INSTALL_SCRIPT = `#!/bin/bash
+set -euo pipefail
+cd /mnt/server
+
+: "\${MINECRAFT_VERSION:=latest}"
+: "\${SERVER_JARFILE:=server.jar}"
+
+MANIFEST=$(curl -sSL https://launchermeta.mojang.com/mc/game/version_manifest.json)
+if [ "$MINECRAFT_VERSION" == "latest" ]; then
+  MINECRAFT_VERSION=$(echo "$MANIFEST" | jq -r '.latest.release')
+fi
+VERSION_URL=$(echo "$MANIFEST" | jq -r --arg v "$MINECRAFT_VERSION" '.versions[] | select(.id == $v) | .url')
+DOWNLOAD_URL=$(curl -sSL "$VERSION_URL" | jq -r '.downloads.server.url')
+
+echo "Downloading vanilla Minecraft \${MINECRAFT_VERSION}..."
 curl -sSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
 
 echo "eula=true" > eula.txt

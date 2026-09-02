@@ -146,12 +146,27 @@ model Node {
   diskReservedMb           Int       @default(0) @map("disk_reserved_mb")
   diskOverallocatePct      Int       @default(0) @map("disk_overallocate_pct")
   cpuTotalPercent          Int       @default(0) @map("cpu_total_percent")
+  cpuReservedPercent       Int       @default(0) @map("cpu_reserved_percent")
   cpuOverallocatePct       Int       @default(-1) @map("cpu_overallocate_pct")
   uploadSizeMb             Int       @default(256) @map("upload_size_mb")
   healthStatus             String    @default("unknown") @map("health_status")
   lastHeartbeatAt          DateTime? @map("last_heartbeat_at") @db.Timestamptz
   agentVersion             String?   @map("agent_version")
   dockerVersion             String?   @map("docker_version")
+  // Capacity plan Fase 2: what the agent ACTUALLY reports about its host,
+  // strictly separate from the declared commercial-capacity columns
+  // above — never copied into them. All nullable: no agent sends these
+  // yet (that wiring is Fase 7), and an old agent's heartbeat must keep
+  // working with these left NULL forever if it's never upgraded.
+  reportedMemoryTotalMb    Int?      @map("reported_memory_total_mb")
+  reportedCpuCount         Int?      @map("reported_cpu_count")
+  reportedDiskTotalMb      Int?      @map("reported_disk_total_mb")
+  reportedDiskFreeMb       Int?      @map("reported_disk_free_mb")
+  reportedOs               String?   @map("reported_os")
+  reportedKernel           String?   @map("reported_kernel")
+  reportedContainersRunning Int?     @map("reported_containers_running")
+  reportedAt               DateTime? @map("reported_at") @db.Timestamptz
+  agentUptimeSeconds        Int?     @map("agent_uptime_seconds")
   // Encrypted (reversible, CryptoService/AES-256-GCM) copy of the SAME
   // secret issued to the agent as its node_token during bootstrap
   // (node_tokens.token_hash holds an argon2id hash of it, for verifying
@@ -176,6 +191,7 @@ model Node {
   tokens      NodeToken[]
   dbHosts     DatabaseHost[]
   mounts      MountNode[]
+  plans       PlanNode[]
   transfersFrom ServerTransfer[] @relation("TransferSource")
   transfersTo   ServerTransfer[] @relation("TransferTarget")
 
@@ -321,6 +337,16 @@ model ServerTemplate {
   installEntrypoint String    @default("bash") @map("install_entrypoint")
   installScript     String    @map("install_script")
   features          String[]  @default([])
+  // The single canonical software signal (Paper/Fabric/Forge/...), used to
+  // pick the right addon directory (M-client-features roadmap) and to keep
+  // the assistant from ever giving software-incompatible instructions.
+  // Deliberately NOT reusing `features` above: that array is dead
+  // Pterodactyl-inherited data (written once by the seed, read nowhere) and
+  // is a set of UI feature flags, not a software identity — overloading one
+  // column with two unrelated meanings was worse than a second column.
+  // Nullable: null means "nobody has classified this template yet," which
+  // degrades to "no addon guidance available," not a wrong guess.
+  softwareKind      String?   @map("software_kind")
   forceOutgoingIp   Boolean   @default(false) @map("force_outgoing_ip")
   isActive          Boolean   @default(true) @map("is_active")
   version           Int       @default(1)
@@ -379,17 +405,61 @@ model Plan {
   maxAllocations        Int       @default(1) @map("max_allocations")
   maxSchedules          Int       @default(5) @map("max_schedules")
   backupRetentionDays   Int       @default(7) @map("backup_retention_days")
-  allowedGroupIds       String[]  @default([]) @map("allowed_group_ids") @db.Uuid
+  // Commercial stock (capacity plan Fase 4) — NULL means unlimited slots
+  // (every plan created before this migration reads as unlimited, zero
+  // behavior change), 0 means sold out without deleting or hiding the
+  // plan. Occupancy is deliberately NOT a stored counter here — it's
+  // `count(servers WHERE plan_id = X AND status <> 'deleting')`,
+  // computed the same way CapacityService.usageForNode excludes
+  // `deleting`, so a slot and a unit of capacity can never disagree.
+  // Servers are hard-deleted with no lifecycle hook that could keep a
+  // stored counter honest, which is exactly why this is derived, not
+  // stored.
+  maxSlots              Int?      @map("max_slots")
   priceCents            Int       @default(0) @map("price_cents")
   currency              String    @default("BRL") @db.Char(3)
   billingPeriod         String    @default("monthly") @map("billing_period")
+  // Advisory metadata only — never enforced, never copied onto Server, and
+  // deliberately absent from PlansService.DRIFTABLE_FIELDS. These describe
+  // the plan in prose for the customer ("we recommend ~30-80 mods"), not a
+  // technical limit; a server never "drifts" from a recommendation. All
+  // nullable: null means the plan simply doesn't publish that range, which
+  // renders as nothing on the client rather than a fake "0-0".
+  recommendedPlayersMin Int?      @map("recommended_players_min")
+  recommendedPlayersMax Int?      @map("recommended_players_max")
+  recommendedModsMin    Int?      @map("recommended_mods_min")
+  recommendedModsMax    Int?      @map("recommended_mods_max")
+  recommendedPluginsMin Int?      @map("recommended_plugins_min")
+  recommendedPluginsMax Int?      @map("recommended_plugins_max")
+  // Display-only today: clients cannot create servers (only admins can), so
+  // there is no self-service flow for this to gate. Surfaced on "Meu Plano"
+  // as information, not enforced anywhere.
+  maxServers            Int?      @map("max_servers")
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt             DateTime? @map("deleted_at") @db.Timestamptz
 
   servers Server[]
+  nodes   PlanNode[]
 
   @@map("plans")
+}
+
+// Which nodes a plan may be scheduled onto (capacity plan Fase 4/5) —
+// same join-table shape as `MountNode`/`mount_nodes`. A plan with NO
+// rows here is eligible on every node (opt-in restriction, no backfill
+// needed for any existing plan). `priority` is the scheduler's
+// (Fase 5) tie-breaker, read-only from every other angle.
+model PlanNode {
+  planId   String @map("plan_id") @db.Uuid
+  nodeId   String @map("node_id") @db.Uuid
+  priority Int    @default(0)
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@id([planId, nodeId])
+  @@map("plan_nodes")
 }
 
 // ───────────────────────── SERVERS ─────────────────────────────
@@ -401,6 +471,19 @@ model Server {
   nodeId             String    @map("node_id") @db.Uuid
   templateId         String    @map("template_id") @db.Uuid
   planId             String?   @map("plan_id") @db.Uuid
+  // Per-node container uid (maps to the Linux uid the agent runs the
+  // container as and chowns its bind-mounted data directory to — see
+  // fsx.Jail on the agent side). Nullable because it was never persisted
+  // before capacity Fase 1: every pre-existing row keeps whatever uid its
+  // already-running container has, which nothing here needs to re-derive.
+  // Every NEW row gets a real value from CapacityService.nextUid, computed
+  // as `max(uid) + 1` per node under the node's advisory lock — replacing
+  // the previous `UID_BASE + count(servers)` approximation, which reused
+  // an already-used uid the instant any server on that node was
+  // hard-deleted (Server.Remove() on the agent deliberately never deletes
+  // the data directory, so a reused uid is a real tenant-isolation risk,
+  // not a cosmetic one).
+  uid                Int?
   name               String
   description        String    @default("")
   dockerImage        String    @map("docker_image")
@@ -594,6 +677,14 @@ model ServerTransfer {
   sourceNodeId        String    @map("source_node_id") @db.Uuid
   targetNodeId        String    @map("target_node_id") @db.Uuid
   targetAllocationId  BigInt?   @map("target_allocation_id")
+  // Same "decided under lock at pipeline-start, consumed at result-time"
+  // shape as targetAllocationId: TransfersService.runPipeline picks the
+  // target node's next uid (CapacityService.nextUid, under that node's
+  // advisory lock) and bakes it into the container the target agent
+  // actually creates — handleResult persists this SAME value onto
+  // servers.uid when the transfer succeeds, so the stored uid always
+  // matches the uid the running container was created with.
+  targetUid           Int?      @map("target_uid")
   status              String    @default("pending")
   errorMessage        String?   @map("error_message")
   startedAt           DateTime? @map("started_at") @db.Timestamptz

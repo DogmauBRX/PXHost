@@ -1,10 +1,43 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ServerAccessService } from '../authorization/server-access.service';
 import type { AccessActor } from '../authorization/server-access.service';
+import { PermissionCatalogService } from '../authorization/permission-catalog.service';
 import { AgentClient } from '../nodes/agent-client.service';
 import { CapabilityTokenService } from '../../core/capability-token/capability-token.service';
+import { RedisService } from '../../core/redis/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { ActivityService } from '../activity/activity.service';
+import { toClientServerDetail, toClientServerSummary } from './server-view';
+
+const STATS_CACHE_TTL_SECONDS = 10;
+
+export interface ServerStatsSnapshot {
+  online: boolean;
+  state: string | null;
+  cpuPercent: number | null;
+  cpuLimitPercent: number | null;
+  memoryBytes: number | null;
+  memoryLimitBytes: number | null;
+  networkRxBytes: number | null;
+  networkTxBytes: number | null;
+  uptimeMs: number | null;
+  measuredAt: string;
+  // Deliberately no disk fields — the agent's disk_bytes/disk_limit_bytes
+  // are always 0 (see AgentStatsFrame's doc comment). Surfacing them would
+  // render a permanently-wrong "0% de disco usado."
+}
+
+const OFFLINE_SNAPSHOT: Omit<ServerStatsSnapshot, 'measuredAt'> = {
+  online: false,
+  state: null,
+  cpuPercent: null,
+  cpuLimitPercent: null,
+  memoryBytes: null,
+  memoryLimitBytes: null,
+  networkRxBytes: null,
+  networkTxBytes: null,
+  uptimeMs: null,
+};
 
 const CONSOLE_TOKEN_TTL_SECONDS = 300;
 
@@ -32,15 +65,26 @@ export class ClientServersService {
     private readonly capabilityTokens: CapabilityTokenService,
     private readonly audit: AuditService,
     private readonly activity: ActivityService,
+    private readonly permissionCatalog: PermissionCatalogService,
+    private readonly redis: RedisService,
   ) {}
 
-  list(userId: string) {
-    return this.access.listAccessible(userId);
+  async list(userId: string) {
+    const servers = await this.access.listAccessible(userId);
+    return servers.map(toClientServerSummary);
   }
 
+  /**
+   * `permissions` is computed here (not on `list()`) because it costs a
+   * catalog read + a `can()` call per key — fine for the one server a
+   * detail view cares about, wasteful to repeat for every row of a list
+   * nothing on the list view actually renders it for.
+   */
   async get(actor: AccessActor, serverId: string) {
-    const { server } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
-    return server;
+    const { server, role, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    const allKeys = await this.permissionCatalog.keys();
+    const permissions = allKeys.filter((key) => can(key));
+    return toClientServerDetail(server, role, permissions);
   }
 
   async power(actor: AccessActor, serverId: string, action: 'start' | 'stop' | 'restart' | 'kill') {
@@ -93,5 +137,53 @@ export class ClientServersService {
     });
     const wsUrl = this.agent.wsUrl(server.node.scheme, server.node.fqdn, server.node.daemonPort, server.id);
     return { token, expiresIn: CONSOLE_TOKEN_TTL_SECONDS, wsUrl };
+  }
+
+  /**
+   * A cheap, cached, non-streaming usage snapshot — what powers the
+   * server page's resource advisory without opening a WebSocket. `.read`
+   * permission, so it passes the suspension gate: a suspended customer
+   * can still see WHY (e.g. 97% memory) instead of a dead page.
+   *
+   * A node/agent being unreachable is a DISPLAYABLE state here, not an
+   * API failure — returning 503 would make the page paint a red error
+   * banner over what's otherwise a perfectly healthy dashboard. Every
+   * agent-side failure (AgentClient.call already collapses timeouts,
+   * connection errors, and non-2xx responses into ServiceUnavailableException)
+   * degrades to `{ online: false }` at HTTP 200 instead.
+   */
+  async stats(actor: AccessActor, serverId: string): Promise<ServerStatsSnapshot> {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    if (!can('server.read')) throw new ForbiddenException('Missing permission: server.read');
+
+    const cacheKey = `stats:${server.id}`;
+    const cached = await this.redis.client.get(cacheKey);
+    if (cached !== null) return JSON.parse(cached) as ServerStatsSnapshot;
+
+    const snapshot = await this.fetchSnapshot(server.nodeId, server.id);
+    await this.redis.client.set(cacheKey, JSON.stringify(snapshot), 'EX', STATS_CACHE_TTL_SECONDS);
+    return snapshot;
+  }
+
+  private async fetchSnapshot(nodeId: string, serverUuid: string): Promise<ServerStatsSnapshot> {
+    const measuredAt = new Date().toISOString();
+    try {
+      const status = await this.agent.getServerStatus(nodeId, serverUuid);
+      const f = status.stats;
+      return {
+        online: true,
+        state: status.state,
+        cpuPercent: f?.cpu_percent ?? null,
+        cpuLimitPercent: f?.cpu_limit_percent ?? status.cpuLimitPercent ?? null,
+        memoryBytes: f?.memory_bytes ?? null,
+        memoryLimitBytes: f?.memory_limit_bytes ?? null,
+        networkRxBytes: f?.network_rx_bytes ?? null,
+        networkTxBytes: f?.network_tx_bytes ?? null,
+        uptimeMs: f?.uptime_ms ?? null,
+        measuredAt,
+      };
+    } catch {
+      return { ...OFFLINE_SNAPSHOT, measuredAt };
+    }
   }
 }
