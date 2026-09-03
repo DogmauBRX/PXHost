@@ -2,10 +2,9 @@ import { createFileRoute, Link, Outlet } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, User } from 'lucide-react';
 import { requireAdmin } from '@/app/guards';
-import { AppShell } from '@/ui/layout/AppShell';
 import { getAdminServer } from '@/features/admin/admin.api';
 import { getServer } from '@/features/servers/servers.api';
-import { RouteTabs, StatusBadge, type RouteTab } from '@/ui/primitives';
+import { Card, CardBody, RouteTabs, StatusBadge, type RouteTab } from '@/ui/primitives';
 
 // The admin drill-down mirrors client.servers.$serverId.tsx's shape exactly
 // — same tabs, same page components underneath — but adds an owner-context
@@ -14,6 +13,12 @@ import { RouteTabs, StatusBadge, type RouteTab } from '@/ui/primitives';
 // `resolve()`), not through ownership. AuthenticatedUser.isAdmin is what
 // lets the SAME /api/client/servers/:id/* routes serve this page too;
 // there is no separate admin-only files/backups/etc. API surface.
+//
+// This route nests under /admin (admin.tsx's own <AppShell>) — it must
+// NOT wrap in a second one itself. It used to, which doubled the whole
+// shell (two Sidebars, two Topbars, two theme-toggle buttons) — the exact
+// bug already found and fixed on the client side
+// (client.servers.$serverId.tsx).
 export const Route = createFileRoute('/admin/servers/$serverId')({
   beforeLoad: requireAdmin,
   component: ServerLayout,
@@ -51,7 +56,7 @@ function ServerLayout() {
   const tabs: RouteTab[] = [...basicTabs, ...ADVANCED_TABS];
 
   return (
-    <AppShell area="admin">
+    <>
       <Link
         to="/admin/servers"
         className="mb-4 inline-flex items-center gap-1 text-sm text-text-muted transition-colors hover:text-text"
@@ -77,8 +82,12 @@ function ServerLayout() {
         </div>
       )}
 
-      <RouteTabs items={tabs} params={{ serverId }} className="mb-6" />
-      <Outlet />
-    </AppShell>
+      <Card>
+        <RouteTabs items={tabs} params={{ serverId }} className="px-4 sm:px-6" />
+        <CardBody>
+          <Outlet />
+        </CardBody>
+      </Card>
+    </>
   );
 }

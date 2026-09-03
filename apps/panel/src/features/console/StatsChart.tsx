@@ -13,6 +13,18 @@ const WINDOW_POINTS = 60; // ~2 minutes at the agent's 2s push interval
 // two separate literals before, which is how they drift apart.
 const CHART_HEIGHT = 200;
 
+// uPlot fill colors are plain canvas strings, same reason readToken exists
+// for stroke colors — this just adds an alpha channel to a `#rrggbb`
+// design token so the area fill reads as a tint of the line color, not a
+// flat block.
+function withAlpha(hex: string, alpha: number): string {
+  const n = parseInt(hex.replace('#', ''), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 // A plain useRef ring buffer fed straight into uPlot.setData() on every
 // incoming frame — no React state, so a server streaming stats every
 // couple seconds never triggers a React re-render on this page
@@ -58,24 +70,59 @@ export const StatsChart = forwardRef<StatsChartHandle>(function StatsChart(_prop
     // (rather than hardcoding hexes, as this file used to) is what keeps the
     // chart legible after a theme switch. RAM is drawn in `info` rather than
     // `warn` because amber next to the orange accent is near-indistinguishable.
+    //
+    // No axis ever shows numeric labels here — the exact figures are
+    // already in the `data-readout` text above, live-updated every frame,
+    // so the axes duplicating them as loose "100"/"80" digits floating
+    // over the plot was pure noise, not information. What's left is a
+    // clean trend sparkline: a faint 0/50/100% grid on the CPU scale for
+    // rough visual reference, gradient-filled area under each series, and
+    // a spline curve instead of a jagged polyline — the "modern dashboard"
+    // look this replaces the bare axis numbers with.
     function build(): UPlot | null {
       if (!el) return null;
+      const accent = readToken('--color-accent');
+      const info = readToken('--color-info');
       const chart = new UPlot(
         {
           width: el.clientWidth || 400,
           height: CHART_HEIGHT,
           legend: { show: false },
           cursor: { show: false },
+          padding: [12, 8, 0, 8],
           axes: [
-            { stroke: readToken('--color-text-faint'), grid: { stroke: readToken('--color-border') }, ticks: { show: false } },
-            { scale: 'cpu', stroke: readToken('--color-accent'), grid: { show: false }, ticks: { show: false }, size: 34 },
-            { scale: 'mem', stroke: readToken('--color-info'), side: 1, grid: { show: false }, ticks: { show: false }, size: 42 },
+            { show: false },
+            {
+              scale: 'cpu',
+              grid: { stroke: readToken('--color-border'), width: 1 },
+              ticks: { show: false },
+              values: () => [],
+              splits: () => [0, 50, 100],
+              size: 0,
+            },
+            { show: false, scale: 'mem' },
           ],
           scales: { cpu: { range: [0, 100] }, mem: { range: (_u, _min, max) => [0, Math.max(max, 64)] } },
           series: [
             {},
-            { label: 'CPU %', stroke: readToken('--color-accent'), width: 1.5, scale: 'cpu', points: { show: false } },
-            { label: 'RAM MB', stroke: readToken('--color-info'), width: 1.5, scale: 'mem', points: { show: false } },
+            {
+              label: 'CPU %',
+              stroke: accent,
+              width: 2,
+              scale: 'cpu',
+              points: { show: false },
+              fill: withAlpha(accent, 0.16),
+              paths: UPlot.paths.spline?.(),
+            },
+            {
+              label: 'RAM MB',
+              stroke: info,
+              width: 2,
+              scale: 'mem',
+              points: { show: false },
+              fill: withAlpha(info, 0.1),
+              paths: UPlot.paths.spline?.(),
+            },
           ],
         },
         [new Float64Array(0), new Float64Array(0), new Float64Array(0)],

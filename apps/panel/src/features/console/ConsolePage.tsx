@@ -1,6 +1,7 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Terminal as XTerm } from '@xterm/xterm';
+import { Clock } from 'lucide-react';
 import { getServer } from '@/features/servers/servers.api';
 import { useServerSocket } from '@/shared/realtime/useServerSocket';
 import { Terminal } from './Terminal';
@@ -10,6 +11,21 @@ import { ResourceAdvisory } from '@/features/client/ResourceAdvisory';
 import { combineSeverity, cpuSeverity, memorySeverity, SUSTAINED_FRAMES, type Severity } from '@/features/client/advisory';
 import { Alert, Button, Input, StatusBadge } from '@/ui/primitives';
 import type { ServerStatsSnapshot } from '@/shared/api/types';
+
+// "1d 2h", "2h 15m", "15m 32s", "32s" — coarsest-two-units, matching how
+// the meter/hint labels elsewhere in this app stay compact rather than
+// spelling out every unit down to the second once the number is large.
+function formatUptime(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
 
 function buildLiveSnapshot(usage: { memoryBytes: number; memoryLimitBytes: number; cpuPercent: number; cpuLimitPercent: number }, state: string): ServerStatsSnapshot {
   return {
@@ -52,6 +68,13 @@ export function ConsolePage({ serverId }: { serverId: string }) {
   // string costs nothing, the same trick `setPowerState` above already
   // relies on.
   const latestUsageRef = useRef<{ memoryBytes: number; memoryLimitBytes: number; cpuPercent: number; cpuLimitPercent: number } | null>(null);
+  // The agent's own `uptime_ms` (re-synced from every frame, so client
+  // clock drift between frames never accumulates) paired with the
+  // wall-clock moment it was captured — `Date.now() - capturedAt` at
+  // render time gives the true elapsed uptime, ticked smoothly every
+  // second below rather than only on the ~2s frame cadence.
+  const uptimeBaseRef = useRef<{ uptimeMs: number; capturedAt: number } | null>(null);
+  const [, tickUptime] = useState(0);
   // The sustain-over-N-frames streak itself ALSO has to live in a ref, not
   // a hook: once `liveSeverity` settles at 'warn', every further frame
   // computes the same string and setState bails out — this component
@@ -86,6 +109,7 @@ export function ConsolePage({ serverId }: { serverId: string }) {
         cpuPercent: frame.cpu_percent,
         cpuLimitPercent: frame.cpu_limit_percent,
       };
+      uptimeBaseRef.current = frame.state === 'running' ? { uptimeMs: frame.uptime_ms, capturedAt: Date.now() } : null;
       const raw = combineSeverity(memorySeverity(frame.memory_bytes, frame.memory_limit_bytes), cpuSeverity(frame.cpu_percent, frame.cpu_limit_percent));
       const streak = severityStreakRef.current;
       if (raw === streak.severity) streak.count += 1;
@@ -101,6 +125,21 @@ export function ConsolePage({ serverId }: { serverId: string }) {
   const displayState = powerState ?? server?.powerState ?? 'offline';
   const connected = connectionState === 'open';
 
+  // Ticks a re-render once a second so the uptime readout counts up
+  // smoothly instead of only jumping on the ~2s stats-frame cadence.
+  // Scoped to `running` only — stopped as soon as the server isn't, so
+  // this never spends a timer counting up a number nobody's watching.
+  useEffect(() => {
+    if (displayState !== 'running') return;
+    const id = setInterval(() => tickUptime((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [displayState]);
+
+  const liveUptimeMs =
+    displayState === 'running' && uptimeBaseRef.current
+      ? uptimeBaseRef.current.uptimeMs + (Date.now() - uptimeBaseRef.current.capturedAt)
+      : null;
+
   function submitCommand(e: FormEvent) {
     e.preventDefault();
     if (!command.trim()) return;
@@ -114,6 +153,12 @@ export function ConsolePage({ serverId }: { serverId: string }) {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold tracking-tight text-text">{server?.name ?? '…'}</h1>
           <StatusBadge status={displayState} />
+          {liveUptimeMs != null && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-text-muted">
+              <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+              Ativo há {formatUptime(liveUptimeMs)}
+            </span>
+          )}
         </div>
         <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${connected ? 'text-ok' : 'text-text-faint'}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-ok' : 'bg-text-faint'}`} />

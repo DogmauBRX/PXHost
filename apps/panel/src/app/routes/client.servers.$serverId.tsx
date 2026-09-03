@@ -2,14 +2,16 @@ import { createFileRoute, Link, Outlet } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft } from 'lucide-react';
 import { requireAuth } from '@/app/guards';
-import { AppShell } from '@/ui/layout/AppShell';
 import { getServer } from '@/features/servers/servers.api';
 import { AssistantDrawer } from '@/features/assistant/AssistantDrawer';
-import { RouteTabs, type RouteTab } from '@/ui/primitives';
+import { Card, CardBody, RouteTabs, type RouteTab } from '@/ui/primitives';
 
-// Mirrors the old servers.$serverId.tsx layout exactly, just re-homed under
-// /client. Without the <Outlet/> below, a child route has nowhere to
-// render — found live once already when this nesting first shipped.
+// This route nests under /client in the generated route tree (client.tsx's
+// own ClientLayout), which already renders <AppShell>. Wrapping in a
+// SECOND <AppShell> here used to double up the whole shell — two Sidebars,
+// two Topbars, two theme-toggle buttons, one nested inside the other's
+// <main> — found live from a screenshot showing exactly that. Render just
+// the page content; the shell is already provided.
 export const Route = createFileRoute('/client/servers/$serverId')({
   beforeLoad: requireAuth,
   component: ServerLayout,
@@ -50,7 +52,7 @@ function ServerLayout() {
   const tabs: RouteTab[] = [...basicTabs, ...ADVANCED_TABS];
 
   return (
-    <AppShell area="client">
+    <>
       <Link
         to="/client/servers"
         className="mb-4 inline-flex items-center gap-1 text-sm text-text-muted transition-colors hover:text-text"
@@ -58,9 +60,13 @@ function ServerLayout() {
         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
         Meus Servidores
       </Link>
-      <RouteTabs items={tabs} params={{ serverId }} className="mb-6" />
-      <Outlet />
+      <Card>
+        <RouteTabs items={tabs} params={{ serverId }} className="px-4 sm:px-6" />
+        <CardBody>
+          <Outlet />
+        </CardBody>
+      </Card>
       <AssistantDrawer serverId={serverId} />
-    </AppShell>
+    </>
   );
 }
