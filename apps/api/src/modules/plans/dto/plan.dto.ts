@@ -12,6 +12,20 @@ class PlanCommercialFields {
   @Min(0)
   priceCents?: number;
 
+  // Commercial site — the optional anchor "de" price (Plan
+  // .compareAtPriceCents's own doc comment). `>= 0` here is deliberately
+  // looser than the DB's own `> price_cents` CHECK — that comparison
+  // needs the MERGED current+incoming values on a partial PATCH, which
+  // a single-field validator can't see; PlansService re-validates the
+  // pair itself (assertComparePrice) before this ever reaches the DB, so
+  // a bad combination comes back as a readable 400, not a raw
+  // constraint violation.
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  compareAtPriceCents?: number;
+
   @IsOptional()
   @IsString()
   @Length(3, 3)

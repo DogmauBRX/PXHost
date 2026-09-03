@@ -70,6 +70,7 @@ export const PLAN_CLIENT_SELECT = {
   maxDatabases: true,
   backupRetentionDays: true,
   priceCents: true,
+  compareAtPriceCents: true,
   currency: true,
   billingPeriod: true,
   maxServers: true,

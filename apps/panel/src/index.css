@@ -239,6 +239,28 @@ body {
   -webkit-mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
 }
 
+/*
+ * The commercial plan card's own "hero" band (PlanCard.tsx) — a solid
+ * brand-gradient fill rather than the sidebar's faint tint, since this
+ * needs to read as a storefront product card, not a muted nav panel.
+ * Same CircuitPattern motif underneath for a consistent brand language
+ * across the app, at full opacity here (no fade mask) since the whole
+ * band is short and colorful rather than fading into a plain surface.
+ */
+.plan-card-hero {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-strong) 100%);
+}
+
+.plan-card-hero__circuit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.4;
+}
+
 /* xterm.js ships its own base styles; this just lets it size to its flex parent */
 .xterm-wrapper .xterm {
   height: 100%;

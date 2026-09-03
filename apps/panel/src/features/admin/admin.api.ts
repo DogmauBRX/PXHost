@@ -145,6 +145,7 @@ export interface CreatePlanInput {
   maxSchedules?: number;
   backupRetentionDays?: number;
   priceCents?: number;
+  compareAtPriceCents?: number;
   currency?: string;
   billingPeriod?: string;
   maxServers?: number;

@@ -440,6 +440,16 @@ model Plan {
   // stored.
   maxSlots              Int?      @map("max_slots")
   priceCents            Int       @default(0) @map("price_cents")
+  // Commercial site — an optional anchor "de" price shown struck-through
+  // next to priceCents on the public card, with the discount percentage
+  // computed at render time (never stored). Admin-set and admin-only:
+  // there is no coupon/promo-code system (deliberately out of scope —
+  // see the commercial plan's §34), so this is a single number the
+  // admin can raise/lower/clear like any other plan field, not a time-
+  // boxed campaign. Null (the default — every existing plan reads this
+  // way) means "no anchor price," and the card shows only priceCents,
+  // unchanged from before this column existed.
+  compareAtPriceCents   Int?      @map("compare_at_price_cents")
   currency              String    @default("BRL") @db.Char(3)
   billingPeriod         String    @default("monthly") @map("billing_period")
   // Advisory metadata only — never enforced, never copied onto Server, and

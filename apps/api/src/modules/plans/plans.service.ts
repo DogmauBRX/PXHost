@@ -45,6 +45,14 @@ function assertRecommendationRanges(input: object): void {
   }
 }
 
+/** Mirrors the `plans_compare_at_price_check` CHECK constraint (migration 0015) — same "readable 400 instead of a raw Postgres error" reasoning as `assertRecommendationRanges`, and the same "validate the MERGED result" need on a partial PATCH that touches only one side of the pair. */
+function assertComparePrice(input: object): void {
+  const p = input as { priceCents?: number | null; compareAtPriceCents?: number | null };
+  if (p.compareAtPriceCents != null && p.priceCents != null && p.compareAtPriceCents <= p.priceCents) {
+    throw new BadRequestException('compareAtPriceCents must be greater than priceCents');
+  }
+}
+
 export interface PlanDriftEntry {
   serverId: string;
   serverName: string;
@@ -144,6 +152,11 @@ export class PlansService {
 
   async create(dto: CreatePlanDto) {
     assertRecommendationRanges(dto);
+    // Effective priceCents (dto.priceCents defaults to 0 below), not the
+    // raw possibly-undefined dto field — a compareAtPriceCents sent
+    // alone must still be validated against whatever price the plan
+    // actually ends up with.
+    assertComparePrice({ priceCents: dto.priceCents ?? 0, compareAtPriceCents: dto.compareAtPriceCents });
     const existing = await this.prisma.plan.findFirst({ where: { slug: dto.slug, deletedAt: null } });
     if (existing) throw new ConflictException('slug already in use');
     const created = await this.prisma.plan.create({
@@ -177,6 +190,7 @@ export class PlansService {
         recommendedPluginsMax: dto.recommendedPluginsMax,
         maxServers: dto.maxServers,
         maxSlots: dto.maxSlots,
+        compareAtPriceCents: dto.compareAtPriceCents,
         isFeatured: dto.isFeatured ?? false,
         highlightLabel: dto.highlightLabel,
       },
@@ -192,6 +206,7 @@ export class PlansService {
     // DTO alone, or a lone-field edit could silently create an invalid
     // min>max pair the DB constraint would then reject unreadably.
     assertRecommendationRanges({ ...current, ...dto });
+    assertComparePrice({ ...current, ...dto });
     // Deliberately just the DB row — a plan edit alone never touches a
     // single running server (architecture doc 2.1). applyToServers is
     // the separate, explicit, audited action that does.

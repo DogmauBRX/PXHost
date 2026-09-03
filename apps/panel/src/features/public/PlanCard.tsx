@@ -3,8 +3,9 @@ import { Link } from '@tanstack/react-router';
 import { Check, Sparkles } from 'lucide-react';
 import type { PublicPlan } from '@/shared/api/types';
 import { useAuthStore } from '@/shared/stores/auth.store';
-import { Badge, Button, Card, CardBody, CardHeader } from '@/ui/primitives';
-import { formatBillingPeriod, formatMemory, formatPrice, formatRange } from '@/shared/format/plan';
+import { Badge, Button, Card, CardBody } from '@/ui/primitives';
+import { CircuitPattern } from '@/ui/brand/CircuitPattern';
+import { discountPercent, formatBillingPeriod, formatMemory, formatPrice, formatRange } from '@/shared/format/plan';
 
 const AVAILABILITY_LABEL: Record<PublicPlan['availability']['status'], string> = {
   available: 'Disponível',
@@ -19,15 +20,17 @@ const AVAILABILITY_TONE: Record<PublicPlan['availability']['status'], 'ok' | 'wa
 
 /**
  * One plan card — the atom of both the public grid (`PublicPlansPage`)
- * and the landing page's plan preview strip. Availability is rendered
- * exactly as the backend computed it (`PublicPlansService
- * .computeAvailability`) — this component never re-derives "is there
- * capacity," per the commercial plan's explicit rule that the frontend
- * must never decide that on its own.
+ * and the landing page's plan preview strip. Availability AND the
+ * discount percentage are both rendered exactly as the backend computed
+ * them (`PublicPlansService.computeAvailability`, `discountPercent` off
+ * `compareAtPriceCents`) — this component never re-derives "is there
+ * capacity" or invents a price, per the commercial plan's rule that the
+ * frontend must never decide either on its own.
  */
 export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPlan; highlight?: boolean }) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const soldOut = plan.availability.status === 'sold_out';
+  const pctOff = discountPercent(plan.priceCents, plan.compareAtPriceCents);
 
   const players = formatRange(plan.recommendedPlayersMin, plan.recommendedPlayersMax);
   const mods = formatRange(plan.recommendedModsMin, plan.recommendedModsMax);
@@ -45,7 +48,7 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
       </Button>
     </Link>
   ) : (
-    <Link to="/register" search={{ redirect: `/checkout/${plan.slug}` }}>
+    <Link to="/checkout/$planSlug" params={{ planSlug: plan.slug }}>
       <Button variant="primary" className="w-full">
         {ctaLabel}
       </Button>
@@ -53,29 +56,43 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
   );
 
   return (
-    <Card className={`relative flex flex-col ${highlight ? 'border-accent shadow-md ring-1 ring-accent/30' : ''}`}>
-      {highlight && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="inline-flex items-center gap-1 rounded-full bg-accent px-3 py-1 text-xs font-semibold text-accent-contrast shadow-sm">
-            <Sparkles className="h-3 w-3" aria-hidden="true" />
-            {plan.highlightLabel ?? 'Mais popular'}
-          </span>
+    <Card className={`flex flex-col overflow-hidden ${highlight ? 'border-accent shadow-md ring-1 ring-accent/30' : ''}`}>
+      {/* Decorative brand-gradient band, same CircuitPattern motif the
+          sidebar header uses (sidebar-brand__circuit) — purely visual,
+          carries no plan data, so it's identical across every card. */}
+      <div className="plan-card-hero relative flex h-24 shrink-0 items-start justify-between p-3">
+        <CircuitPattern className="plan-card-hero__circuit" />
+        <div className="relative">
+          {highlight && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2.5 py-1 text-xs font-semibold text-accent-strong shadow-sm">
+              <Sparkles className="h-3 w-3" aria-hidden="true" />
+              {plan.highlightLabel ?? 'Mais popular'}
+            </span>
+          )}
         </div>
-      )}
-
-      <CardHeader className="flex-col items-start gap-1 border-b-0 pb-0">
-        <div className="flex w-full items-center justify-between gap-2">
-          <h3 className="text-base font-semibold text-text">{plan.name}</h3>
+        <div className="relative">
           <Badge tone={AVAILABILITY_TONE[plan.availability.status]}>{AVAILABILITY_LABEL[plan.availability.status]}</Badge>
         </div>
-        {plan.description && <p className="text-sm text-text-muted">{plan.description}</p>}
-      </CardHeader>
+      </div>
 
       <CardBody className="flex flex-1 flex-col gap-5">
-        <p>
-          <span className="text-3xl font-bold text-text">{formatPrice(plan.priceCents, plan.currency)}</span>
-          <span className="text-sm font-medium text-text-faint"> /{formatBillingPeriod(plan.billingPeriod)}</span>
-        </p>
+        <div>
+          <h3 className="text-base font-semibold text-text">{plan.name}</h3>
+          {plan.description && <p className="mt-0.5 text-sm text-text-muted">{plan.description}</p>}
+        </div>
+
+        <div>
+          {pctOff != null && (
+            <div className="mb-1 flex items-center gap-2">
+              <span className="text-sm text-text-faint line-through">{formatPrice(plan.compareAtPriceCents!, plan.currency)}</span>
+              <Badge tone="warn">{pctOff}% OFF</Badge>
+            </div>
+          )}
+          <p>
+            <span className="text-3xl font-bold text-text">{formatPrice(plan.priceCents, plan.currency)}</span>
+            <span className="text-sm font-medium text-text-faint"> /{formatBillingPeriod(plan.billingPeriod)}</span>
+          </p>
+        </div>
 
         <ul className="flex flex-1 flex-col gap-2 text-sm text-text">
           <SpecRow>{formatMemory(plan.memoryMb)} de RAM</SpecRow>

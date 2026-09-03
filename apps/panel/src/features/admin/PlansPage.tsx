@@ -4,7 +4,7 @@ import { Layers, Plus } from 'lucide-react';
 import { applyPlan, createPlan, getPlanCapacity, getPlanDrift, listPlans, updatePlan, type CreatePlanInput } from './admin.api';
 import { ApiError } from '@/shared/api/client';
 import type { AdminPlan, PlanApplyResult, PlanDriftReport } from '@/shared/api/types';
-import { formatPrice, formatRange } from '@/shared/format/plan';
+import { discountPercent, formatPrice, formatRange } from '@/shared/format/plan';
 import {
   Alert,
   Badge,
@@ -30,6 +30,7 @@ interface PlanFormValues {
   isPublic: boolean;
   sortOrder: string;
   priceReais: string;
+  compareAtPriceReais: string;
   currency: string;
   billingPeriod: string;
   cpuLimitPercent: string;
@@ -61,6 +62,7 @@ const EMPTY_FORM: PlanFormValues = {
   isPublic: true,
   sortOrder: '0',
   priceReais: '',
+  compareAtPriceReais: '',
   currency: 'BRL',
   billingPeriod: 'monthly',
   cpuLimitPercent: '100',
@@ -93,6 +95,7 @@ function planToForm(p: AdminPlan): PlanFormValues {
     isPublic: p.isPublic,
     sortOrder: String(p.sortOrder),
     priceReais: (p.priceCents / 100).toString(),
+    compareAtPriceReais: p.compareAtPriceCents != null ? (p.compareAtPriceCents / 100).toString() : '',
     currency: p.currency,
     billingPeriod: p.billingPeriod,
     cpuLimitPercent: String(p.cpuLimitPercent),
@@ -132,6 +135,7 @@ function toInput(v: PlanFormValues): CreatePlanInput {
     isPublic: v.isPublic,
     sortOrder: n(v.sortOrder),
     priceCents: v.priceReais.trim() ? Math.round(Number(v.priceReais) * 100) : undefined,
+    compareAtPriceCents: v.compareAtPriceReais.trim() ? Math.round(Number(v.compareAtPriceReais) * 100) : undefined,
     currency: v.currency,
     billingPeriod: v.billingPeriod,
     cpuLimitPercent: n(v.cpuLimitPercent),
@@ -164,7 +168,15 @@ function isValid(v: PlanFormValues): boolean {
     [v.recommendedModsMin, v.recommendedModsMax],
     [v.recommendedPluginsMin, v.recommendedPluginsMax],
   ];
-  return ranges.every(([min, max]) => n(min) == null || n(max) == null || n(min)! <= n(max)!);
+  if (!ranges.every(([min, max]) => n(min) == null || n(max) == null || n(min)! <= n(max)!)) return false;
+  // Mirrors the API's plans_compare_at_price_check — an anchor price
+  // that isn't actually higher than the real price would just 400 on
+  // submit; catching it here means the "Salvar" button itself reflects
+  // the invalid state instead of a round trip to find out.
+  const price = v.priceReais.trim() ? Number(v.priceReais) : 0;
+  const comparePrice = v.compareAtPriceReais.trim() ? Number(v.compareAtPriceReais) : null;
+  if (comparePrice != null && comparePrice <= price) return false;
+  return true;
 }
 
 function RangeField({
@@ -318,9 +330,21 @@ function PlanFormModal({ open, mode, plan, onClose }: { open: boolean; mode: 'cr
 
         <fieldset className="space-y-4">
           <legend className="text-xs font-semibold tracking-wide text-text-faint uppercase">Comercial</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Preço (R$)" htmlFor="plan-price">
               <Input id="plan-price" value={values.priceReais} onChange={(e) => patch({ priceReais: e.target.value })} placeholder="49,90" />
+            </Field>
+            <Field
+              label="Preço “de” (R$, opcional)"
+              htmlFor="plan-compare-price"
+              hint="Mostrado riscado no site, com o desconto calculado. Deixe em branco para não exibir."
+            >
+              <Input
+                id="plan-compare-price"
+                value={values.compareAtPriceReais}
+                onChange={(e) => patch({ compareAtPriceReais: e.target.value })}
+                placeholder="69,90"
+              />
             </Field>
             <Field label="Moeda" htmlFor="plan-currency">
               <Select id="plan-currency" value={values.currency} onChange={(e) => patch({ currency: e.target.value })}>
@@ -570,6 +594,9 @@ export function PlansPage() {
                         <p className="font-medium text-text">{p.name}</p>
                         {!p.isPublic && <Badge tone="neutral">privado</Badge>}
                         {p.isFeatured && <Badge tone="ok">{p.highlightLabel ?? 'destaque'}</Badge>}
+                        {discountPercent(p.priceCents, p.compareAtPriceCents) != null && (
+                          <Badge tone="warn">{discountPercent(p.priceCents, p.compareAtPriceCents)}% off</Badge>
+                        )}
                         {p.maxSlots != null && (
                           <Badge tone={(occupancyById.get(p.id) ?? 0) >= p.maxSlots ? 'fail' : 'neutral'}>
                             {occupancyById.get(p.id) ?? 0} / {p.maxSlots} vagas

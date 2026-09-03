@@ -51,6 +51,7 @@ export interface ClientPlan {
   maxDatabases: number;
   backupRetentionDays: number;
   priceCents: number;
+  compareAtPriceCents: number | null;
   currency: string;
   billingPeriod: string;
   maxServers: number | null;
@@ -442,6 +443,7 @@ export interface AdminPlan {
   maxSchedules: number;
   backupRetentionDays: number;
   priceCents: number;
+  compareAtPriceCents: number | null;
   currency: string;
   billingPeriod: string;
   maxServers: number | null;
@@ -617,6 +619,7 @@ export interface PublicPlan {
   maxDatabases: number;
   backupRetentionDays: number;
   priceCents: number;
+  compareAtPriceCents: number | null;
   currency: string;
   billingPeriod: string;
   maxServers: number | null;

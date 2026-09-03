@@ -34,3 +34,17 @@ const BILLING_PERIOD_LABELS: Record<string, string> = {
 export function formatBillingPeriod(period: string): string {
   return BILLING_PERIOD_LABELS[period] ?? period;
 }
+
+/**
+ * The "de/por" discount percentage for a plan card — `null` unless the
+ * admin actually set a `compareAtPriceCents` anchor higher than the real
+ * price (the API's own `plans_compare_at_price_check` CHECK constraint
+ * already guarantees `compareAtPriceCents > priceCents` whenever it's
+ * non-null, so this never needs to guard against a nonsensical 0% or
+ * negative result). Rounded down — a card advertising "25% OFF" must
+ * never overstate the real discount by rounding up.
+ */
+export function discountPercent(priceCents: number, compareAtPriceCents: number | null): number | null {
+  if (compareAtPriceCents == null || compareAtPriceCents <= priceCents) return null;
+  return Math.floor(((compareAtPriceCents - priceCents) / compareAtPriceCents) * 100);
+}

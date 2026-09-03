@@ -62,6 +62,38 @@ describe('Plans (e2e)', () => {
     expect(res.statusCode).toBe(409);
   });
 
+  it('rejects a compareAtPriceCents that is not actually higher than priceCents', async () => {
+    const res = await authed('/api/admin/plans', {
+      method: 'POST',
+      payload: { name: 'e2e cmp', slug: `e2e-cmp-${suffix}`, memoryMb: 512, diskMb: 1024, priceCents: 1000, compareAtPriceCents: 1000 },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('accepts a real anchor price and exposes it on the plan', async () => {
+    const res = await authed('/api/admin/plans', {
+      method: 'POST',
+      payload: { name: 'e2e cmp', slug: `e2e-cmp-${suffix}`, memoryMb: 512, diskMb: 1024, priceCents: 1000, compareAtPriceCents: 1500 },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.compareAtPriceCents).toBe(1500);
+    await prisma.plan.deleteMany({ where: { id: body.id } });
+  });
+
+  it('rejects lowering priceCents on update such that it crosses the plan\'s own compareAtPriceCents', async () => {
+    const created = await authed('/api/admin/plans', {
+      method: 'POST',
+      payload: { name: 'e2e cmp upd', slug: `e2e-cmp-upd-${suffix}`, memoryMb: 512, diskMb: 1024, priceCents: 1000, compareAtPriceCents: 1500 },
+    });
+    const id = JSON.parse(created.body).id;
+
+    const bad = await authed(`/api/admin/plans/${id}`, { method: 'PATCH', payload: { priceCents: 1600 } });
+    expect(bad.statusCode).toBe(400);
+
+    await prisma.plan.deleteMany({ where: { id } });
+  });
+
   it('blocks deletion while a server references the plan, allows it once free', async () => {
     // no server created in this suite, so deletion should succeed cleanly
     const res = await authed(`/api/admin/plans/${planId}`, { method: 'DELETE' });
