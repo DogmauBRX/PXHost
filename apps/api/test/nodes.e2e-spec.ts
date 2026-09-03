@@ -207,6 +207,43 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     expect(body.telemetryDivergence).toEqual({ memory: 'ok', disk: 'ok', cpu: 'unknown' }); // cpu still unknown: cpuTotalPercent defaults to 0 (accounting off)
   });
 
+  it('a heartbeat with full hardware telemetry persists CPU/memory/virtualization detection fields', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remote/nodes/heartbeat',
+      headers: { authorization: `Bearer ${nodeToken}` },
+      payload: {
+        agentVersion: 'v0.4.0-e2e',
+        reportedCpuModel: 'AMD EPYC 7302P 16-Core Processor',
+        reportedCpuSockets: 1,
+        reportedCpuPhysicalCores: 16,
+        reportedCpuUsagePercent: 37,
+        reportedLoadAvg1: 2.5,
+        reportedMemoryUsedMb: 12000,
+        reportedMemoryAvailableMb: 20000,
+        reportedVirtualizationSystem: 'kvm',
+        reportedVirtualizationRole: 'guest',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+
+    const node = await authed(`/api/admin/nodes/${nodeId}`);
+    const body = JSON.parse(node.body);
+    expect(body.reportedCpuModel).toBe('AMD EPYC 7302P 16-Core Processor');
+    expect(body.reportedCpuSockets).toBe(1);
+    expect(body.reportedCpuPhysicalCores).toBe(16);
+    expect(body.reportedCpuUsagePercent).toBe(37);
+    expect(body.reportedLoadAvg1).toBe(2.5);
+    expect(body.reportedMemoryUsedMb).toBe(12000);
+    expect(body.reportedMemoryAvailableMb).toBe(20000);
+    expect(body.reportedVirtualizationSystem).toBe('kvm');
+    expect(body.reportedVirtualizationRole).toBe('guest');
+    // Hardware-detection fields are purely informational — they must never
+    // affect the declared×reported divergence, which stays scoped to
+    // memory/disk/cpu totals from the block above.
+    expect(body.telemetryDivergence).toEqual({ memory: 'ok', disk: 'ok', cpu: 'unknown' });
+  });
+
   it('declaring more than the agent actually reports flags "over" — the one dangerous direction', async () => {
     const patchRes = await authed(`/api/admin/nodes/${nodeId}`, { method: 'PATCH', payload: { memoryTotalMb: 65536 } }); // now above the 32768 reported above
     expect(patchRes.statusCode).toBe(200);
@@ -230,6 +267,12 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     const body = JSON.parse(node.body);
     expect(body.reportedMemoryTotalMb).toBe(32768); // still the value from two tests ago — never zeroed
     expect(body.agentVersion).toBe('v0.4.0-e2e-old-agent');
+    // Same "never zeroed" guarantee for the hardware-detection fields set
+    // two tests ago — an agent binary that doesn't collect them yet (or a
+    // tick where every hostinfo source failed) must not erase them.
+    expect(body.reportedCpuModel).toBe('AMD EPYC 7302P 16-Core Processor');
+    expect(body.reportedCpuPhysicalCores).toBe(16);
+    expect(body.reportedVirtualizationSystem).toBe('kvm');
   });
 
   it('a heartbeat with a garbage token is rejected — never silently accepted', async () => {

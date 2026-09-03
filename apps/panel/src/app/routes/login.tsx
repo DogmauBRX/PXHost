@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router';
+import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { Moon, Sun } from 'lucide-react';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { useThemeStore } from '@/shared/theme/theme.store';
@@ -51,6 +51,9 @@ function LoginPage() {
         <div className="w-full rounded-xl border border-border bg-surface p-8 shadow-lg">
           <h1 className="mb-6 text-lg font-semibold text-text">Entrar no painel</h1>
           <LoginForm />
+          <Link to="/forgot-password" className="mt-4 block text-center text-sm text-text-muted transition-colors hover:text-text">
+            Esqueci minha senha
+          </Link>
         </div>
       </div>
     </div>

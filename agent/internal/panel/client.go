@@ -74,6 +74,23 @@ type HeartbeatRequest struct {
 	ReportedOS                string `json:"reportedOs,omitempty"`
 	ReportedKernel            string `json:"reportedKernel,omitempty"`
 	ReportedContainersRunning int    `json:"reportedContainersRunning,omitempty"`
+
+	// Automatic hardware-capacity detection — deeper host telemetry than
+	// dockerx.Info() ever collected (CPU model/topology, current
+	// load/usage, memory used/available, virtualization). Same
+	// omitempty/best-effort contract as the fields above; see
+	// hostinfo.CollectStatic's doc comment for why
+	// ReportedCPUPhysicalCores/ReportedCPUSockets are deliberately absent
+	// when the agent detects it's running inside an LXC container.
+	ReportedCPUModel             string  `json:"reportedCpuModel,omitempty"`
+	ReportedCPUSockets           int     `json:"reportedCpuSockets,omitempty"`
+	ReportedCPUPhysicalCores     int     `json:"reportedCpuPhysicalCores,omitempty"`
+	ReportedCPUUsagePercent      int     `json:"reportedCpuUsagePercent,omitempty"`
+	ReportedLoadAvg1             float64 `json:"reportedLoadAvg1,omitempty"`
+	ReportedMemoryUsedMb         int64   `json:"reportedMemoryUsedMb,omitempty"`
+	ReportedMemoryAvailableMb    int64   `json:"reportedMemoryAvailableMb,omitempty"`
+	ReportedVirtualizationSystem string  `json:"reportedVirtualizationSystem,omitempty"`
+	ReportedVirtualizationRole   string  `json:"reportedVirtualizationRole,omitempty"`
 }
 
 type HeartbeatResponse struct {

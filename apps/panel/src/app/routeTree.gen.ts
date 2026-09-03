@@ -12,11 +12,12 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ClientRouteImport } from './routes/client'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminLocationsRouteImport } from './routes/admin.locations'
 import { Route as AdminLogsRouteImport } from './routes/admin.logs'
-import { Route as AdminNodesRouteImport } from './routes/admin.nodes'
 import { Route as AdminPlansRouteImport } from './routes/admin.plans'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminSystemRouteImport } from './routes/admin.system'
@@ -28,6 +29,8 @@ import { Route as ClientBillingRouteImport } from './routes/client.billing'
 import { Route as ClientPlanRouteImport } from './routes/client.plan'
 import { Route as ClientSettingsRouteImport } from './routes/client.settings'
 import { Route as ClientSupportRouteImport } from './routes/client.support'
+import { Route as AdminNodesIndexRouteImport } from './routes/admin.nodes.index'
+import { Route as AdminNodesNodeIdRouteImport } from './routes/admin.nodes.$nodeId'
 import { Route as AdminServersIndexRouteImport } from './routes/admin.servers.index'
 import { Route as AdminServersServerIdRouteImport } from './routes/admin.servers.$serverId'
 import { Route as ClientServersIndexRouteImport } from './routes/client.servers.index'
@@ -66,9 +69,19 @@ const ClientRoute = ClientRouteImport.update({
   path: '/client',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -84,11 +97,6 @@ const AdminLocationsRoute = AdminLocationsRouteImport.update({
 const AdminLogsRoute = AdminLogsRouteImport.update({
   id: '/logs',
   path: '/logs',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminNodesRoute = AdminNodesRouteImport.update({
-  id: '/nodes',
-  path: '/nodes',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminPlansRoute = AdminPlansRouteImport.update({
@@ -145,6 +153,16 @@ const ClientSupportRoute = ClientSupportRouteImport.update({
   id: '/support',
   path: '/support',
   getParentRoute: () => ClientRoute,
+} as any)
+const AdminNodesIndexRoute = AdminNodesIndexRouteImport.update({
+  id: '/nodes/',
+  path: '/nodes/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminNodesNodeIdRoute = AdminNodesNodeIdRouteImport.update({
+  id: '/nodes/$nodeId',
+  path: '/nodes/$nodeId',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminServersIndexRoute = AdminServersIndexRouteImport.update({
   id: '/servers/',
@@ -279,10 +297,11 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/client': typeof ClientRouteWithChildren
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
-  '/admin/nodes': typeof AdminNodesRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/system': typeof AdminSystemRoute
@@ -295,8 +314,10 @@ export interface FileRoutesByFullPath {
   '/client/support': typeof ClientSupportRoute
   '/admin/': typeof AdminIndexRoute
   '/client/': typeof ClientIndexRoute
+  '/admin/nodes/$nodeId': typeof AdminNodesNodeIdRoute
   '/admin/servers/$serverId': typeof AdminServersServerIdRouteWithChildren
   '/client/servers/$serverId': typeof ClientServersServerIdRouteWithChildren
+  '/admin/nodes/': typeof AdminNodesIndexRoute
   '/admin/servers/': typeof AdminServersIndexRoute
   '/client/servers/': typeof ClientServersIndexRoute
   '/admin/servers/$serverId/activity': typeof AdminServersServerIdActivityRoute
@@ -320,10 +341,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
-  '/admin/nodes': typeof AdminNodesRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/system': typeof AdminSystemRoute
@@ -336,6 +358,8 @@ export interface FileRoutesByTo {
   '/client/support': typeof ClientSupportRoute
   '/admin': typeof AdminIndexRoute
   '/client': typeof ClientIndexRoute
+  '/admin/nodes/$nodeId': typeof AdminNodesNodeIdRoute
+  '/admin/nodes': typeof AdminNodesIndexRoute
   '/admin/servers': typeof AdminServersIndexRoute
   '/client/servers': typeof ClientServersIndexRoute
   '/admin/servers/$serverId/activity': typeof AdminServersServerIdActivityRoute
@@ -362,10 +386,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/client': typeof ClientRouteWithChildren
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
-  '/admin/nodes': typeof AdminNodesRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/system': typeof AdminSystemRoute
@@ -378,8 +403,10 @@ export interface FileRoutesById {
   '/client/support': typeof ClientSupportRoute
   '/admin/': typeof AdminIndexRoute
   '/client/': typeof ClientIndexRoute
+  '/admin/nodes/$nodeId': typeof AdminNodesNodeIdRoute
   '/admin/servers/$serverId': typeof AdminServersServerIdRouteWithChildren
   '/client/servers/$serverId': typeof ClientServersServerIdRouteWithChildren
+  '/admin/nodes/': typeof AdminNodesIndexRoute
   '/admin/servers/': typeof AdminServersIndexRoute
   '/client/servers/': typeof ClientServersIndexRoute
   '/admin/servers/$serverId/activity': typeof AdminServersServerIdActivityRoute
@@ -407,10 +434,11 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/client'
+    | '/forgot-password'
     | '/login'
+    | '/reset-password'
     | '/admin/locations'
     | '/admin/logs'
-    | '/admin/nodes'
     | '/admin/plans'
     | '/admin/settings'
     | '/admin/system'
@@ -423,8 +451,10 @@ export interface FileRouteTypes {
     | '/client/support'
     | '/admin/'
     | '/client/'
+    | '/admin/nodes/$nodeId'
     | '/admin/servers/$serverId'
     | '/client/servers/$serverId'
+    | '/admin/nodes/'
     | '/admin/servers/'
     | '/client/servers/'
     | '/admin/servers/$serverId/activity'
@@ -448,10 +478,11 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/forgot-password'
     | '/login'
+    | '/reset-password'
     | '/admin/locations'
     | '/admin/logs'
-    | '/admin/nodes'
     | '/admin/plans'
     | '/admin/settings'
     | '/admin/system'
@@ -464,6 +495,8 @@ export interface FileRouteTypes {
     | '/client/support'
     | '/admin'
     | '/client'
+    | '/admin/nodes/$nodeId'
+    | '/admin/nodes'
     | '/admin/servers'
     | '/client/servers'
     | '/admin/servers/$serverId/activity'
@@ -489,10 +522,11 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/client'
+    | '/forgot-password'
     | '/login'
+    | '/reset-password'
     | '/admin/locations'
     | '/admin/logs'
-    | '/admin/nodes'
     | '/admin/plans'
     | '/admin/settings'
     | '/admin/system'
@@ -505,8 +539,10 @@ export interface FileRouteTypes {
     | '/client/support'
     | '/admin/'
     | '/client/'
+    | '/admin/nodes/$nodeId'
     | '/admin/servers/$serverId'
     | '/client/servers/$serverId'
+    | '/admin/nodes/'
     | '/admin/servers/'
     | '/client/servers/'
     | '/admin/servers/$serverId/activity'
@@ -533,7 +569,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   ClientRoute: typeof ClientRouteWithChildren
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -559,11 +597,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -585,13 +637,6 @@ declare module '@tanstack/react-router' {
       path: '/logs'
       fullPath: '/admin/logs'
       preLoaderRoute: typeof AdminLogsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/nodes': {
-      id: '/admin/nodes'
-      path: '/nodes'
-      fullPath: '/admin/nodes'
-      preLoaderRoute: typeof AdminNodesRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/plans': {
@@ -670,6 +715,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/client/support'
       preLoaderRoute: typeof ClientSupportRouteImport
       parentRoute: typeof ClientRoute
+    }
+    '/admin/nodes/': {
+      id: '/admin/nodes/'
+      path: '/nodes'
+      fullPath: '/admin/nodes/'
+      preLoaderRoute: typeof AdminNodesIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/nodes/$nodeId': {
+      id: '/admin/nodes/$nodeId'
+      path: '/nodes/$nodeId'
+      fullPath: '/admin/nodes/$nodeId'
+      preLoaderRoute: typeof AdminNodesNodeIdRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/admin/servers/': {
       id: '/admin/servers/'
@@ -858,28 +917,30 @@ const AdminServersServerIdRouteWithChildren =
 interface AdminRouteChildren {
   AdminLocationsRoute: typeof AdminLocationsRoute
   AdminLogsRoute: typeof AdminLogsRoute
-  AdminNodesRoute: typeof AdminNodesRoute
   AdminPlansRoute: typeof AdminPlansRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminSystemRoute: typeof AdminSystemRoute
   AdminTemplatesRoute: typeof AdminTemplatesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminNodesNodeIdRoute: typeof AdminNodesNodeIdRoute
   AdminServersServerIdRoute: typeof AdminServersServerIdRouteWithChildren
+  AdminNodesIndexRoute: typeof AdminNodesIndexRoute
   AdminServersIndexRoute: typeof AdminServersIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminLocationsRoute: AdminLocationsRoute,
   AdminLogsRoute: AdminLogsRoute,
-  AdminNodesRoute: AdminNodesRoute,
   AdminPlansRoute: AdminPlansRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminSystemRoute: AdminSystemRoute,
   AdminTemplatesRoute: AdminTemplatesRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminNodesNodeIdRoute: AdminNodesNodeIdRoute,
   AdminServersServerIdRoute: AdminServersServerIdRouteWithChildren,
+  AdminNodesIndexRoute: AdminNodesIndexRoute,
   AdminServersIndexRoute: AdminServersIndexRoute,
 }
 
@@ -943,7 +1004,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   ClientRoute: ClientRouteWithChildren,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

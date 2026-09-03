@@ -11,6 +11,7 @@ import (
 	"github.com/pxhost/agent/internal/config"
 	"github.com/pxhost/agent/internal/dockerx"
 	"github.com/pxhost/agent/internal/fsx"
+	"github.com/pxhost/agent/internal/hostinfo"
 	"github.com/pxhost/agent/internal/panel"
 	"github.com/pxhost/agent/internal/spec"
 	"github.com/pxhost/agent/internal/srv"
@@ -200,6 +201,13 @@ func runHeartbeatLoop(ctx context.Context, nf config.NodeFile, tokenStore *api.T
 	var cachedInfo dockerx.SystemInfo
 	var cachedInfoAt time.Time
 
+	// hostinfo.StaticInfo (CPU model/topology, virtualization) is exactly
+	// as slow-changing as dockerx.Info — same cache, same TTL. Dynamic
+	// values (CPU%, load, memory used/available) are cheap /proc reads
+	// and are re-collected every tick, same cadence as disk usage.
+	var cachedStatic hostinfo.StaticInfo
+	var cachedStaticAt time.Time
+
 	send := func() {
 		dockerVersion := ""
 		if v, err := dc.Version(ctx); err == nil {
@@ -233,6 +241,30 @@ func runHeartbeatLoop(ctx context.Context, nf config.NodeFile, tokenStore *api.T
 		if total, free, err := fsx.DiskUsage(nf.DataDir); err == nil {
 			req.ReportedDiskTotalMb = int64(total / (1024 * 1024))
 			req.ReportedDiskFreeMb = int64(free / (1024 * 1024))
+		}
+
+		if cachedStaticAt.IsZero() || time.Since(cachedStaticAt) > infoCacheTTL {
+			cachedStatic = hostinfo.CollectStatic()
+			cachedStaticAt = time.Now()
+		}
+		req.ReportedCPUModel = cachedStatic.CPUModel
+		req.ReportedVirtualizationSystem = cachedStatic.VirtualizationSystem
+		req.ReportedVirtualizationRole = cachedStatic.VirtualizationRole
+		if cachedStatic.PhysicalTopologyReliable {
+			req.ReportedCPUPhysicalCores = cachedStatic.CPUPhysicalCores
+			req.ReportedCPUSockets = cachedStatic.CPUSockets
+		}
+
+		dynamic := hostinfo.CollectDynamic()
+		if dynamic.CPUUsagePercent >= 0 {
+			req.ReportedCPUUsagePercent = dynamic.CPUUsagePercent
+		}
+		if dynamic.LoadAvgValid {
+			req.ReportedLoadAvg1 = dynamic.LoadAvg1
+		}
+		if dynamic.MemoryValid {
+			req.ReportedMemoryUsedMb = int64(dynamic.MemoryUsedBytes / (1024 * 1024))
+			req.ReportedMemoryAvailableMb = int64(dynamic.MemoryAvailableBytes / (1024 * 1024))
 		}
 
 		reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

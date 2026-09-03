@@ -4,6 +4,21 @@ export interface LoginResponse {
   user: { id: string; email: string; username: string; globalRole: string };
 }
 
+// Client account management, Fase 1 — mirrors GET /api/client/account's
+// response (AccountService's ACCOUNT_SELECT + twoFactorEnabled).
+export interface ClientAccount {
+  id: string;
+  email: string;
+  username: string;
+  firstName: string | null;
+  lastName: string | null;
+  globalRole: string;
+  emailVerifiedAt: string | null;
+  lastLoginAt: string | null;
+  twoFactorEnabled: boolean;
+  createdAt: string;
+}
+
 // Mirrors apps/api/src/modules/templates/software.ts's describeSoftware()
 // output — the ONE place "/plugins" vs "/mods" is decided. Never re-derive
 // this on the frontend; always read it off the server response.
@@ -241,6 +256,7 @@ export interface AdminNode {
   fqdn: string;
   scheme: string;
   daemonPort: number;
+  daemonDataPath: string;
   memoryTotalMb: number;
   memoryReservedMb: number;
   memoryOverallocatePct: number;
@@ -269,6 +285,20 @@ export interface AdminNode {
   reportedContainersRunning: number | null;
   reportedAt: string | null;
   agentUptimeSeconds: number | null;
+  // Hardware-capacity detection: deeper host telemetry than the block
+  // above. Purely informational — never enters telemetryDivergence or
+  // any capacity math. reportedCpuPhysicalCores/reportedCpuSockets are
+  // null whenever the agent detects it's running inside an LXC container
+  // (see the agent's internal/hostinfo package) — show "N/A", not 0.
+  reportedCpuModel: string | null;
+  reportedCpuSockets: number | null;
+  reportedCpuPhysicalCores: number | null;
+  reportedCpuUsagePercent: number | null;
+  reportedLoadAvg1: number | null;
+  reportedMemoryUsedMb: number | null;
+  reportedMemoryAvailableMb: number | null;
+  reportedVirtualizationSystem: string | null;
+  reportedVirtualizationRole: string | null;
   // Computed at read time (never stored) — see nodes.service.ts's
   // deriveTelemetryDivergence. 'over' ONLY when declared exceeds
   // reported (the dangerous direction); declaring less is normal.

@@ -63,6 +63,21 @@ export const envSchema = z.object({
   // message is worse than one that quietly answers from the catalog.
   ASSISTANT_PROVIDER: z.enum(['kb', 'llm']).default('kb'),
   ASSISTANT_LLM_API_KEY: z.string().min(1).optional(),
+
+  // Client account management, Fase 1 — generic SMTP for password-reset
+  // emails, no specific provider baked in. All optional, same posture as
+  // ASSISTANT_LLM_API_KEY just above (not BILLING_WEBHOOK_SECRET's
+  // refuse-at-use-time): MailService falls back to logging the reset
+  // link instead of failing when MAIL_HOST is unset, since the
+  // forgot-password endpoint must always return 200 regardless of mail
+  // outcome (anti-enumeration) — a "refuse" posture would have nowhere
+  // safe to surface.
+  MAIL_HOST: z.string().min(1).optional(),
+  MAIL_PORT: z.coerce.number().int().positive().optional(),
+  MAIL_USERNAME: z.string().optional(),
+  MAIL_PASSWORD: z.string().optional(),
+  MAIL_FROM_ADDRESS: z.string().email().optional(),
+  MAIL_FROM_NAME: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

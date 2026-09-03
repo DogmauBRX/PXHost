@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedExc
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import type { AuthenticatedUser } from './guards/jwt-auth.guard';
@@ -65,6 +66,27 @@ export class AuthController {
   ) {
     await this.auth.logout(user.sessionId, user.jti, Boolean(body?.allDevices), user.id);
     reply.clearCookie(REFRESH_COOKIE_NAME, { path: REFRESH_COOKIE_PATH });
+  }
+
+  // Client account management, Fase 1. Always the same generic response
+  // regardless of whether the email exists — see AuthService
+  // .requestPasswordReset's own doc comment for the anti-enumeration
+  // reasoning (both the message AND the response latency have to stay
+  // uniform, not just the message).
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: FastifyRequest) {
+    await this.auth.requestPasswordReset(dto.email, requestMeta(req));
+    return { message: 'Se existir uma conta associada a este email, enviaremos instruções para recuperar seu acesso.' };
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() dto: ResetPasswordDto, @Req() req: FastifyRequest) {
+    await this.auth.resetPassword(dto.token, dto.newPassword, dto.confirmPassword, requestMeta(req));
+    return { message: 'Senha alterada com sucesso.' };
   }
 
   @Post('me')

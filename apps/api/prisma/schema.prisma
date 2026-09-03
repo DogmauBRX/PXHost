@@ -167,6 +167,27 @@ model Node {
   reportedContainersRunning Int?     @map("reported_containers_running")
   reportedAt               DateTime? @map("reported_at") @db.Timestamptz
   agentUptimeSeconds        Int?     @map("agent_uptime_seconds")
+  // Automatic hardware-capacity detection: deeper host telemetry than the
+  // block above ever collected (CPU model/topology, current usage/load,
+  // memory used/available, virtualization). Purely informational/display
+  // — never enters capacity math (capacity.math.ts/capacity.service.ts
+  // are 100% based on the DECLARED columns above), and never enters
+  // deriveTelemetryDivergence's declared×reported comparison, which stays
+  // scoped to memory/disk/cpu totals only. reportedCpuPhysicalCores/
+  // reportedCpuSockets are deliberately left NULL by the agent when it
+  // detects it's running inside an LXC container (see agent's
+  // internal/hostinfo package) — /proc/cpuinfo isn't namespaced there, so
+  // reporting them would leak the HOST's physical topology into what
+  // should be the guest's own capacity.
+  reportedCpuModel             String?  @map("reported_cpu_model")
+  reportedCpuSockets           Int?     @map("reported_cpu_sockets")
+  reportedCpuPhysicalCores     Int?     @map("reported_cpu_physical_cores")
+  reportedCpuUsagePercent      Int?     @map("reported_cpu_usage_percent")
+  reportedLoadAvg1             Float?   @map("reported_load_avg_1")
+  reportedMemoryUsedMb         Int?     @map("reported_memory_used_mb")
+  reportedMemoryAvailableMb    Int?     @map("reported_memory_available_mb")
+  reportedVirtualizationSystem String?  @map("reported_virtualization_system")
+  reportedVirtualizationRole   String?  @map("reported_virtualization_role")
   // Encrypted (reversible, CryptoService/AES-256-GCM) copy of the SAME
   // secret issued to the agent as its node_token during bootstrap
   // (node_tokens.token_hash holds an argon2id hash of it, for verifying

@@ -180,7 +180,16 @@ export class NodeBootstrapService {
       dto.reportedDiskFreeMb !== undefined ||
       dto.reportedOs !== undefined ||
       dto.reportedKernel !== undefined ||
-      dto.reportedContainersRunning !== undefined;
+      dto.reportedContainersRunning !== undefined ||
+      dto.reportedCpuModel !== undefined ||
+      dto.reportedCpuSockets !== undefined ||
+      dto.reportedCpuPhysicalCores !== undefined ||
+      dto.reportedCpuUsagePercent !== undefined ||
+      dto.reportedLoadAvg1 !== undefined ||
+      dto.reportedMemoryUsedMb !== undefined ||
+      dto.reportedMemoryAvailableMb !== undefined ||
+      dto.reportedVirtualizationSystem !== undefined ||
+      dto.reportedVirtualizationRole !== undefined;
 
     const node = await this.prisma.node.update({
       where: { id: nodeId },
@@ -197,6 +206,15 @@ export class NodeBootstrapService {
         reportedOs: dto.reportedOs,
         reportedKernel: dto.reportedKernel,
         reportedContainersRunning: dto.reportedContainersRunning,
+        reportedCpuModel: dto.reportedCpuModel,
+        reportedCpuSockets: dto.reportedCpuSockets,
+        reportedCpuPhysicalCores: dto.reportedCpuPhysicalCores,
+        reportedCpuUsagePercent: dto.reportedCpuUsagePercent,
+        reportedLoadAvg1: dto.reportedLoadAvg1,
+        reportedMemoryUsedMb: dto.reportedMemoryUsedMb,
+        reportedMemoryAvailableMb: dto.reportedMemoryAvailableMb,
+        reportedVirtualizationSystem: dto.reportedVirtualizationSystem,
+        reportedVirtualizationRole: dto.reportedVirtualizationRole,
         ...(hasReportedFields ? { reportedAt: new Date() } : {}),
       },
     });

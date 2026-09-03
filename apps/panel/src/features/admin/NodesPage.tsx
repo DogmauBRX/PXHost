@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { HardDrive, ListCollapse, Pencil, Trash2 } from 'lucide-react';
 import {
   createAllocationRange,
@@ -287,6 +288,9 @@ function NodeEditModal({ node, onClose }: { node: AdminNode | null; onClose: () 
                 <Input id="node-edit-mem-reserved" value={values.memoryReservedMb} onChange={(e) => patch({ memoryReservedMb: e.target.value })} />
               </Field>
             </div>
+            {node?.reportedMemoryTotalMb != null && Number(values.memoryTotalMb) > node?.reportedMemoryTotalMb && (
+              <p className="text-xs text-warn">⚠️ Acima do detectado pelo agente ({node?.reportedMemoryTotalMb} MB).</p>
+            )}
             <OverallocateControl value={values.memoryOverallocate} onChange={(memoryOverallocate) => patch({ memoryOverallocate })} />
           </fieldset>
 
@@ -300,6 +304,9 @@ function NodeEditModal({ node, onClose }: { node: AdminNode | null; onClose: () 
                 <Input id="node-edit-disk-reserved" value={values.diskReservedMb} onChange={(e) => patch({ diskReservedMb: e.target.value })} />
               </Field>
             </div>
+            {node?.reportedDiskTotalMb != null && Number(values.diskTotalMb) > node?.reportedDiskTotalMb && (
+              <p className="text-xs text-warn">⚠️ Acima do detectado pelo agente ({node?.reportedDiskTotalMb} MB).</p>
+            )}
             <OverallocateControl value={values.diskOverallocate} onChange={(diskOverallocate) => patch({ diskOverallocate })} />
           </fieldset>
 
@@ -313,6 +320,9 @@ function NodeEditModal({ node, onClose }: { node: AdminNode | null; onClose: () 
                 <Input id="node-edit-cpu-reserved" value={values.cpuReservedPercent} onChange={(e) => patch({ cpuReservedPercent: e.target.value })} />
               </Field>
             </div>
+            {node?.reportedCpuCount != null && Number(values.cpuTotalPercent) / 100 > node?.reportedCpuCount && (
+              <p className="text-xs text-warn">⚠️ Acima do detectado pelo agente ({node?.reportedCpuCount} vCPU).</p>
+            )}
             <OverallocateControl value={values.cpuOverallocate} onChange={(cpuOverallocate) => patch({ cpuOverallocate })} />
           </fieldset>
         </div>
@@ -487,6 +497,11 @@ export function NodesPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
+                    <Link to="/admin/nodes/$nodeId" params={{ nodeId: n.id }}>
+                      <Button variant="ghost" size="sm">
+                        Detalhes
+                      </Button>
+                    </Link>
                     <Button variant="ghost" size="sm" onClick={() => setEditTarget(n)}>
                       <Pencil className="h-4 w-4" aria-hidden="true" />
                       Editar

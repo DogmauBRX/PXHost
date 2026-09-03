@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
 
 export class CreateNodeDto {
   @IsUUID()
@@ -259,6 +259,59 @@ export class HeartbeatDto {
   @IsInt()
   @Min(0)
   reportedContainersRunning?: number;
+
+  // Automatic hardware-capacity detection — deeper host telemetry than
+  // the block above. Same optional/best-effort contract: an older agent
+  // simply never sends these, and NodeBootstrapService.heartbeat only
+  // writes a column when its field is present.
+  @IsOptional()
+  @IsString()
+  reportedCpuModel?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reportedCpuSockets?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reportedCpuPhysicalCores?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  reportedCpuUsagePercent?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  reportedLoadAvg1?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reportedMemoryUsedMb?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reportedMemoryAvailableMb?: number;
+
+  @IsOptional()
+  @IsString()
+  reportedVirtualizationSystem?: string;
+
+  @IsOptional()
+  @IsString()
+  reportedVirtualizationRole?: string;
 }
 
 export class CreateAllocationRangeDto {
