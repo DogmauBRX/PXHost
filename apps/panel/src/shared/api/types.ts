@@ -451,6 +451,10 @@ export interface AdminPlan {
   // meaningfully to a customer — see the capacity plan's own
   // "Pontos em aberto").
   maxSlots: number | null;
+  // Commercial site — admin-picked highlight (never algorithmic), see
+  // Plan.isFeatured's own doc comment on the API side.
+  isFeatured: boolean;
+  highlightLabel: string | null;
   recommendedPlayersMin: number | null;
   recommendedPlayersMax: number | null;
   recommendedModsMin: number | null;
@@ -586,4 +590,107 @@ export interface ReadyzResponse {
     database: { ok: boolean; error?: string };
     redis: { ok: boolean; error?: string };
   };
+}
+
+// ─────────────────── COMMERCIAL SITE (subscriptions) ────────────────────
+
+// GET /api/public/plans[/:slug] — the vitrine a visitor sees before ever
+// logging in. Superset of ClientPlan's public-facing fields plus the
+// commercial-site-only additions (highlight, sort order, availability);
+// deliberately never includes maxSlots itself (see the API's
+// PLAN_PUBLIC_SELECT doc comment) — availability is the only vagas
+// signal a visitor gets.
+export interface PlanAvailability {
+  status: 'available' | 'limited' | 'sold_out';
+  remaining: number | null;
+}
+
+export interface PublicPlan {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  memoryMb: number;
+  diskMb: number;
+  cpuLimitPercent: number;
+  maxBackups: number;
+  maxDatabases: number;
+  backupRetentionDays: number;
+  priceCents: number;
+  currency: string;
+  billingPeriod: string;
+  maxServers: number | null;
+  isFeatured: boolean;
+  highlightLabel: string | null;
+  sortOrder: number;
+  recommendedPlayersMin: number | null;
+  recommendedPlayersMax: number | null;
+  recommendedModsMin: number | null;
+  recommendedModsMax: number | null;
+  recommendedPluginsMin: number | null;
+  recommendedPluginsMax: number | null;
+  availability: PlanAvailability;
+}
+
+export type SubscriptionStatus = 'pending' | 'active' | 'past_due' | 'suspended' | 'cancelled' | 'expired';
+
+// The plan fields a subscription's own detail view needs — never the
+// node-tuning columns, mirrors the API's SUBSCRIPTION_PLAN_SELECT.
+export interface SubscriptionPlanSummary {
+  id: string;
+  name: string;
+  slug: string;
+  memoryMb: number;
+  diskMb: number;
+  cpuLimitPercent: number;
+}
+
+export interface SubscriptionEvent {
+  id: string;
+  subscriptionId: string;
+  fromStatus: SubscriptionStatus | null;
+  toStatus: SubscriptionStatus;
+  actorId: string | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+// GET/POST /api/client/subscriptions — price/currency/billingPeriod are
+// snapshotted at contract time (never re-read from the plan later, same
+// doctrine as Server.memoryMb being a snapshot of Plan.memoryMb).
+export interface Subscription {
+  id: string;
+  userId: string;
+  planId: string;
+  serverId: string | null;
+  status: SubscriptionStatus;
+  priceCents: number;
+  currency: string;
+  billingPeriod: string;
+  startedAt: string | null;
+  currentPeriodEndsAt: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  plan: SubscriptionPlanSummary;
+}
+
+export interface SubscriptionDetail extends Subscription {
+  events: SubscriptionEvent[];
+}
+
+export interface AdminSubscription extends Subscription {
+  user: { id: string; email: string; username: string };
+}
+
+export interface AdminSubscriptionDetail extends AdminSubscription {
+  events: SubscriptionEvent[];
+}
+
+export interface AdminSubscriptionList {
+  items: AdminSubscription[];
+  total: number;
+  limit: number;
+  offset: number;
 }

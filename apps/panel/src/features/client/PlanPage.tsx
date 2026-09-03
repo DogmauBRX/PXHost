@@ -4,7 +4,7 @@ import { listServers } from '@/features/servers/servers.api';
 import { listClientPlans } from './plans.api';
 import { PlanRecommendationCard } from './PlanRecommendationCard';
 import { Badge, Card, CardBody, CardHeader, CardTitle, EmptyState, LoadingRow, PageHeader } from '@/ui/primitives';
-import { formatMemory, formatPrice, formatRange } from './planFormat';
+import { formatMemory, formatPrice, formatRange } from '@/shared/format/plan';
 
 /**
  * Two halves: "Seu plano atual" — the plan attached to each of the

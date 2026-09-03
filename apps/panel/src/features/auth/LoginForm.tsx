@@ -14,7 +14,7 @@ const schema = z.object({
 });
 type FormValues = z.infer<typeof schema>;
 
-export function LoginForm() {
+export function LoginForm({ redirectTo }: { redirectTo?: string } = {}) {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -35,9 +35,11 @@ export function LoginForm() {
         username: res.user.username,
         isAdmin: res.user.globalRole !== 'user',
       });
-      // Determined by the account, never chosen manually — a role picker
+      // `redirectTo` (commercial site's "assinar → login → volta ao
+      // checkout" flow) wins when present. Otherwise the destination is
+      // determined by the account, never chosen manually — a role picker
       // would just be an extra click to reach a foregone conclusion.
-      void navigate({ to: res.user.globalRole !== 'user' ? '/admin' : '/client' });
+      void navigate({ to: redirectTo ?? (res.user.globalRole !== 'user' ? '/admin' : '/client') });
     } catch (err) {
       setServerError(err instanceof ApiError ? err.message : 'Não foi possível entrar. Tente novamente.');
     }

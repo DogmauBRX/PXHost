@@ -1,15 +1,29 @@
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { Moon, Sun } from 'lucide-react';
+import { z } from 'zod';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { useThemeStore } from '@/shared/theme/theme.store';
 import { LoginForm } from '@/features/auth/LoginForm';
 import { Logo } from '@/ui/brand/Logo';
 import { Wordmark } from '@/ui/brand/Wordmark';
 
+// `redirect` — where to send the visitor after a successful login,
+// commercial plan §10's "Login/Cadastro → Resumo → Checkout" flow: the
+// checkout route sends an unauthenticated visitor here with its own URL
+// as `redirect` (see app/routes/checkout.$planSlug.tsx), and login lands
+// them back exactly where they started instead of the panel dashboard.
+// Absent for every OTHER entry point (the sidebar's own session-expiry
+// redirect, a bookmark, etc.), which is why it's optional and falls back
+// to the role-based dashboard exactly like before this field existed.
+const searchSchema = z.object({
+  redirect: z.string().optional(),
+});
+
 export const Route = createFileRoute('/login')({
-  beforeLoad: () => {
+  validateSearch: searchSchema,
+  beforeLoad: ({ search }) => {
     if (useAuthStore.getState().accessToken) {
-      throw redirect({ to: '/' });
+      throw redirect({ to: search.redirect ?? '/' });
     }
   },
   component: LoginPage,
@@ -18,6 +32,7 @@ export const Route = createFileRoute('/login')({
 function LoginPage() {
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggle);
+  const { redirect: redirectTo } = Route.useSearch();
 
   // No `bg-bg` on this div — it would paint solid over `body`'s wallpaper
   // (index.css) the instant React mounts. `body` already carries the same
@@ -49,11 +64,16 @@ function LoginPage() {
           <Wordmark className="text-5xl" />
         </div>
         <div className="w-full rounded-xl border border-border bg-surface p-8 shadow-lg">
-          <h1 className="mb-6 text-lg font-semibold text-text">Entrar no painel</h1>
-          <LoginForm />
-          <Link to="/forgot-password" className="mt-4 block text-center text-sm text-text-muted transition-colors hover:text-text">
-            Esqueci minha senha
-          </Link>
+          <h1 className="mb-6 text-lg font-semibold text-text">Entrar</h1>
+          <LoginForm redirectTo={redirectTo} />
+          <div className="mt-4 flex flex-col items-center gap-2 text-sm">
+            <Link to="/forgot-password" className="text-text-muted transition-colors hover:text-text">
+              Esqueci minha senha
+            </Link>
+            <Link to="/register" search={{ redirect: redirectTo }} className="text-text-muted transition-colors hover:text-text">
+              Não tem uma conta? <span className="font-medium text-accent-strong">Criar conta</span>
+            </Link>
+          </div>
         </div>
       </div>
     </div>

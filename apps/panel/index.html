@@ -4,7 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PXHost — Painel</title>
+    <!--
+      Static fallback for every crawler that does NOT execute JavaScript
+      (most link-preview bots — WhatsApp, Discord, Slack, Twitter — and a
+      non-JS search crawler). A JS-executing visitor to a public
+      commercial page (/, /plans, /plans/:slug) gets a more specific
+      per-page title/description from Seo.tsx (features/public/Seo.tsx),
+      which overwrites these at runtime; the authenticated panel never
+      renders that component and simply keeps this default.
+    -->
+    <title>PXHost — Hospedagem de servidores de jogos</title>
+    <meta name="description" content="Crie e gerencie seu próprio servidor de jogos com a PXHost: planos com RAM, CPU e armazenamento dedicados, ativação simples e um painel completo." />
+    <meta property="og:title" content="PXHost — Hospedagem de servidores de jogos" />
+    <meta property="og:description" content="Crie e gerencie seu próprio servidor de jogos com a PXHost: planos com RAM, CPU e armazenamento dedicados, ativação simples e um painel completo." />
+    <meta property="og:type" content="website" />
     <!--
       Applies the saved theme before the first paint. This cannot live in
       main.tsx: that awaits bootstrapAuth() (a network round trip) before

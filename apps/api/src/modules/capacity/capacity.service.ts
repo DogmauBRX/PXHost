@@ -10,6 +10,19 @@ export const UID_BASE = 100000;
 const ACTIVE_TRANSFER_STATUSES = ['pending', 'archiving', 'uploading', 'restoring'] as const;
 
 /**
+ * `subscriptions.status` values that still hold a commercial slot —
+ * everything short of `cancelled`/`expired`. Mirrors the
+ * `subscriptions_status_check` CHECK constraint's non-terminal members,
+ * the same pattern `ACTIVE_TRANSFER_STATUSES` above already establishes
+ * for `server_transfers`. `suspended` counts on purpose — the commercial
+ * plan's own rule (§7) is that a suspended SERVER keeps its slot/RAM/
+ * disk, and a suspended SUBSCRIPTION (e.g. `past_due` too long) is the
+ * exact same posture: the seat isn't released just because billing
+ * lapsed, only an explicit cancel frees it.
+ */
+export const SLOT_HOLDING_SUBSCRIPTION_STATUSES = ['pending', 'active', 'past_due', 'suspended'] as const;
+
+/**
  * The shared building blocks every resource-allocating write path uses:
  * `ServersService.create` and `TransfersService.initiate` today; a future
  * `PlansService.applyToServers` capacity gate (Fase 6) and
@@ -39,12 +52,32 @@ export class CapacityService {
   }
 
   /**
-   * Servers currently on this plan, same `status <> 'deleting'` exclusion
-   * `usageForNode` applies — a slot and a unit of node capacity can never
-   * disagree about whether a mid-hard-delete server still counts.
+   * Occupied commercial slots for this plan — two disjoint sources, added
+   * together, never double-counted:
+   *
+   *  1. Servers currently on this plan, same `status <> 'deleting'`
+   *     exclusion `usageForNode` applies — a slot and a unit of node
+   *     capacity can never disagree about whether a mid-hard-delete
+   *     server still counts.
+   *  2. Subscriptions (commercial site) on this plan that have NOT yet
+   *     been provisioned a server (`serverId IS NULL`) and are still in
+   *     a slot-holding status (see `SLOT_HOLDING_SUBSCRIPTION_STATUSES`).
+   *
+   * The `serverId IS NULL` filter on (2) is what keeps this from ever
+   * double-counting: the instant a subscription is attached to a server
+   * (future auto-provisioning, or an admin linking one by hand), it
+   * drops out of (2) and its server picks up the slot in (1) instead —
+   * the two sets are always disjoint by construction, never by a
+   * point-in-time coincidence. Before this method existed, a plan could
+   * be oversold by selling more `pending`/`active` subscriptions than
+   * `maxSlots` allowed, since nothing counted them at all.
    */
   async occupiedSlots(tx: Prisma.TransactionClient, planId: string): Promise<number> {
-    return tx.server.count({ where: { planId, status: { not: 'deleting' } } });
+    const [servers, subscriptions] = await Promise.all([
+      tx.server.count({ where: { planId, status: { not: 'deleting' } } }),
+      tx.subscription.count({ where: { planId, serverId: null, status: { in: [...SLOT_HOLDING_SUBSCRIPTION_STATUSES] } } }),
+    ]);
+    return servers + subscriptions;
   }
 
   /**

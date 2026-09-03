@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, HttpStatus, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes, createHash } from 'node:crypto';
 import { PrismaService } from '../../core/prisma/prisma.service';
@@ -41,6 +41,14 @@ const PASSWORD_RESET_TTL_SECONDS = 60 * 60;
 const RESET_REQUEST_WINDOW_SECONDS = 60 * 60;
 const RESET_REQUEST_LIMIT_PER_EMAIL = 5;
 const RESET_REQUEST_LIMIT_PER_IP = 20;
+
+// Commercial site — public self-signup rate limits. Same hand-rolled
+// INCR+EXPIRE scheme as the password-reset limiter just above, separate
+// counters/prefix (a burst of signups from one IP is a different signal
+// than a burst of reset requests, and must never share a bucket with it).
+const REGISTER_WINDOW_SECONDS = 60 * 60;
+const REGISTER_LIMIT_PER_EMAIL = 3;
+const REGISTER_LIMIT_PER_IP = 10;
 
 @Injectable()
 export class AuthService {
@@ -136,6 +144,103 @@ export class AuthService {
       ...result,
       user: { id: user.id, email: user.email, username: user.username, globalRole: user.globalRole },
     };
+  }
+
+  /**
+   * Commercial site — public self-signup. Refuses at USE time when the
+   * feature isn't opted into (`ALLOW_PUBLIC_REGISTRATION`, default
+   * false), the same posture `BillingWebhookService.verifySignature`
+   * already established for an optional feature rather than gating it
+   * only at the controller: a 404 here means "this deployment never
+   * turned registration on," not "the route doesn't exist," and either
+   * way an unauthenticated caller can't tell the difference.
+   *
+   * Unlike `login`'s anti-enumeration posture, a duplicate email here IS
+   * reported as a real error — a signup form that silently "succeeds" on
+   * an existing email, with no way to tell the visitor to log in
+   * instead, is a worse product than the (much lower, since this
+   * endpoint's very existence already announces public signup is on)
+   * enumeration cost of confirming an email is taken. `UsersService
+   * .create` (the admin-facing equivalent) makes the identical call.
+   *
+   * Issues a session immediately on success (mirrors `login`'s return
+   * shape exactly) so the commercial checkout flow can go straight from
+   * "create account" into "subscribe" without a second round trip.
+   */
+  async register(dto: { name: string; email: string; password: string; confirmPassword: string }, meta: RequestMeta): Promise<LoginResult> {
+    if (!this.config.get<boolean>('ALLOW_PUBLIC_REGISTRATION')) {
+      throw new NotFoundException('Not found');
+    }
+    if (dto.password !== dto.confirmPassword) {
+      throw new BadRequestException('password and confirmPassword must match');
+    }
+
+    await this.checkRegisterRateLimit(dto.email, meta.ip);
+
+    const email = dto.email.trim();
+    const existing = await this.prisma.user.findFirst({ where: { email, deletedAt: null }, select: { id: true } });
+    if (existing) throw new ConflictException('A user with that email already exists');
+
+    const username = await this.generateUniqueUsername(email);
+    const passwordHash = await this.password.hash(dto.password);
+
+    const user = await this.prisma.user.create({
+      data: { email, username, passwordHash, firstName: dto.name.trim(), globalRole: 'user' },
+    });
+
+    const result = await this.issueSession(user.id, false, meta);
+
+    await this.audit.record({
+      action: 'auth.register',
+      actorId: user.id,
+      actorEmail: user.email,
+      actorIp: meta.ip,
+    });
+
+    return {
+      ...result,
+      user: { id: user.id, email: user.email, username: user.username, globalRole: user.globalRole },
+    };
+  }
+
+  private async checkRegisterRateLimit(email: string, ip: string | null | undefined): Promise<void> {
+    const emailKey = `register_rl:email:${email.trim().toLowerCase()}`;
+    const emailCount = await this.redis.client.incr(emailKey);
+    if (emailCount === 1) await this.redis.client.expire(emailKey, REGISTER_WINDOW_SECONDS);
+
+    let ipCount = 0;
+    if (ip) {
+      const ipKey = `register_rl:ip:${ip}`;
+      ipCount = await this.redis.client.incr(ipKey);
+      if (ipCount === 1) await this.redis.client.expire(ipKey, REGISTER_WINDOW_SECONDS);
+    }
+
+    if (emailCount > REGISTER_LIMIT_PER_EMAIL || ipCount > REGISTER_LIMIT_PER_IP) {
+      throw new HttpException('Muitas tentativas de cadastro em pouco tempo — aguarde antes de tentar novamente.', HttpStatus.TOO_MANY_REQUESTS);
+    }
+  }
+
+  /**
+   * Derives a username from the email's local part — the public signup
+   * form never asks for one (commercial plan §8: "não pedir informações
+   * desnecessárias"), unlike `CreateUserDto`, the admin-facing DTO, which
+   * still requires an explicit one. Slugified to the same charset the
+   * admin UI already accepts, then suffixed with an incrementing number
+   * only if the slug collides — the common case (a fresh email) never
+   * pays that extra query.
+   */
+  private async generateUniqueUsername(email: string): Promise<string> {
+    const local = email.split('@')[0] ?? 'user';
+    const base = local.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'user';
+
+    for (let suffix = 0; suffix < 50; suffix++) {
+      const candidate = suffix === 0 ? base : `${base}-${suffix + 1}`;
+      const taken = await this.prisma.user.findFirst({ where: { username: candidate, deletedAt: null }, select: { id: true } });
+      if (!taken) return candidate;
+    }
+    // Astronomically unlikely (50 collisions on the same slug) — fall
+    // back to a random suffix rather than looping forever.
+    return `${base}-${randomBytes(4).toString('hex')}`;
   }
 
   /**

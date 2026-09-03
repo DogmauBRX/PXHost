@@ -57,6 +57,8 @@ model User {
   activity       ActivityLog[]   @relation("ActivityActor")
   createdTokens  NodeToken[]     @relation("NodeTokenCreatedBy")
   createdBackups Backup[]        @relation("BackupCreatedBy")
+  subscriptions  Subscription[]
+  subscriptionEventsActedOn SubscriptionEvent[] @relation("SubscriptionEventActor")
 
   @@map("users")
 }
@@ -456,12 +458,22 @@ model Plan {
   // there is no self-service flow for this to gate. Surfaced on "Meu Plano"
   // as information, not enforced anywhere.
   maxServers            Int?      @map("max_servers")
+  // Commercial site (subscriptions) — an admin-picked highlight, same
+  // opt-in posture as PlanNode's eligibility list: a plan is never
+  // algorithmically decided "most popular", the admin says so explicitly
+  // via /admin/plans. highlightLabel is the badge text on the public
+  // card ("Mais popular", "Melhor custo-benefício", ...); null with
+  // isFeatured true just means "highlighted, no custom label" — the
+  // public catalog falls back to a default label in that case.
+  isFeatured            Boolean   @default(false) @map("is_featured")
+  highlightLabel        String?   @map("highlight_label")
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt             DateTime? @map("deleted_at") @db.Timestamptz
 
-  servers Server[]
-  nodes   PlanNode[]
+  servers       Server[]
+  nodes         PlanNode[]
+  subscriptions Subscription[]
 
   @@map("plans")
 }
@@ -548,6 +560,13 @@ model Server {
   transfers   ServerTransfer[]
   metrics     ServerMetric1m[]
   billingEvents BillingEvent[]
+  // Nullable, unique on the Subscription side (a server has at most one
+  // subscription) — see Subscription.serverId's doc comment. NULL for
+  // every server today (nothing links the two yet) and for any server an
+  // admin still creates directly; it becomes non-null only once the
+  // (future, deliberately not built in this milestone — see §13/§35 of
+  // the commercial plan) auto-provisioning flow assigns one.
+  subscription  Subscription?
 
   @@map("servers")
 }
@@ -791,4 +810,80 @@ model ServerMetric1m {
 
   @@id([serverId, bucket])
   @@map("server_metrics_1m")
+}
+
+// ─────────────────────── SUBSCRIPTIONS ──────────────────────────
+// Commercial site (subscriptions plan): the contract between a customer
+// and a plan, separate from `Server.planId`. A server links to a plan
+// because it was CREATED with that plan's limits snapshotted onto it
+// (architecture doc 2.1's "snapshot, not reference"); a subscription
+// links a customer to a plan because they COMMERCIALLY CONTRACTED it —
+// the two can exist independently (a subscription with no server yet,
+// pending admin provisioning; a server with no subscription, created
+// directly by an admin the old way) and are connected only by the
+// optional, unique `serverId` below, deliberately left NULL by
+// everything in this milestone. Auto-provisioning (turning an `active`
+// subscription into a running server) is an explicitly separate,
+// future milestone — see the commercial plan's §13/§35.
+model Subscription {
+  id                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId              String    @map("user_id") @db.Uuid
+  planId              String    @map("plan_id") @db.Uuid
+  // NULL until the (future) auto-provisioning flow creates and attaches
+  // a server. UNIQUE: a server is provisioned for at most one
+  // subscription, never shared. `onDelete: SetNull` — an admin
+  // hard-deleting the server a subscription is attached to must not
+  // cascade into deleting the customer's billing history.
+  serverId            String?   @unique @map("server_id") @db.Uuid
+  status              String    @default("pending")
+  // Snapshotted at contract time — same doctrine as Server's own
+  // memoryMb/diskMb/cpuLimitPercent copied from Plan at creation
+  // (architecture doc 2.1). An admin editing Plan.priceCents later must
+  // never silently re-price a customer's existing subscription; only a
+  // new subscription (or a future, explicit "change plan" action) reads
+  // the plan's current price again.
+  priceCents          Int       @map("price_cents")
+  currency            String    @db.Char(3)
+  billingPeriod       String    @map("billing_period")
+  startedAt           DateTime? @map("started_at") @db.Timestamptz
+  currentPeriodEndsAt DateTime? @map("current_period_ends_at") @db.Timestamptz
+  cancelledAt         DateTime? @map("cancelled_at") @db.Timestamptz
+  cancelReason        String?   @map("cancel_reason")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  user   User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan   Plan                 @relation(fields: [planId], references: [id], onDelete: Restrict)
+  server Server?              @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  events SubscriptionEvent[]
+
+  @@index([userId, status])
+  @@index([planId, status])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+// Append-only history of status transitions (admin's "histórico básico",
+// commercial plan §16/§18) — same append-only spirit as `audit_logs`,
+// but scoped to one subscription's lifecycle rather than the whole
+// platform, and readable by the OWNING customer too (not admin-only).
+model SubscriptionEvent {
+  id             BigInt   @id @default(autoincrement())
+  subscriptionId String   @map("subscription_id") @db.Uuid
+  fromStatus     String?  @map("from_status")
+  toStatus       String   @map("to_status")
+  // NULL means the system made this transition (none exist yet — every
+  // transition today is admin-initiated or the customer's own cancel —
+  // but a future webhook/scheduler acting without a human actor needs
+  // this to stay honest rather than attributing its own action to
+  // whichever admin happens to be logged in).
+  actorId        String?  @map("actor_id") @db.Uuid
+  reason         String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  actor        User?        @relation("SubscriptionEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([subscriptionId])
+  @@map("subscription_events")
 }

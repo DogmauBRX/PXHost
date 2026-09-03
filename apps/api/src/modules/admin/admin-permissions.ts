@@ -41,6 +41,14 @@ export const ADMIN_PERMISSIONS = [
   'capacity.manage',
   'servers.view',
   'servers.manage',
+  // Commercial site (subscriptions plan) — who may see/manage customer
+  // subscriptions in /admin/subscriptions. Its own vocabulary for the
+  // same reason `nodes.*`/`plans.*`/`capacity.*`/`servers.*` are: a
+  // subscription is neither "a customer account" (clients.*) nor
+  // "infrastructure" (nodes/capacity), it's the commercial contract
+  // between the two.
+  'subscriptions.view',
+  'subscriptions.manage',
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
@@ -59,11 +67,12 @@ export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
  */
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly (AdminPermission | '*')[]> = {
   root_admin: ['*'],
-  // 🔴 `admin` is a literal list, not `'*'` — every one of the 8 capacity
-  // plan Fase 3 keys added above MUST appear here, in the SAME commit as
-  // any route that gets decorated with one, or that route disappears
-  // from every existing `admin` the instant the decorator lands (see the
-  // capacity plan's own explicit warning about this exact failure mode).
+  // 🔴 `admin` is a literal list, not `'*'` — every one of the keys
+  // added above (capacity plan Fase 3's 8, plus the commercial site's
+  // subscriptions.*) MUST appear here, in the SAME commit as any route
+  // that gets decorated with one, or that route disappears from every
+  // existing `admin` the instant the decorator lands (see the capacity
+  // plan's own explicit warning about this exact failure mode).
   admin: [
     'clients.view',
     'clients.create',
@@ -79,14 +88,16 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly (AdminPermission 
     'capacity.manage',
     'servers.view',
     'servers.manage',
+    'subscriptions.view',
+    'subscriptions.manage',
   ],
-  // The four `.view` keys preserve `support`'s CURRENT behavior exactly
-  // (it already passes AdminGuard and already reads nodes/plans/capacity/
-  // servers with no finer gate today) — this is not a grant of new
-  // access, it's naming the access `support` already has so the new
-  // `.manage` gates can exist without also silently locking `support`
-  // out of read-only screens it could already see.
-  support: ['clients.view', 'clients.support', 'nodes.view', 'plans.view', 'capacity.view', 'servers.view'],
+  // The five `.view` keys preserve `support`'s CURRENT behavior — it
+  // already passes AdminGuard and already reads nodes/plans/capacity/
+  // servers with no finer gate today, and a support rep fielding "why
+  // hasn't my plan activated" needs to at least SEE the subscription —
+  // this is not a grant of new mutation access, only read access
+  // matching what every other resource here already gives `support`.
+  support: ['clients.view', 'clients.support', 'nodes.view', 'plans.view', 'capacity.view', 'servers.view', 'subscriptions.view'],
   user: [],
 };
 

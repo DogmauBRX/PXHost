@@ -7,6 +7,7 @@ import { CapacityService } from '../capacity/capacity.service';
 import { nodeFitReasons } from '../capacity/capacity.math';
 import { CreatePlanDto, UpdatePlanDto } from './dto/plan.dto';
 import { PLAN_CLIENT_SELECT } from '../authorization/server-access.service';
+import { PublicPlansService } from '../public/public-plans.service';
 
 // The plan fields snapshotted onto every server at creation time
 // (architecture doc 2.1: "Snapshot, not reference ... editing a plan
@@ -105,6 +106,13 @@ export class PlansService {
     private readonly agent: AgentClient,
     private readonly audit: AuditService,
     private readonly capacity: CapacityService,
+    // Commercial site — the public catalog caches plan data for
+    // CACHE_TTL_SECONDS; every mutation below invalidates it so an
+    // admin's edit is never stuck behind a stale cache for that long.
+    // Correctness never depends on this call succeeding (the cache
+    // self-heals on TTL expiry regardless) — see
+    // PublicPlansService.invalidateCache's own doc comment.
+    private readonly publicPlans: PublicPlansService,
   ) {}
 
   list() {
@@ -138,7 +146,7 @@ export class PlansService {
     assertRecommendationRanges(dto);
     const existing = await this.prisma.plan.findFirst({ where: { slug: dto.slug, deletedAt: null } });
     if (existing) throw new ConflictException('slug already in use');
-    return this.prisma.plan.create({
+    const created = await this.prisma.plan.create({
       data: {
         name: dto.name,
         slug: dto.slug,
@@ -169,8 +177,12 @@ export class PlansService {
         recommendedPluginsMax: dto.recommendedPluginsMax,
         maxServers: dto.maxServers,
         maxSlots: dto.maxSlots,
+        isFeatured: dto.isFeatured ?? false,
+        highlightLabel: dto.highlightLabel,
       },
     });
+    await this.publicPlans.invalidateCache();
+    return created;
   }
 
   async update(id: string, dto: UpdatePlanDto) {
@@ -183,7 +195,9 @@ export class PlansService {
     // Deliberately just the DB row — a plan edit alone never touches a
     // single running server (architecture doc 2.1). applyToServers is
     // the separate, explicit, audited action that does.
-    return this.prisma.plan.update({ where: { id }, data: dto });
+    const updated = await this.prisma.plan.update({ where: { id }, data: dto });
+    await this.publicPlans.invalidateCache();
+    return updated;
   }
 
   async remove(id: string) {
@@ -191,6 +205,7 @@ export class PlansService {
     const serverCount = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.server.count({ where: { planId: id } }));
     if (serverCount > 0) throw new ConflictException('Plan is in use by existing servers');
     await this.prisma.plan.update({ where: { id }, data: { deletedAt: new Date() } });
+    await this.publicPlans.invalidateCache();
   }
 
   /** Empty list = eligible everywhere (capacity plan Fase 4/5) — see `CapacityService.isNodeAllowedForPlan`. */
@@ -229,6 +244,10 @@ export class PlansService {
       beforeState: { nodes: before },
       afterState: { nodes },
     });
+    // Node eligibility feeds the public catalog's `availability`
+    // (`NodeSchedulerService.selectNode` inside `computeAvailability`) —
+    // a restriction change must not stay stale for the full cache TTL.
+    await this.publicPlans.invalidateCache();
   }
 
   /**

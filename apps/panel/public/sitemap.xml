@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Static shell for the two pages that never change URL: the landing page
+  and the plans catalog index. Per-plan URLs (/plans/:slug) are NOT
+  listed here — they're data-driven and change as an admin edits the
+  catalog, and this static file has no build-time knowledge of them.
+  They're still fully crawlable (linked from /plans and each plan's own
+  canonical tag — see Seo.tsx), just not pre-declared in this index.
+
+  <loc> must be an absolute URL per the sitemap protocol, but this is a
+  static file with no build-time knowledge of the deployment's real
+  domain (PUBLIC_SITE_URL is a backend-only env var) — replace the
+  placeholder below with the real public origin before relying on this
+  file for indexing; until then it documents the intended shape, and
+  robots.txt's `Sitemap:` line still points here for whichever domain
+  actually serves it.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://REPLACE_WITH_PUBLIC_SITE_URL/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://REPLACE_WITH_PUBLIC_SITE_URL/plans</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+</urlset>

@@ -78,6 +78,26 @@ export const envSchema = z.object({
   MAIL_PASSWORD: z.string().optional(),
   MAIL_FROM_ADDRESS: z.string().email().optional(),
   MAIL_FROM_NAME: z.string().optional(),
+
+  // Commercial site (subscriptions plan) — public self-signup is OFF by
+  // default so an existing deployment's behavior never changes on
+  // upgrade: today only an admin can create a user (`POST
+  // /api/admin/users`), and that stays true until an operator
+  // explicitly opts in. `z.coerce.boolean()` is deliberately NOT used
+  // here — it treats any non-empty string (including the literal text
+  // "false") as true, which would make `ALLOW_PUBLIC_REGISTRATION=false`
+  // in a .env file silently turn registration ON. An enum + explicit
+  // transform has no such trap.
+  ALLOW_PUBLIC_REGISTRATION: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
+  // Canonical public origin for SEO (canonical URLs, sitemap.xml, OG
+  // tags) — defaults to PANEL_URL since today they're the same origin;
+  // only needs to diverge if the commercial site is ever served from a
+  // different domain than the panel app itself.
+  PUBLIC_SITE_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

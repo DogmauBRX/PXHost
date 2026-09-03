@@ -1,7 +1,7 @@
 import { Lightbulb } from 'lucide-react';
 import type { ClientPlan, SoftwareInfo } from '@/shared/api/types';
 import { Card, CardBody } from '@/ui/primitives';
-import { formatMemory, formatRange } from './planFormat';
+import { formatMemory, formatRange } from '@/shared/format/plan';
 
 interface PlanRecommendationCardProps {
   planName: string;

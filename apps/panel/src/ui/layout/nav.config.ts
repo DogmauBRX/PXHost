@@ -61,6 +61,7 @@ export const ADMIN_NAV_SECTIONS: readonly NavSection[] = [
       { label: 'Clientes', to: '/admin/users', icon: Users },
       { label: 'Templates', to: '/admin/templates', icon: Package },
       { label: 'Plans', to: '/admin/plans', icon: Layers },
+      { label: 'Assinaturas', to: '/admin/subscriptions', icon: CreditCard },
     ],
   },
   {
@@ -89,7 +90,7 @@ export const CLIENT_NAV_SECTIONS: readonly NavSection[] = [
     items: [
       { label: 'Minha Conta', to: '/client/settings', icon: User },
       { label: 'Plano', to: '/client/plan', icon: CalendarClock },
-      { label: 'Faturamento', to: '/client/billing', icon: CreditCard },
+      { label: 'Minha Assinatura', to: '/client/subscription', icon: CreditCard },
     ],
   },
   {

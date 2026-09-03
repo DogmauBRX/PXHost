@@ -92,6 +92,18 @@ class PlanCommercialFields {
   @IsInt()
   @Min(0)
   maxSlots?: number;
+
+  // Commercial site — admin-picked highlight (see Plan.isFeatured's own
+  // doc comment in schema.prisma: never algorithmic). Undefined leaves
+  // the existing value untouched, same convention as every field above.
+  @IsOptional()
+  @IsBoolean()
+  isFeatured?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 60)
+  highlightLabel?: string;
 }
 
 export class CreatePlanDto extends PlanCommercialFields {

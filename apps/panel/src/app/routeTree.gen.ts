@@ -14,21 +14,26 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ClientRouteImport } from './routes/client'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminLocationsRouteImport } from './routes/admin.locations'
 import { Route as AdminLogsRouteImport } from './routes/admin.logs'
 import { Route as AdminPlansRouteImport } from './routes/admin.plans'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
+import { Route as AdminSubscriptionsRouteImport } from './routes/admin.subscriptions'
 import { Route as AdminSystemRouteImport } from './routes/admin.system'
 import { Route as AdminTemplatesRouteImport } from './routes/admin.templates'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
+import { Route as CheckoutPlanSlugRouteImport } from './routes/checkout.$planSlug'
 import { Route as ClientIndexRouteImport } from './routes/client.index'
 import { Route as ClientAssistantRouteImport } from './routes/client.assistant'
-import { Route as ClientBillingRouteImport } from './routes/client.billing'
 import { Route as ClientPlanRouteImport } from './routes/client.plan'
 import { Route as ClientSettingsRouteImport } from './routes/client.settings'
+import { Route as ClientSubscriptionRouteImport } from './routes/client.subscription'
 import { Route as ClientSupportRouteImport } from './routes/client.support'
+import { Route as PlansIndexRouteImport } from './routes/plans.index'
+import { Route as PlansSlugRouteImport } from './routes/plans.$slug'
 import { Route as AdminNodesIndexRouteImport } from './routes/admin.nodes.index'
 import { Route as AdminNodesNodeIdRouteImport } from './routes/admin.nodes.$nodeId'
 import { Route as AdminServersIndexRouteImport } from './routes/admin.servers.index'
@@ -79,6 +84,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
@@ -109,6 +119,11 @@ const AdminSettingsRoute = AdminSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminSubscriptionsRoute = AdminSubscriptionsRouteImport.update({
+  id: '/subscriptions',
+  path: '/subscriptions',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminSystemRoute = AdminSystemRouteImport.update({
   id: '/system',
   path: '/system',
@@ -124,6 +139,11 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
+const CheckoutPlanSlugRoute = CheckoutPlanSlugRouteImport.update({
+  id: '/checkout/$planSlug',
+  path: '/checkout/$planSlug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ClientIndexRoute = ClientIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -132,11 +152,6 @@ const ClientIndexRoute = ClientIndexRouteImport.update({
 const ClientAssistantRoute = ClientAssistantRouteImport.update({
   id: '/assistant',
   path: '/assistant',
-  getParentRoute: () => ClientRoute,
-} as any)
-const ClientBillingRoute = ClientBillingRouteImport.update({
-  id: '/billing',
-  path: '/billing',
   getParentRoute: () => ClientRoute,
 } as any)
 const ClientPlanRoute = ClientPlanRouteImport.update({
@@ -149,10 +164,25 @@ const ClientSettingsRoute = ClientSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => ClientRoute,
 } as any)
+const ClientSubscriptionRoute = ClientSubscriptionRouteImport.update({
+  id: '/subscription',
+  path: '/subscription',
+  getParentRoute: () => ClientRoute,
+} as any)
 const ClientSupportRoute = ClientSupportRouteImport.update({
   id: '/support',
   path: '/support',
   getParentRoute: () => ClientRoute,
+} as any)
+const PlansIndexRoute = PlansIndexRouteImport.update({
+  id: '/plans/',
+  path: '/plans/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlansSlugRoute = PlansSlugRouteImport.update({
+  id: '/plans/$slug',
+  path: '/plans/$slug',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AdminNodesIndexRoute = AdminNodesIndexRouteImport.update({
   id: '/nodes/',
@@ -299,21 +329,26 @@ export interface FileRoutesByFullPath {
   '/client': typeof ClientRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/admin/system': typeof AdminSystemRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
+  '/checkout/$planSlug': typeof CheckoutPlanSlugRoute
   '/client/assistant': typeof ClientAssistantRoute
-  '/client/billing': typeof ClientBillingRoute
   '/client/plan': typeof ClientPlanRoute
   '/client/settings': typeof ClientSettingsRoute
+  '/client/subscription': typeof ClientSubscriptionRoute
   '/client/support': typeof ClientSupportRoute
+  '/plans/$slug': typeof PlansSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/client/': typeof ClientIndexRoute
+  '/plans/': typeof PlansIndexRoute
   '/admin/nodes/$nodeId': typeof AdminNodesNodeIdRoute
   '/admin/servers/$serverId': typeof AdminServersServerIdRouteWithChildren
   '/client/servers/$serverId': typeof ClientServersServerIdRouteWithChildren
@@ -343,21 +378,26 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/admin/system': typeof AdminSystemRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
+  '/checkout/$planSlug': typeof CheckoutPlanSlugRoute
   '/client/assistant': typeof ClientAssistantRoute
-  '/client/billing': typeof ClientBillingRoute
   '/client/plan': typeof ClientPlanRoute
   '/client/settings': typeof ClientSettingsRoute
+  '/client/subscription': typeof ClientSubscriptionRoute
   '/client/support': typeof ClientSupportRoute
+  '/plans/$slug': typeof PlansSlugRoute
   '/admin': typeof AdminIndexRoute
   '/client': typeof ClientIndexRoute
+  '/plans': typeof PlansIndexRoute
   '/admin/nodes/$nodeId': typeof AdminNodesNodeIdRoute
   '/admin/nodes': typeof AdminNodesIndexRoute
   '/admin/servers': typeof AdminServersIndexRoute
@@ -388,21 +428,26 @@ export interface FileRoutesById {
   '/client': typeof ClientRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/admin/system': typeof AdminSystemRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
+  '/checkout/$planSlug': typeof CheckoutPlanSlugRoute
   '/client/assistant': typeof ClientAssistantRoute
-  '/client/billing': typeof ClientBillingRoute
   '/client/plan': typeof ClientPlanRoute
   '/client/settings': typeof ClientSettingsRoute
+  '/client/subscription': typeof ClientSubscriptionRoute
   '/client/support': typeof ClientSupportRoute
+  '/plans/$slug': typeof PlansSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/client/': typeof ClientIndexRoute
+  '/plans/': typeof PlansIndexRoute
   '/admin/nodes/$nodeId': typeof AdminNodesNodeIdRoute
   '/admin/servers/$serverId': typeof AdminServersServerIdRouteWithChildren
   '/client/servers/$serverId': typeof ClientServersServerIdRouteWithChildren
@@ -436,21 +481,26 @@ export interface FileRouteTypes {
     | '/client'
     | '/forgot-password'
     | '/login'
+    | '/register'
     | '/reset-password'
     | '/admin/locations'
     | '/admin/logs'
     | '/admin/plans'
     | '/admin/settings'
+    | '/admin/subscriptions'
     | '/admin/system'
     | '/admin/templates'
     | '/admin/users'
+    | '/checkout/$planSlug'
     | '/client/assistant'
-    | '/client/billing'
     | '/client/plan'
     | '/client/settings'
+    | '/client/subscription'
     | '/client/support'
+    | '/plans/$slug'
     | '/admin/'
     | '/client/'
+    | '/plans/'
     | '/admin/nodes/$nodeId'
     | '/admin/servers/$serverId'
     | '/client/servers/$serverId'
@@ -480,21 +530,26 @@ export interface FileRouteTypes {
     | '/'
     | '/forgot-password'
     | '/login'
+    | '/register'
     | '/reset-password'
     | '/admin/locations'
     | '/admin/logs'
     | '/admin/plans'
     | '/admin/settings'
+    | '/admin/subscriptions'
     | '/admin/system'
     | '/admin/templates'
     | '/admin/users'
+    | '/checkout/$planSlug'
     | '/client/assistant'
-    | '/client/billing'
     | '/client/plan'
     | '/client/settings'
+    | '/client/subscription'
     | '/client/support'
+    | '/plans/$slug'
     | '/admin'
     | '/client'
+    | '/plans'
     | '/admin/nodes/$nodeId'
     | '/admin/nodes'
     | '/admin/servers'
@@ -524,21 +579,26 @@ export interface FileRouteTypes {
     | '/client'
     | '/forgot-password'
     | '/login'
+    | '/register'
     | '/reset-password'
     | '/admin/locations'
     | '/admin/logs'
     | '/admin/plans'
     | '/admin/settings'
+    | '/admin/subscriptions'
     | '/admin/system'
     | '/admin/templates'
     | '/admin/users'
+    | '/checkout/$planSlug'
     | '/client/assistant'
-    | '/client/billing'
     | '/client/plan'
     | '/client/settings'
+    | '/client/subscription'
     | '/client/support'
+    | '/plans/$slug'
     | '/admin/'
     | '/client/'
+    | '/plans/'
     | '/admin/nodes/$nodeId'
     | '/admin/servers/$serverId'
     | '/client/servers/$serverId'
@@ -571,7 +631,11 @@ export interface RootRouteChildren {
   ClientRoute: typeof ClientRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
+  RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  CheckoutPlanSlugRoute: typeof CheckoutPlanSlugRoute
+  PlansSlugRoute: typeof PlansSlugRoute
+  PlansIndexRoute: typeof PlansIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -609,6 +673,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset-password': {
@@ -653,6 +724,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSettingsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/subscriptions': {
+      id: '/admin/subscriptions'
+      path: '/subscriptions'
+      fullPath: '/admin/subscriptions'
+      preLoaderRoute: typeof AdminSubscriptionsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/system': {
       id: '/admin/system'
       path: '/system'
@@ -674,6 +752,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/checkout/$planSlug': {
+      id: '/checkout/$planSlug'
+      path: '/checkout/$planSlug'
+      fullPath: '/checkout/$planSlug'
+      preLoaderRoute: typeof CheckoutPlanSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/client/': {
       id: '/client/'
       path: '/'
@@ -686,13 +771,6 @@ declare module '@tanstack/react-router' {
       path: '/assistant'
       fullPath: '/client/assistant'
       preLoaderRoute: typeof ClientAssistantRouteImport
-      parentRoute: typeof ClientRoute
-    }
-    '/client/billing': {
-      id: '/client/billing'
-      path: '/billing'
-      fullPath: '/client/billing'
-      preLoaderRoute: typeof ClientBillingRouteImport
       parentRoute: typeof ClientRoute
     }
     '/client/plan': {
@@ -709,12 +787,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientSettingsRouteImport
       parentRoute: typeof ClientRoute
     }
+    '/client/subscription': {
+      id: '/client/subscription'
+      path: '/subscription'
+      fullPath: '/client/subscription'
+      preLoaderRoute: typeof ClientSubscriptionRouteImport
+      parentRoute: typeof ClientRoute
+    }
     '/client/support': {
       id: '/client/support'
       path: '/support'
       fullPath: '/client/support'
       preLoaderRoute: typeof ClientSupportRouteImport
       parentRoute: typeof ClientRoute
+    }
+    '/plans/': {
+      id: '/plans/'
+      path: '/plans'
+      fullPath: '/plans/'
+      preLoaderRoute: typeof PlansIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plans/$slug': {
+      id: '/plans/$slug'
+      path: '/plans/$slug'
+      fullPath: '/plans/$slug'
+      preLoaderRoute: typeof PlansSlugRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/admin/nodes/': {
       id: '/admin/nodes/'
@@ -919,6 +1018,7 @@ interface AdminRouteChildren {
   AdminLogsRoute: typeof AdminLogsRoute
   AdminPlansRoute: typeof AdminPlansRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminSubscriptionsRoute: typeof AdminSubscriptionsRoute
   AdminSystemRoute: typeof AdminSystemRoute
   AdminTemplatesRoute: typeof AdminTemplatesRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -934,6 +1034,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminLogsRoute: AdminLogsRoute,
   AdminPlansRoute: AdminPlansRoute,
   AdminSettingsRoute: AdminSettingsRoute,
+  AdminSubscriptionsRoute: AdminSubscriptionsRoute,
   AdminSystemRoute: AdminSystemRoute,
   AdminTemplatesRoute: AdminTemplatesRoute,
   AdminUsersRoute: AdminUsersRoute,
@@ -977,9 +1078,9 @@ const ClientServersServerIdRouteWithChildren =
 
 interface ClientRouteChildren {
   ClientAssistantRoute: typeof ClientAssistantRoute
-  ClientBillingRoute: typeof ClientBillingRoute
   ClientPlanRoute: typeof ClientPlanRoute
   ClientSettingsRoute: typeof ClientSettingsRoute
+  ClientSubscriptionRoute: typeof ClientSubscriptionRoute
   ClientSupportRoute: typeof ClientSupportRoute
   ClientIndexRoute: typeof ClientIndexRoute
   ClientServersServerIdRoute: typeof ClientServersServerIdRouteWithChildren
@@ -988,9 +1089,9 @@ interface ClientRouteChildren {
 
 const ClientRouteChildren: ClientRouteChildren = {
   ClientAssistantRoute: ClientAssistantRoute,
-  ClientBillingRoute: ClientBillingRoute,
   ClientPlanRoute: ClientPlanRoute,
   ClientSettingsRoute: ClientSettingsRoute,
+  ClientSubscriptionRoute: ClientSubscriptionRoute,
   ClientSupportRoute: ClientSupportRoute,
   ClientIndexRoute: ClientIndexRoute,
   ClientServersServerIdRoute: ClientServersServerIdRouteWithChildren,
@@ -1006,7 +1107,11 @@ const rootRouteChildren: RootRouteChildren = {
   ClientRoute: ClientRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
+  RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  CheckoutPlanSlugRoute: CheckoutPlanSlugRoute,
+  PlansSlugRoute: PlansSlugRoute,
+  PlansIndexRoute: PlansIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

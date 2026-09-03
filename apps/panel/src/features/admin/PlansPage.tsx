@@ -4,7 +4,7 @@ import { Layers, Plus } from 'lucide-react';
 import { applyPlan, createPlan, getPlanCapacity, getPlanDrift, listPlans, updatePlan, type CreatePlanInput } from './admin.api';
 import { ApiError } from '@/shared/api/client';
 import type { AdminPlan, PlanApplyResult, PlanDriftReport } from '@/shared/api/types';
-import { formatPrice, formatRange } from '@/features/client/planFormat';
+import { formatPrice, formatRange } from '@/shared/format/plan';
 import {
   Alert,
   Badge,
@@ -44,6 +44,8 @@ interface PlanFormValues {
   maxSchedules: string;
   maxServers: string;
   maxSlots: string;
+  isFeatured: boolean;
+  highlightLabel: string;
   recommendedPlayersMin: string;
   recommendedPlayersMax: string;
   recommendedModsMin: string;
@@ -73,6 +75,8 @@ const EMPTY_FORM: PlanFormValues = {
   maxSchedules: '5',
   maxServers: '',
   maxSlots: '',
+  isFeatured: false,
+  highlightLabel: '',
   recommendedPlayersMin: '',
   recommendedPlayersMax: '',
   recommendedModsMin: '',
@@ -103,6 +107,8 @@ function planToForm(p: AdminPlan): PlanFormValues {
     maxSchedules: String(p.maxSchedules),
     maxServers: p.maxServers != null ? String(p.maxServers) : '',
     maxSlots: p.maxSlots != null ? String(p.maxSlots) : '',
+    isFeatured: p.isFeatured,
+    highlightLabel: p.highlightLabel ?? '',
     recommendedPlayersMin: p.recommendedPlayersMin != null ? String(p.recommendedPlayersMin) : '',
     recommendedPlayersMax: p.recommendedPlayersMax != null ? String(p.recommendedPlayersMax) : '',
     recommendedModsMin: p.recommendedModsMin != null ? String(p.recommendedModsMin) : '',
@@ -140,6 +146,8 @@ function toInput(v: PlanFormValues): CreatePlanInput {
     maxSchedules: n(v.maxSchedules),
     maxServers: n(v.maxServers),
     maxSlots: n(v.maxSlots),
+    isFeatured: v.isFeatured,
+    highlightLabel: v.highlightLabel.trim() || undefined,
     recommendedPlayersMin: n(v.recommendedPlayersMin),
     recommendedPlayersMax: n(v.recommendedPlayersMax),
     recommendedModsMin: n(v.recommendedModsMin),
@@ -277,6 +285,31 @@ function PlanFormModal({ open, mode, plan, onClose }: { open: boolean; mode: 'cr
                 Público (visível para clientes)
               </label>
             </div>
+            <div className="flex items-center gap-2 pt-6">
+              <input
+                id="plan-featured"
+                type="checkbox"
+                checked={values.isFeatured}
+                onChange={(e) => patch({ isFeatured: e.target.checked })}
+                className="h-4 w-4 rounded border-border-strong text-accent accent-accent"
+              />
+              <label htmlFor="plan-featured" className="text-sm text-text">
+                Destacar no site comercial
+              </label>
+            </div>
+            <Field
+              label="Selo de destaque"
+              htmlFor="plan-highlight-label"
+              hint={values.isFeatured ? 'Deixe em branco para usar "Mais popular".' : 'Só é exibido quando o plano está marcado como destaque.'}
+            >
+              <Input
+                id="plan-highlight-label"
+                value={values.highlightLabel}
+                onChange={(e) => patch({ highlightLabel: e.target.value })}
+                placeholder="Mais popular"
+                disabled={!values.isFeatured}
+              />
+            </Field>
             <Field label="Descrição" htmlFor="plan-description" className="sm:col-span-2">
               <Textarea id="plan-description" value={values.description} onChange={(e) => patch({ description: e.target.value })} rows={2} />
             </Field>
@@ -536,6 +569,7 @@ export function PlansPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-medium text-text">{p.name}</p>
                         {!p.isPublic && <Badge tone="neutral">privado</Badge>}
+                        {p.isFeatured && <Badge tone="ok">{p.highlightLabel ?? 'destaque'}</Badge>}
                         {p.maxSlots != null && (
                           <Badge tone={(occupancyById.get(p.id) ?? 0) >= p.maxSlots ? 'fail' : 'neutral'}>
                             {occupancyById.get(p.id) ?? 0} / {p.maxSlots} vagas

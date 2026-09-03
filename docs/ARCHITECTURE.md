@@ -185,6 +185,18 @@ Plan fields map directly onto container limits (`cpu_limit_percent->CpuQuota`, `
 
 Node capacity is checked **inside the create transaction**, under `pg_advisory_xact_lock('node:'||node_id)`, so two concurrent creates cannot both pass the same check. Defaults: memory and disk **strict** (`overallocate_pct = 0`), CPU **unlimited** (`-1`, since CPU is time-shared and blocking sales on nominal sums wastes hardware). Auto-deploy spreads load (lowest max-usage-ratio node), never bin-packs.
 
+#### 2.6.1 Subscriptions — the commercial layer on top of Plans
+
+`subscriptions` is the commercial contract between a customer and a plan — deliberately separate from `servers.plan_id`, which exists purely for the snapshot-not-reference billing/drift doctrine (§2.1). A subscription can exist with no server yet (`server_id IS NULL`, the only state this milestone ever produces — see below) and a server can exist with no subscription (an admin still creating one directly, the pre-existing path). The two connect only through the optional, unique `subscriptions.server_id`.
+
+Lifecycle: `pending -> active -> {past_due, suspended, cancelled, expired}`, with `active`/`past_due`/`suspended` able to recover back to `active`. `cancelled`/`expired` are terminal. **Only an admin can move a subscription into `active`** (`POST /api/admin/subscriptions/:id/status`) — there is no payment gateway yet (§9 below), so this is deliberately a manual gate, not a mock. A customer's own self-service action is limited to cancelling (`pending`/`active`/`past_due`/`suspended` -> `cancelled`).
+
+**Vagas (commercial stock) now count two disjoint sources**, added together: servers on the plan (`status <> 'deleting'`, unchanged from §2.6) plus subscriptions on the plan that are `pending`/`active`/`past_due`/`suspended` AND have no server yet. A subscription and its eventual server can never double-count the same slot — the moment a subscription is attached to a server, it drops out of the second term. This closes the hole where a plan could otherwise be oversold entirely through subscriptions, never actually creating a server.
+
+The public catalog (`GET /api/public/plans[/:slug]`, no auth) never exposes a raw slot count or anything node-shaped — only a computed `availability: { status: 'available'|'limited'|'sold_out', remaining }`, derived purely from the occupancy accounting above (`maxSlots` vs. occupied). Deliberately NOT also gated on whether a node currently exists to run the plan — found live, against a dev database with plans but zero nodes bootstrapped, that conflating "commercially full" with "not deployed yet" makes every plan read as sold out on a fresh install, and this milestone never provisions a server at subscribe time anyway (a `pending` subscription waits on an admin regardless of node state). Node fit belongs to the future auto-provisioning flow, not to what a visitor sees today. Cached 30s in Redis, invalidated on any plan create/update/remove.
+
+**Auto-provisioning is explicitly out of scope for this milestone.** An `active` subscription does not create a server — an admin still does that by hand, the same as before subscriptions existed. `subscriptions.server_id` is the seam a future milestone hooks into (payment webhook -> `active` -> node selection -> `ServersService.create` -> attach `server_id`), listed in §8's roadmap but not built.
+
 ### 2.7 Server lifecycle — two orthogonal state machines
 
 `servers.status` (panel-authoritative, provisioning) and `servers.power_state` (agent-authoritative, runtime) are **deliberately separate columns** — conflating them cannot represent "suspended while still draining players". Redis holds the live power-state truth; Postgres is a lagging cache for list views.
@@ -508,6 +520,7 @@ Node Agent goes first per the user's explicit requirement — it de-risks the ha
 | M12 | Admin console | Panel, API | Onboard a new node and a new game from the UI only; plan-apply dry run works |
 | M13 | Hardening & operations | All | Live node-to-node transfer with no data loss; token rotation; log partition automation |
 | M14 | Billing hooks (deferred) | API | External payment event idempotently suspends/restores a server |
+| M15 | Commercial site: public catalog + subscriptions | API, Panel | Visitor browses plans and vagas-aware availability with no auth, signs up (behind `ALLOW_PUBLIC_REGISTRATION`), subscribes (`pending`), admin activates in `/admin/subscriptions`; customer sees it in `/client/subscription`. No payment gateway, no auto-provisioning — see §2.6.1 |
 
 \* = required for the minimal end-to-end vertical slice (M1-M6).
 
@@ -520,6 +533,8 @@ Node Agent goes first per the user's explicit requirement — it de-risks the ha
 3. **Support staff console access** is read-only by default, fully audited, and visible in the customer's own activity feed.
 4. **Self-service server deletion is disabled by default** — customers request, staff/automation execute — to prevent rage-deletes; toggleable per instance.
 5. **PostgreSQL floor is 17+**, targeting 18 for native `uuidv7()` (a one-line migration to swap the SQL-shim version if you start on 17).
+6. **Public self-signup is off by default** (`ALLOW_PUBLIC_REGISTRATION=false`) — an existing deployment's behavior never changes on upgrade; only an admin can create a user until an operator explicitly opts in.
+7. **Subscription activation is admin-only**, with no mock/test payment path reachable in production — see §2.6.1. A future payment webhook is the only intended way to automate this, and it reuses `SubscriptionsService.updateStatusAsAdmin`'s transition machine rather than adding a second one.
 
 ---
 

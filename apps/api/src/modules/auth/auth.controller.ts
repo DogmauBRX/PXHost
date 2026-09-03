@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedExc
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -33,6 +34,24 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto, @Req() req: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
     const result = await this.auth.login(dto.email, dto.password, requestMeta(req));
+    setRefreshCookie(reply, result.refreshToken, result.refreshExpiresAt);
+    return {
+      accessToken: result.accessToken,
+      expiresIn: result.expiresIn,
+      user: result.user,
+    };
+  }
+
+  // Commercial site — public self-signup, behind ALLOW_PUBLIC_REGISTRATION
+  // (default off, see AuthService.register's doc comment). @Public()
+  // regardless of the flag: the flag decides whether the SERVICE accepts
+  // the request (404 when off), not whether the JWT guard does — a
+  // disabled feature must still read as "not found," never "unauthorized."
+  @Public()
+  @Post('register')
+  @HttpCode(HttpStatus.OK)
+  async register(@Body() dto: RegisterDto, @Req() req: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
+    const result = await this.auth.register(dto, requestMeta(req));
     setRefreshCookie(reply, result.refreshToken, result.refreshExpiresAt);
     return {
       accessToken: result.accessToken,

@@ -1,0 +1,14 @@
+# PXHost — public commercial pages are indexable; everything behind
+# authentication is not (both because it's private and because it's
+# useless to a crawler that can't log in).
+User-agent: *
+Allow: /$
+Allow: /plans
+Allow: /plans/
+Allow: /login
+Allow: /register
+Disallow: /admin
+Disallow: /client
+Disallow: /checkout
+
+Sitemap: /sitemap.xml

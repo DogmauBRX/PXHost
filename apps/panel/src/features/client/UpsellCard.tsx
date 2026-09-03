@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { Rocket } from 'lucide-react';
 import type { ClientPlan } from '@/shared/api/types';
 import { Card, CardBody } from '@/ui/primitives';
-import { formatMemory, formatRange } from './planFormat';
+import { formatMemory, formatRange } from '@/shared/format/plan';
 
 interface UpsellCardProps {
   currentPlan: ClientPlan;

@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { deriveHealthStatus } from '../nodes/nodes.service';
-import { CapacityService } from './capacity.service';
+import { CapacityService, SLOT_HOLDING_SUBSCRIPTION_STATUSES } from './capacity.service';
 import { capacityStatus, ceilingFor, nodeFitReasons } from './capacity.math';
 import { SimulateCapacityDto } from './dto/simulate-capacity.dto';
 
@@ -190,15 +190,32 @@ export class CapacityReportService {
    * (servers currently on the plan), the building block Fase 4's real
    * vagas ratio will be computed against.
    */
+  /**
+   * Occupancy per plan — same two-source sum as
+   * `CapacityService.occupiedSlots` (servers on the plan, plus
+   * commercial-site subscriptions not yet attached to a server), just
+   * batched with `groupBy` instead of `occupiedSlots`'s per-plan count,
+   * since this method reports on EVERY plan at once. Duplicating the
+   * counting rule here (rather than calling `occupiedSlots` in a loop)
+   * is deliberate — the doc comment on that method explains exactly why
+   * the two sources can never double-count, and that reasoning applies
+   * identically whether you ask about one plan or all of them.
+   */
   async planUsage() {
     return this.withAdmin(async (tx) => {
       const plans = await tx.plan.findMany({ where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } });
-      const counts = await tx.server.groupBy({
-        by: ['planId'],
-        where: { status: { not: 'deleting' } },
-        _count: { _all: true },
-      });
-      const occupiedByPlan = new Map(counts.map((c) => [c.planId, c._count._all]));
+      const [serverCounts, subscriptionCounts] = await Promise.all([
+        tx.server.groupBy({ by: ['planId'], where: { status: { not: 'deleting' } }, _count: { _all: true } }),
+        tx.subscription.groupBy({
+          by: ['planId'],
+          where: { serverId: null, status: { in: [...SLOT_HOLDING_SUBSCRIPTION_STATUSES] } },
+          _count: { _all: true },
+        }),
+      ]);
+      const occupiedByPlan = new Map(serverCounts.map((c) => [c.planId, c._count._all]));
+      for (const c of subscriptionCounts) {
+        occupiedByPlan.set(c.planId, (occupiedByPlan.get(c.planId) ?? 0) + c._count._all);
+      }
       return plans.map((p) => ({
         id: p.id,
         name: p.name,

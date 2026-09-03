@@ -6,6 +6,8 @@ import type {
   AdminAuditLog,
   AdminServerDetail,
   AdminServerSummary,
+  AdminSubscriptionDetail,
+  AdminSubscriptionList,
   AdminTemplate,
   AdminUserSummary,
   BootstrapTokenResponse,
@@ -22,6 +24,7 @@ import type {
   ReadyzResponse,
   ServerTransfer,
   SigningKey,
+  SubscriptionStatus,
   TemplateGroup,
 } from '@/shared/api/types';
 
@@ -146,6 +149,8 @@ export interface CreatePlanInput {
   billingPeriod?: string;
   maxServers?: number;
   maxSlots?: number;
+  isFeatured?: boolean;
+  highlightLabel?: string;
   recommendedPlayersMin?: number;
   recommendedPlayersMax?: number;
   recommendedModsMin?: number;
@@ -261,3 +266,18 @@ export const maintainPartitions = () => apiFetch<void>('/api/admin/partitions/ma
 // ---- System: infra health (public endpoint, outside /api) ----
 
 export const getReadyz = () => fetch(`${API_URL}/readyz`).then((r) => r.json() as Promise<ReadyzResponse>);
+
+// ---- Subscriptions (commercial site) ----
+
+export interface ListSubscriptionsParams {
+  status?: SubscriptionStatus;
+  planId?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+export const listSubscriptions = (params: ListSubscriptionsParams = {}) =>
+  apiFetch<AdminSubscriptionList>(`/api/admin/subscriptions${qs(params)}`);
+export const getSubscription = (id: string) => apiFetch<AdminSubscriptionDetail>(`/api/admin/subscriptions/${id}`);
+export const updateSubscriptionStatus = (id: string, status: SubscriptionStatus, reason?: string) =>
+  apiFetch<AdminSubscriptionDetail>(`/api/admin/subscriptions/${id}/status`, { method: 'POST', body: JSON.stringify({ status, reason }) });
