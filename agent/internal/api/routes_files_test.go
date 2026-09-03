@@ -210,3 +210,37 @@ func TestFilesRoutes_UploadWithSignedTokenWritesFile(t *testing.T) {
 		t.Fatalf("uploaded file content = %q", body.Content)
 	}
 }
+
+func TestDiskUsageRoute_WalksJailAndReturnsLimit(t *testing.T) {
+	s, _ := newFilesTestServer(t)
+	filesBase := "/api/servers/" + filesTestServerUUID + "/files"
+
+	doReq(t, s, http.MethodPut, filesBase+"/contents?path=a.txt", []byte("12345"), "test-node-token")     // 5 bytes
+	doReq(t, s, http.MethodPut, filesBase+"/contents?path=b.txt", []byte("1234567890"), "test-node-token") // 10 bytes
+
+	rr := doReq(t, s, http.MethodGet, "/api/servers/"+filesTestServerUUID+"/disk-usage", nil, "test-node-token")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("disk-usage status = %d, body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		UsedBytes int64 `json:"usedBytes"`
+		LimitMb   int64 `json:"limitMb"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.UsedBytes != 15 {
+		t.Fatalf("usedBytes = %d, want 15 (5 + 10 bytes across the two files just written)", body.UsedBytes)
+	}
+	if body.LimitMb != 0 { // newFilesTestServer configures DiskMB: 0 (unlimited)
+		t.Fatalf("limitMb = %d, want 0", body.LimitMb)
+	}
+}
+
+func TestDiskUsageRoute_RequiresNodeToken(t *testing.T) {
+	s, _ := newFilesTestServer(t)
+	rr := doReq(t, s, http.MethodGet, "/api/servers/"+filesTestServerUUID+"/disk-usage", nil, "")
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 with no node token, got %d", rr.Code)
+	}
+}

@@ -10,6 +10,17 @@ import { ActivityService } from '../activity/activity.service';
 import { toClientServerDetail, toClientServerSummary } from './server-view';
 
 const STATS_CACHE_TTL_SECONDS = 10;
+// Longer than STATS_CACHE_TTL_SECONDS on purpose: disk usage is a genuine
+// recursive filesystem walk on the agent (fsx.Jail.DiskUsageBytes), not a
+// copy of an already-live number — this bounds how often a user mashing
+// "atualizar" can make the agent re-walk a server's whole data directory.
+const DISK_USAGE_CACHE_TTL_SECONDS = 20;
+
+export interface DiskUsageSnapshot {
+  usedBytes: number | null;
+  limitBytes: number | null;
+  measuredAt: string;
+}
 
 export interface ServerStatsSnapshot {
   online: boolean;
@@ -162,6 +173,36 @@ export class ClientServersService {
 
     const snapshot = await this.fetchSnapshot(server.nodeId, server.id);
     await this.redis.client.set(cacheKey, JSON.stringify(snapshot), 'EX', STATS_CACHE_TTL_SECONDS);
+    return snapshot;
+  }
+
+  /**
+   * On-demand, not live — the agent's DiskUsageBytes is a genuine
+   * recursive walk (see AgentClient.getDiskUsage's own doc comment), so
+   * this is deliberately NOT part of `stats()`'s cheap snapshot. Cached
+   * server-side (DISK_USAGE_CACHE_TTL_SECONDS) on top of whatever the
+   * client itself does to debounce a "refresh" button — belt and
+   * suspenders against one impatient tab hammering the filesystem.
+   * Degrades to nulls (never a fabricated number) if the agent can't be
+   * reached or the server has no live container to walk.
+   */
+  async diskUsage(actor: AccessActor, serverId: string): Promise<DiskUsageSnapshot> {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    if (!can('server.read')) throw new ForbiddenException('Missing permission: server.read');
+
+    const cacheKey = `disk-usage:${server.id}`;
+    const cached = await this.redis.client.get(cacheKey);
+    if (cached !== null) return JSON.parse(cached) as DiskUsageSnapshot;
+
+    const measuredAt = new Date().toISOString();
+    let snapshot: DiskUsageSnapshot;
+    try {
+      const result = await this.agent.getDiskUsage(server.nodeId, server.id);
+      snapshot = { usedBytes: result.usedBytes, limitBytes: result.limitMb * 1024 * 1024, measuredAt };
+    } catch {
+      snapshot = { usedBytes: null, limitBytes: null, measuredAt };
+    }
+    await this.redis.client.set(cacheKey, JSON.stringify(snapshot), 'EX', DISK_USAGE_CACHE_TTL_SECONDS);
     return snapshot;
   }
 

@@ -7,12 +7,15 @@ export const THEME_STORAGE_KEY = 'pxhost.theme';
 /**
  * Fired on `window` whenever the theme changes.
  *
- * The console page draws into xterm.js and uPlot through refs, never through
- * React state — architecture doc 5.2 requires zero re-renders per second
- * while stats stream. Those two libraries hold copies of the colors they
- * were built with, so they need to be told when the palette changes. A DOM
- * event is how they hear about it without being wired to React state, which
- * would drag them back into the render cycle they were designed to escape.
+ * The console page draws into xterm.js through a ref, never through React
+ * state — architecture doc 5.2 requires zero re-renders per second while
+ * stats stream. xterm holds a copy of the colors it was built with, so it
+ * needs to be told when the palette changes. A DOM event is how it hears
+ * about it without being wired to React state, which would drag it back
+ * into the render cycle it was designed to escape. (The console's CPU/RAM
+ * gauges draw with plain `var(--color-*)` references in SVG attributes
+ * instead, so the browser repaints them on a theme change for free —
+ * no event needed there.)
  */
 export const THEME_CHANGE_EVENT = 'pxhost:themechange';
 

@@ -11,6 +11,8 @@ export { Alert, EmptyState, Spinner, LoadingRow, Skeleton } from './Feedback';
 export { PageHeader } from './PageHeader';
 export { StatCard } from './StatCard';
 export { Meter } from './Meter';
+export { Gauge } from './Gauge';
+export type { GaugeHandle } from './Gauge';
 export { Toggle } from './Toggle';
 export { CodeEditor } from './CodeEditor';
 export { Avatar } from './Avatar';

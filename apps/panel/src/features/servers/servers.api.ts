@@ -23,3 +23,15 @@ export function mintConsoleToken(id: string) {
 export function getServerStats(id: string) {
   return apiFetch<ServerStatsSnapshot>(`/api/client/servers/${id}/stats`);
 }
+
+// On-demand, not live — a genuine filesystem walk on the agent, server-
+// side cached for a while (see ClientServersService.diskUsage). Call this
+// from a "refresh" action, never on a polling interval.
+export interface DiskUsageSnapshot {
+  usedBytes: number | null;
+  limitBytes: number | null;
+  measuredAt: string;
+}
+export function getServerDiskUsage(id: string) {
+  return apiFetch<DiskUsageSnapshot>(`/api/client/servers/${id}/disk-usage`);
+}

@@ -37,10 +37,22 @@ export function RouteTabs({ items, params, className = '' }: RouteTabsProps) {
           matchRoute({ to: tab.to, params, fuzzy: tab.exact ? false : undefined } as never),
         );
         const showGroupLabel = tab.group && tab.group !== items[i - 1]?.group;
+        // A vertical rule between groups, not just a margin — found live
+        // (screenshot) the plain-text "AVANÇADO" label alone read as more
+        // tabs, not a section break. Only between groups, never before the
+        // first one.
+        const showDivider = showGroupLabel && i > 0;
         return (
           <Fragment key={String(tab.to)}>
+            {showDivider && <span className="mx-2 h-5 w-px shrink-0 self-center bg-border" aria-hidden="true" />}
             {showGroupLabel && (
-              <span className={`shrink-0 self-center px-1 text-[0.65rem] font-semibold tracking-wider text-text-faint uppercase ${i === 0 ? '' : 'ml-2'}`}>
+              // Same pill language as Badge/StatusBadge's neutral tone
+              // (rounded, muted fill) so it reads as "this is a label,"
+              // not one more clickable tab — but sized up from Badge's
+              // own tiny 0.68rem (not just reusing that component
+              // directly) since this sits inline with 0.875rem tab text
+              // and needs to hold its own next to it, not disappear.
+              <span className="mr-1 shrink-0 self-center rounded-full bg-surface-2 px-2.5 py-1 text-xs font-semibold tracking-wide text-text-muted uppercase">
                 {GROUP_LABEL[tab.group!]}
               </span>
             )}

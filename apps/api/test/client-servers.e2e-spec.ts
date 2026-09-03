@@ -187,4 +187,22 @@ describe('Client servers (e2e)', () => {
     const intruderRes = await asIntruder(`/api/client/servers/${serverId}/power`, { method: 'POST', payload: { action: 'start' } });
     expect(intruderRes.statusCode).toBe(404);
   });
+
+  it('disk usage degrades to nulls (never a fabricated number) against an un-bootstrapped node, caches the result, and is owner-only', async () => {
+    const res = await asOwner(`/api/client/servers/${serverId}/disk-usage`);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.usedBytes).toBeNull();
+    expect(body.limitBytes).toBeNull();
+    expect(body.measuredAt).toEqual(expect.any(String));
+
+    // Server-side cache (DISK_USAGE_CACHE_TTL_SECONDS): a second call
+    // within the window returns the SAME measuredAt rather than
+    // re-attempting the (here, failing) agent call.
+    const res2 = await asOwner(`/api/client/servers/${serverId}/disk-usage`);
+    expect(JSON.parse(res2.body).measuredAt).toBe(body.measuredAt);
+
+    const intruderRes = await asIntruder(`/api/client/servers/${serverId}/disk-usage`);
+    expect(intruderRes.statusCode).toBe(404);
+  });
 });

@@ -90,6 +90,27 @@ func (s *Server) handleFilesWrite(w http.ResponseWriter, r *http.Request) {
 	writeJSONResp(w, http.StatusOK, map[string]any{"bytesWritten": n})
 }
 
+// handleDiskUsage is the one place fsx.Jail.DiskUsageBytes ever gets
+// exposed over HTTP (client account management era — see that function's
+// own doc comment: it's a genuine recursive walk, "correctness over
+// micro-optimizing," fine before one write but not something to run on
+// every stats tick). Callers are expected to poll this on-demand — a
+// button, not a live gauge — and cache the result client-side for a
+// while; nothing here does that caching itself, this handler always
+// measures fresh.
+func (s *Server) handleDiskUsage(w http.ResponseWriter, r *http.Request) {
+	target, ok := s.fileServerFromPath(w, r)
+	if !ok {
+		return
+	}
+	used, err := target.Jail.DiskUsageBytes()
+	if err != nil {
+		writeFsxError(w, err)
+		return
+	}
+	writeJSONResp(w, http.StatusOK, map[string]any{"usedBytes": used, "limitMb": target.DiskLimitMB()})
+}
+
 type renameRequest struct {
 	From string `json:"from"`
 	To   string `json:"to"`

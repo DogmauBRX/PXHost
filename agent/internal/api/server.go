@@ -160,6 +160,11 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /api/servers/{uuid}/files/compress", s.requireNodeToken(http.HandlerFunc(s.handleFilesCompress)))
 	mux.Handle("POST /api/servers/{uuid}/files/decompress", s.requireNodeToken(http.HandlerFunc(s.handleFilesDecompress)))
 
+	// On-demand real disk usage (fsx.Jail.DiskUsageBytes — a genuine
+	// recursive walk, not the always-0 live stats frame). Same node-token
+	// gate as the file ops above; deliberately not on the WS stats loop.
+	mux.Handle("GET /api/servers/{uuid}/disk-usage", s.requireNodeToken(http.HandlerFunc(s.handleDiskUsage)))
+
 	// Signed-URL transfers (architecture doc 3.4/4.4) — the BROWSER hits
 	// these directly, same reasoning as the console WS: a short-lived,
 	// single-use Ed25519 capability token IS the authentication, not the

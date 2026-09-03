@@ -35,6 +35,12 @@ export class ClientServersController {
     return this.servers.stats(user, id);
   }
 
+  /** On-demand real disk usage — a genuine filesystem walk, deliberately NOT part of the live stats stream. See ClientServersService.diskUsage's doc comment. */
+  @Get(':id/disk-usage')
+  diskUsage(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.servers.diskUsage(user, id);
+  }
+
   @Post(':id/power')
   power(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: PowerActionDto) {
     return this.servers.power(user, id, dto.action);

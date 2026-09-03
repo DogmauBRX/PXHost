@@ -167,6 +167,17 @@ export class AgentClient {
     return this.call(nodeId, 'GET', `/api/servers/${serverUuid}`, undefined);
   }
 
+  /**
+   * A genuine recursive filesystem walk (fsx.Jail.DiskUsageBytes on the
+   * agent), NOT the live stats frame's always-0 disk_bytes — see
+   * AgentStatsFrame's doc comment above. Deliberately not cheap: the
+   * caller (ClientServersService.diskUsage) is expected to rate-limit
+   * on-demand refreshes, not poll this like `getServerStatus`.
+   */
+  getDiskUsage(nodeId: string, serverUuid: string): Promise<{ usedBytes: number; limitMb: number }> {
+    return this.call(nodeId, 'GET', `/api/servers/${serverUuid}/disk-usage`, undefined);
+  }
+
   /** The browser's direct connection target (architecture doc 4.5/5.2) — never proxied through this API. */
   wsUrl(scheme: string, fqdn: string, daemonPort: number, serverUuid: string): string {
     const wsScheme = scheme === 'https' ? 'wss' : 'ws';

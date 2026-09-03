@@ -75,9 +75,9 @@ export function Terminal({ onReady, disabled }: TerminalProps) {
     const resizeObserver = new ResizeObserver(() => fit.fit());
     resizeObserver.observe(containerRef.current);
 
-    // xterm can swap its palette in place, so unlike the uPlot chart this
-    // needs no teardown — and, like it, listens to a DOM event rather than
-    // React state so the streaming path never re-renders.
+    // xterm can swap its palette in place, so this needs no teardown — and
+    // listens to a DOM event rather than React state so the streaming path
+    // never re-renders (see THEME_CHANGE_EVENT's own doc comment).
     const onThemeChange = () => {
       if (termRef.current) termRef.current.options.theme = buildTheme();
     };
