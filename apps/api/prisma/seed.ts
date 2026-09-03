@@ -395,7 +395,7 @@ const PLAN_SEEDS: PlanSeed[] = [
     recommendedPluginsMax: 30,
   },
   {
-    name: 'Médio',
+    name: 'Intermediário',
     slug: 'medio',
     description: 'Para comunidades em crescimento, com mais mods e plugins.',
     sortOrder: 1,

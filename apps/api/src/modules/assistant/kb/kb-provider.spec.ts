@@ -12,7 +12,7 @@ function makeContext(overrides: Partial<AssistantContext> = {}): AssistantContex
     powerState: 'running',
     software: describeSoftware('paper'),
     plan: {
-      name: 'Médio',
+      name: 'Intermediário',
       recommendedPlayersMin: 15,
       recommendedPlayersMax: 30,
       recommendedModsMin: null,

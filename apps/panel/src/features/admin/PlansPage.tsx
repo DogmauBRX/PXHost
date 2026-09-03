@@ -211,7 +211,15 @@ function PlanFormModal({ open, mode, plan, onClose }: { open: boolean; mode: 'cr
     try {
       const input = toInput(values);
       if (mode === 'create') await createPlan(input);
-      else if (plan) await updatePlan(plan.id, input);
+      else if (plan) {
+        // UpdatePlanDto forbids `slug` (immutable once created, same rule
+        // the disabled Slug field above enforces) — the API 400s
+        // ("property slug should not exist") if it's present at all, so
+        // it can't just ride along unused like the other create-only
+        // fields below.
+        const { slug: _slug, ...updateInput } = input;
+        await updatePlan(plan.id, updateInput);
+      }
       void queryClient.invalidateQueries({ queryKey: ['admin', 'plans'] });
       onClose();
     } catch (err) {
@@ -249,7 +257,7 @@ function PlanFormModal({ open, mode, plan, onClose }: { open: boolean; mode: 'cr
           <legend className="text-xs font-semibold tracking-wide text-text-faint uppercase">Identificação</legend>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Nome" htmlFor="plan-name" required>
-              <Input id="plan-name" value={values.name} onChange={(e) => patch({ name: e.target.value })} placeholder="Médio" />
+              <Input id="plan-name" value={values.name} onChange={(e) => patch({ name: e.target.value })} placeholder="Intermediário" />
             </Field>
             <Field label="Slug" htmlFor="plan-slug" required hint={mode === 'edit' ? 'Não pode ser alterado depois de criado.' : undefined}>
               <Input id="plan-slug" value={values.slug} onChange={(e) => patch({ slug: e.target.value })} placeholder="medio" disabled={mode === 'edit'} />
