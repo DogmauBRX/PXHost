@@ -19,7 +19,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/pxhost/agent/internal/auth"
+	"github.com/gxhost/agent/internal/auth"
 )
 
 func main() {

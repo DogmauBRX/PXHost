@@ -24,12 +24,13 @@ import { SubusersModule } from './modules/subusers/subusers.module';
 import { PartitionsModule } from './modules/partitions/partitions.module';
 import { TransfersModule } from './modules/transfers/transfers.module';
 import { SecurityModule } from './modules/security/security.module';
-import { BillingModule } from './modules/billing/billing.module';
 import { UsersModule } from './modules/users/users.module';
 import { AssistantModule } from './modules/assistant/assistant.module';
 import { AccountModule } from './modules/account/account.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { PublicModule } from './modules/public/public.module';
+import { SiteAnnouncementModule } from './modules/site-announcement/site-announcement.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 
 @Module({
   imports: [
@@ -53,12 +54,13 @@ import { PublicModule } from './modules/public/public.module';
     PartitionsModule,
     TransfersModule,
     SecurityModule,
-    BillingModule,
     UsersModule,
     AssistantModule,
     AccountModule,
     SubscriptionsModule,
     PublicModule,
+    SiteAnnouncementModule,
+    PaymentsModule,
   ],
   providers: [
     // JwtAuthGuard is global: every route requires authentication unless

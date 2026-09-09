@@ -1,6 +1,6 @@
 import type { PublicPlan } from '@/shared/api/types';
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from '@/ui/primitives';
-import { formatBillingPeriod, formatMemory, formatPrice, formatRange } from '@/shared/format/plan';
+import { formatBillingPeriod, formatMemory, formatPrice, formatRange, formatVcpu } from '@/shared/format/plan';
 
 interface Dimension {
   label: string;
@@ -15,7 +15,7 @@ interface Dimension {
 const DIMENSIONS: Dimension[] = [
   { label: 'Preço', render: (p) => `${formatPrice(p.priceCents, p.currency)}/${formatBillingPeriod(p.billingPeriod)}` },
   { label: 'RAM', render: (p) => formatMemory(p.memoryMb) },
-  { label: 'CPU', render: (p) => `${p.cpuLimitPercent}%` },
+  { label: 'CPU', render: (p) => formatVcpu(p.cpuLimitPercent) },
   { label: 'Armazenamento', render: (p) => formatMemory(p.diskMb) },
   { label: 'Servidores', render: (p) => (p.maxServers != null ? String(p.maxServers) : '1') },
   { label: 'Backups', render: (p) => (p.maxBackups > 0 ? String(p.maxBackups) : null) },

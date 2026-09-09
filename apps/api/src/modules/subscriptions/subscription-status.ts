@@ -51,6 +51,11 @@ const PERIOD_MONTHS: Record<SubscriptionBillingPeriod, number> = {
   annual: 12,
 };
 
+/** Exposed for `OrdersService.createCardSubscription` — a Mercado Pago preapproval's `auto_recurring.frequency` needs the SAME month count this module already uses for `nextPeriodEnd`, so the card charges every cycle exactly when this platform's own period ends. */
+export function periodMonths(period: SubscriptionBillingPeriod): number {
+  return PERIOD_MONTHS[period];
+}
+
 /**
  * The "próxima cobrança" date (commercial plan §14/§16) — computed, not
  * stored anywhere else, from whatever moment activation actually

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Folder, Package } from 'lucide-react';
 import { deleteFile, listFiles, mintDownloadLink } from '@/features/files/files.api';
-import { formatBytes, formatDate } from '@/features/files/format';
+import { formatBytes, formatDateTimeShort as formatDate } from '@/shared/format/datetime';
 import { ApiError } from '@/shared/api/client';
 import { Alert, Button, ConfirmDialog, EmptyState, LoadingRow, TBody, TD, TH, THead, TR, Table, TableWrap } from '@/ui/primitives';
 import type { AddonSourcePanelProps } from '../addons.types';

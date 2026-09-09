@@ -40,7 +40,7 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     });
     await prisma.user.create({
       data: {
-        email: `nodes-admin-${suffix}@pxhost.local`,
+        email: `nodes-admin-${suffix}@gxhost.local`,
         username: `nodes-admin-${suffix}`,
         passwordHash,
         globalRole: 'admin',
@@ -50,7 +50,7 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     const login = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
-      payload: { email: `nodes-admin-${suffix}@pxhost.local`, password: 'AdminPass!234567' },
+      payload: { email: `nodes-admin-${suffix}@gxhost.local`, password: 'AdminPass!234567' },
     });
     adminToken = JSON.parse(login.body).accessToken;
 
@@ -61,7 +61,7 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
   afterAll(async () => {
     if (nodeId) await prisma.node.deleteMany({ where: { id: nodeId } });
     await prisma.location.deleteMany({ where: { id: locationId } });
-    await prisma.user.updateMany({ where: { email: `nodes-admin-${suffix}@pxhost.local` }, data: { deletedAt: new Date() } });
+    await prisma.user.updateMany({ where: { email: `nodes-admin-${suffix}@gxhost.local` }, data: { deletedAt: new Date() } });
     await app.close();
   });
 
@@ -72,19 +72,19 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
   it('a non-admin user is forbidden from the admin nodes surface', async () => {
     const passwordHash = await argon2.hash('RegularPass!234', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
     await prisma.user.create({
-      data: { email: `nodes-regular-${suffix}@pxhost.local`, username: `nodes-regular-${suffix}`, passwordHash, isActive: true },
+      data: { email: `nodes-regular-${suffix}@gxhost.local`, username: `nodes-regular-${suffix}`, passwordHash, isActive: true },
     });
     const login = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
-      payload: { email: `nodes-regular-${suffix}@pxhost.local`, password: 'RegularPass!234' },
+      payload: { email: `nodes-regular-${suffix}@gxhost.local`, password: 'RegularPass!234' },
     });
     const regularToken = JSON.parse(login.body).accessToken;
 
     const res = await app.inject({ method: 'GET', url: '/api/admin/nodes', headers: { authorization: `Bearer ${regularToken}` } });
     expect(res.statusCode).toBe(403);
 
-    await prisma.user.updateMany({ where: { email: `nodes-regular-${suffix}@pxhost.local` }, data: { deletedAt: new Date() } });
+    await prisma.user.updateMany({ where: { email: `nodes-regular-${suffix}@gxhost.local` }, data: { deletedAt: new Date() } });
   });
 
   it('admin creates a node — starts with health "unknown" (never heartbeated)', async () => {
@@ -245,7 +245,14 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
   });
 
   it('declaring more than the agent actually reports flags "over" — the one dangerous direction', async () => {
-    const patchRes = await authed(`/api/admin/nodes/${nodeId}`, { method: 'PATCH', payload: { memoryTotalMb: 65536 } }); // now above the 32768 reported above
+    // Capacity plan (auto-derivation) §14: declaring above detected
+    // hardware now requires an explicit acknowledgeOverride — see the
+    // dedicated override-guard tests in capacity.e2e-spec.ts. This test
+    // is about telemetryDivergence, so it acknowledges and moves on.
+    const patchRes = await authed(`/api/admin/nodes/${nodeId}`, {
+      method: 'PATCH',
+      payload: { memoryTotalMb: 65536, acknowledgeOverride: true }, // now above the 32768 reported above
+    });
     expect(patchRes.statusCode).toBe(200);
 
     const node = await authed(`/api/admin/nodes/${nodeId}`);
@@ -273,6 +280,76 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     expect(body.reportedCpuModel).toBe('AMD EPYC 7302P 16-Core Processor');
     expect(body.reportedCpuPhysicalCores).toBe(16);
     expect(body.reportedVirtualizationSystem).toBe('kvm');
+  });
+
+  it('reportedMemoryLimitMb (the cgroup memory limit) persists and is never zeroed by a heartbeat that omits it', async () => {
+    const withLimit = await app.inject({
+      method: 'POST',
+      url: '/api/remote/nodes/heartbeat',
+      headers: { authorization: `Bearer ${nodeToken}` },
+      payload: { reportedMemoryTotalMb: 192000, reportedMemoryLimitMb: 32000 }, // the LXC case: host-wide total vs. the guest's real cgroup limit
+    });
+    expect(withLimit.statusCode).toBe(201);
+
+    const afterFirst = JSON.parse((await authed(`/api/admin/nodes/${nodeId}`)).body);
+    expect(afterFirst.reportedMemoryLimitMb).toBe(32000);
+
+    // An old-agent-shaped heartbeat (no reportedMemoryLimitMb at all)
+    // must leave the previously-reported limit untouched — same
+    // never-zeroed guarantee every other reported_* column already has.
+    const withoutLimit = await app.inject({
+      method: 'POST',
+      url: '/api/remote/nodes/heartbeat',
+      headers: { authorization: `Bearer ${nodeToken}` },
+      payload: { agentVersion: 'v0.4.0-e2e-old-agent' },
+    });
+    expect(withoutLimit.statusCode).toBe(201);
+
+    const afterSecond = JSON.parse((await authed(`/api/admin/nodes/${nodeId}`)).body);
+    expect(afterSecond.reportedMemoryLimitMb).toBe(32000);
+  });
+
+  it('a real change in capacity-relevant telemetry (memory/disk/cpu) between heartbeats is audited as node.telemetry.changed', async () => {
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/remote/nodes/heartbeat',
+      headers: { authorization: `Bearer ${nodeToken}` },
+      payload: { reportedMemoryTotalMb: 16000, reportedCpuCount: 4 },
+    });
+    expect(first.statusCode).toBe(201);
+
+    // A repeat heartbeat with the SAME values must not add another
+    // audit entry — only a genuine change is worth recording.
+    const repeat = await app.inject({
+      method: 'POST',
+      url: '/api/remote/nodes/heartbeat',
+      headers: { authorization: `Bearer ${nodeToken}` },
+      payload: { reportedMemoryTotalMb: 16000, reportedCpuCount: 4 },
+    });
+    expect(repeat.statusCode).toBe(201);
+
+    const changed = await app.inject({
+      method: 'POST',
+      url: '/api/remote/nodes/heartbeat',
+      headers: { authorization: `Bearer ${nodeToken}` },
+      payload: { reportedMemoryTotalMb: 16000, reportedCpuCount: 8 }, // hardware upgrade, or a mis-sized VM being right-sized
+    });
+    expect(changed.statusCode).toBe(201);
+
+    // audit_logs carries no RLS policy (a plain global table — see
+    // PrismaService's own doc comment on which tables ARE RLS-protected)
+    // and the admin HTTP endpoint deliberately omits beforeState/
+    // afterState (unbounded JSON, privacy/size reasons) — reading them
+    // back requires Prisma directly, same as this session's other audit
+    // assertions.
+    const entries = await prisma.auditLog.findMany({
+      where: { action: 'node.telemetry.changed', targetId: nodeId },
+      orderBy: { occurredAt: 'desc' },
+    });
+    expect(entries.length).toBeGreaterThanOrEqual(1);
+    const last = entries[0] as unknown as { beforeState: { reportedCpuCount: number }; afterState: { reportedCpuCount: number } };
+    expect(last.afterState.reportedCpuCount).toBe(8);
+    expect(last.beforeState.reportedCpuCount).not.toBe(8);
   });
 
   it('a heartbeat with a garbage token is rejected — never silently accepted', async () => {

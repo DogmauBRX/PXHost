@@ -8,7 +8,7 @@ import * as argon2 from 'argon2';
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
-  const email = process.env.SEED_ROOT_ADMIN_EMAIL ?? 'admin@pxhost.local';
+  const email = process.env.SEED_ROOT_ADMIN_EMAIL ?? 'admin@gxhost.local';
   const password = process.env.SEED_ROOT_ADMIN_PASSWORD ?? 'ChangeMe!23456';
 
   const passwordHash = await argon2.hash(password, {
@@ -140,7 +140,7 @@ async function seedLocationAndTemplate(): Promise<void> {
       data: {
         groupId: group.id,
         name: 'Paper',
-        author: 'pxhost',
+        author: 'gxhost',
         description: 'High-performance Paper server for Minecraft: Java Edition.',
         dockerImages: { 'Java 21': 'ghcr.io/pxhost/yolks:java_21' },
         startupCommand: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui',
@@ -148,12 +148,18 @@ async function seedLocationAndTemplate(): Promise<void> {
         installImage: 'ghcr.io/pxhost/installers:debian',
         installEntrypoint: 'bash',
         installScript: PAPER_INSTALL_SCRIPT,
-        features: ['eula', 'java_version'],
         // Explicit here, not left to migration 0008's ILIKE backfill — that
         // backfill only ever runs once, against rows that already existed
         // at migration time. A template created by THIS seed script on a
         // brand-new database never goes through it.
         softwareKind: 'paper',
+        // Public on a fresh database — a customer needs at least one
+        // choosable software at checkout (`GET /api/public/templates`),
+        // and Paper is the sensible default (`isPublic` itself defaults
+        // to false everywhere else, deliberately, per its own doc
+        // comment — this is the one seed-time exception).
+        isPublic: true,
+        sortOrder: 0,
         variables: {
           create: [
             {
@@ -218,7 +224,7 @@ async function seedLocationAndTemplate(): Promise<void> {
       data: {
         groupId: group.id,
         name: 'Fabric',
-        author: 'pxhost',
+        author: 'gxhost',
         description: 'Modded Minecraft: Java Edition server running the Fabric mod loader.',
         dockerImages: { 'Java 21': 'ghcr.io/pxhost/yolks:java_21' },
         startupCommand: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui',
@@ -226,7 +232,6 @@ async function seedLocationAndTemplate(): Promise<void> {
         installImage: 'ghcr.io/pxhost/installers:debian',
         installEntrypoint: 'bash',
         installScript: FABRIC_INSTALL_SCRIPT,
-        features: ['eula', 'java_version'],
         softwareKind: 'fabric',
         variables: {
           create: [
@@ -287,7 +292,7 @@ async function seedLocationAndTemplate(): Promise<void> {
       data: {
         groupId: group.id,
         name: 'Vanilla',
-        author: 'pxhost',
+        author: 'gxhost',
         description: 'Unmodified, official Minecraft: Java Edition server — no plugins or mods.',
         dockerImages: { 'Java 21': 'ghcr.io/pxhost/yolks:java_21' },
         startupCommand: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui',
@@ -295,7 +300,6 @@ async function seedLocationAndTemplate(): Promise<void> {
         installImage: 'ghcr.io/pxhost/installers:debian',
         installEntrypoint: 'bash',
         installScript: VANILLA_INSTALL_SCRIPT,
-        features: ['eula', 'java_version'],
         softwareKind: 'vanilla',
         variables: {
           create: [

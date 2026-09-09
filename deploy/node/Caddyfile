@@ -1,0 +1,23 @@
+# Deploy plan — runs ON the node itself (not in the VPS compose stack).
+# Terminates public TLS for this node's own hostname and forwards to the
+# agent, which listens on 127.0.0.1 only (see node.json's listen_addr and
+# ../../docs/DEPLOY.md's firewall section — port 8443 is never reachable
+# from the public interface directly, only via this local proxy on 443
+# or from the WireGuard subnet, for the panel's own control-plane calls).
+#
+# DNS-01 (not HTTP-01) so port 80 never needs to be open: set
+# CLOUDFLARE_API_TOKEN in the environment this runs under (a
+# DNS-edit-scoped token, not the account-wide key) — see Caddy's
+# cloudflare DNS provider module. Requires the `caddy-dns/cloudflare`
+# plugin built in (xcaddy or the official caddy:2-alpine image won't have
+# it — build a custom image or use `caddy add-package` first).
+#
+# Replace node0X.gxhost.com.br with this node's actual public hostname
+# before deploying (node01... on the R620, node02... on the Dual Xeon).
+
+node0X.gxhost.com.br {
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
+	reverse_proxy 127.0.0.1:8443
+}

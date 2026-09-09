@@ -17,8 +17,10 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminAnnouncementRouteImport } from './routes/admin.announcement'
 import { Route as AdminLocationsRouteImport } from './routes/admin.locations'
 import { Route as AdminLogsRouteImport } from './routes/admin.logs'
+import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
 import { Route as AdminPlansRouteImport } from './routes/admin.plans'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminSubscriptionsRouteImport } from './routes/admin.subscriptions'
@@ -38,6 +40,7 @@ import { Route as AdminNodesIndexRouteImport } from './routes/admin.nodes.index'
 import { Route as AdminNodesNodeIdRouteImport } from './routes/admin.nodes.$nodeId'
 import { Route as AdminServersIndexRouteImport } from './routes/admin.servers.index'
 import { Route as AdminServersServerIdRouteImport } from './routes/admin.servers.$serverId'
+import { Route as ClientOrdersOrderIdRouteImport } from './routes/client.orders.$orderId'
 import { Route as ClientServersIndexRouteImport } from './routes/client.servers.index'
 import { Route as ClientServersServerIdRouteImport } from './routes/client.servers.$serverId'
 import { Route as AdminServersServerIdIndexRouteImport } from './routes/admin.servers.$serverId.index'
@@ -99,6 +102,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminAnnouncementRoute = AdminAnnouncementRouteImport.update({
+  id: '/announcement',
+  path: '/announcement',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminLocationsRoute = AdminLocationsRouteImport.update({
   id: '/locations',
   path: '/locations',
@@ -107,6 +115,11 @@ const AdminLocationsRoute = AdminLocationsRouteImport.update({
 const AdminLogsRoute = AdminLogsRouteImport.update({
   id: '/logs',
   path: '/logs',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminPlansRoute = AdminPlansRouteImport.update({
@@ -203,6 +216,11 @@ const AdminServersServerIdRoute = AdminServersServerIdRouteImport.update({
   id: '/servers/$serverId',
   path: '/servers/$serverId',
   getParentRoute: () => AdminRoute,
+} as any)
+const ClientOrdersOrderIdRoute = ClientOrdersOrderIdRouteImport.update({
+  id: '/orders/$orderId',
+  path: '/orders/$orderId',
+  getParentRoute: () => ClientRoute,
 } as any)
 const ClientServersIndexRoute = ClientServersIndexRouteImport.update({
   id: '/servers/',
@@ -331,8 +349,10 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
@@ -351,6 +371,7 @@ export interface FileRoutesByFullPath {
   '/plans/': typeof PlansIndexRoute
   '/admin/nodes/$nodeId': typeof AdminNodesNodeIdRoute
   '/admin/servers/$serverId': typeof AdminServersServerIdRouteWithChildren
+  '/client/orders/$orderId': typeof ClientOrdersOrderIdRoute
   '/client/servers/$serverId': typeof ClientServersServerIdRouteWithChildren
   '/admin/nodes/': typeof AdminNodesIndexRoute
   '/admin/servers/': typeof AdminServersIndexRoute
@@ -380,8 +401,10 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
@@ -399,6 +422,7 @@ export interface FileRoutesByTo {
   '/client': typeof ClientIndexRoute
   '/plans': typeof PlansIndexRoute
   '/admin/nodes/$nodeId': typeof AdminNodesNodeIdRoute
+  '/client/orders/$orderId': typeof ClientOrdersOrderIdRoute
   '/admin/nodes': typeof AdminNodesIndexRoute
   '/admin/servers': typeof AdminServersIndexRoute
   '/client/servers': typeof ClientServersIndexRoute
@@ -430,8 +454,10 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
@@ -450,6 +476,7 @@ export interface FileRoutesById {
   '/plans/': typeof PlansIndexRoute
   '/admin/nodes/$nodeId': typeof AdminNodesNodeIdRoute
   '/admin/servers/$serverId': typeof AdminServersServerIdRouteWithChildren
+  '/client/orders/$orderId': typeof ClientOrdersOrderIdRoute
   '/client/servers/$serverId': typeof ClientServersServerIdRouteWithChildren
   '/admin/nodes/': typeof AdminNodesIndexRoute
   '/admin/servers/': typeof AdminServersIndexRoute
@@ -483,8 +510,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/admin/announcement'
     | '/admin/locations'
     | '/admin/logs'
+    | '/admin/payments'
     | '/admin/plans'
     | '/admin/settings'
     | '/admin/subscriptions'
@@ -503,6 +532,7 @@ export interface FileRouteTypes {
     | '/plans/'
     | '/admin/nodes/$nodeId'
     | '/admin/servers/$serverId'
+    | '/client/orders/$orderId'
     | '/client/servers/$serverId'
     | '/admin/nodes/'
     | '/admin/servers/'
@@ -532,8 +562,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/admin/announcement'
     | '/admin/locations'
     | '/admin/logs'
+    | '/admin/payments'
     | '/admin/plans'
     | '/admin/settings'
     | '/admin/subscriptions'
@@ -551,6 +583,7 @@ export interface FileRouteTypes {
     | '/client'
     | '/plans'
     | '/admin/nodes/$nodeId'
+    | '/client/orders/$orderId'
     | '/admin/nodes'
     | '/admin/servers'
     | '/client/servers'
@@ -581,8 +614,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/admin/announcement'
     | '/admin/locations'
     | '/admin/logs'
+    | '/admin/payments'
     | '/admin/plans'
     | '/admin/settings'
     | '/admin/subscriptions'
@@ -601,6 +636,7 @@ export interface FileRouteTypes {
     | '/plans/'
     | '/admin/nodes/$nodeId'
     | '/admin/servers/$serverId'
+    | '/client/orders/$orderId'
     | '/client/servers/$serverId'
     | '/admin/nodes/'
     | '/admin/servers/'
@@ -696,6 +732,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/announcement': {
+      id: '/admin/announcement'
+      path: '/announcement'
+      fullPath: '/admin/announcement'
+      preLoaderRoute: typeof AdminAnnouncementRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/locations': {
       id: '/admin/locations'
       path: '/locations'
@@ -708,6 +751,13 @@ declare module '@tanstack/react-router' {
       path: '/logs'
       fullPath: '/admin/logs'
       preLoaderRoute: typeof AdminLogsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/payments': {
+      id: '/admin/payments'
+      path: '/payments'
+      fullPath: '/admin/payments'
+      preLoaderRoute: typeof AdminPaymentsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/plans': {
@@ -842,6 +892,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/servers/$serverId'
       preLoaderRoute: typeof AdminServersServerIdRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/client/orders/$orderId': {
+      id: '/client/orders/$orderId'
+      path: '/orders/$orderId'
+      fullPath: '/client/orders/$orderId'
+      preLoaderRoute: typeof ClientOrdersOrderIdRouteImport
+      parentRoute: typeof ClientRoute
     }
     '/client/servers/': {
       id: '/client/servers/'
@@ -1014,8 +1071,10 @@ const AdminServersServerIdRouteWithChildren =
   AdminServersServerIdRoute._addFileChildren(AdminServersServerIdRouteChildren)
 
 interface AdminRouteChildren {
+  AdminAnnouncementRoute: typeof AdminAnnouncementRoute
   AdminLocationsRoute: typeof AdminLocationsRoute
   AdminLogsRoute: typeof AdminLogsRoute
+  AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminPlansRoute: typeof AdminPlansRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminSubscriptionsRoute: typeof AdminSubscriptionsRoute
@@ -1030,8 +1089,10 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminAnnouncementRoute: AdminAnnouncementRoute,
   AdminLocationsRoute: AdminLocationsRoute,
   AdminLogsRoute: AdminLogsRoute,
+  AdminPaymentsRoute: AdminPaymentsRoute,
   AdminPlansRoute: AdminPlansRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminSubscriptionsRoute: AdminSubscriptionsRoute,
@@ -1083,6 +1144,7 @@ interface ClientRouteChildren {
   ClientSubscriptionRoute: typeof ClientSubscriptionRoute
   ClientSupportRoute: typeof ClientSupportRoute
   ClientIndexRoute: typeof ClientIndexRoute
+  ClientOrdersOrderIdRoute: typeof ClientOrdersOrderIdRoute
   ClientServersServerIdRoute: typeof ClientServersServerIdRouteWithChildren
   ClientServersIndexRoute: typeof ClientServersIndexRoute
 }
@@ -1094,6 +1156,7 @@ const ClientRouteChildren: ClientRouteChildren = {
   ClientSubscriptionRoute: ClientSubscriptionRoute,
   ClientSupportRoute: ClientSupportRoute,
   ClientIndexRoute: ClientIndexRoute,
+  ClientOrdersOrderIdRoute: ClientOrdersOrderIdRoute,
   ClientServersServerIdRoute: ClientServersServerIdRouteWithChildren,
   ClientServersIndexRoute: ClientServersIndexRoute,
 }

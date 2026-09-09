@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pxhost/agent/internal/console"
-	"github.com/pxhost/agent/internal/dockerx"
-	"github.com/pxhost/agent/internal/fsx"
-	"github.com/pxhost/agent/internal/spec"
-	"github.com/pxhost/agent/internal/stats"
+	"github.com/gxhost/agent/internal/console"
+	"github.com/gxhost/agent/internal/dockerx"
+	"github.com/gxhost/agent/internal/fsx"
+	"github.com/gxhost/agent/internal/spec"
+	"github.com/gxhost/agent/internal/stats"
 )
 
 // State is the agent-local runtime state machine. It mirrors
@@ -102,7 +102,7 @@ func New(s spec.Server, node spec.Node) (*Server, error) {
 }
 
 func containerName(uuid string) string {
-	return "pxhost-" + uuid
+	return "gxhost-" + uuid
 }
 
 // dockerFull is the Docker client type every lifecycle method takes. It is

@@ -40,7 +40,7 @@ export function AssistantDrawer({ serverId }: { serverId: string }) {
         className="fixed right-6 bottom-6 z-40 flex items-center gap-2 rounded-full bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-accent-strong"
       >
         <Bot className="h-4 w-4" aria-hidden="true" />
-        Assistente PXHOST
+        Assistente GXHOST
       </button>
 
       <dialog
@@ -66,7 +66,7 @@ export function AssistantDrawer({ serverId }: { serverId: string }) {
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-tint text-accent-strong">
                 <Bot className="h-4 w-4" aria-hidden="true" />
               </span>
-              <h2 className="text-sm font-semibold text-text">Assistente PXHOST</h2>
+              <h2 className="text-sm font-semibold text-text">Assistente GXHOST</h2>
             </div>
             <button
               type="button"

@@ -33,10 +33,10 @@ interface PlanFormValues {
   compareAtPriceReais: string;
   currency: string;
   billingPeriod: string;
-  cpuLimitPercent: string;
-  memoryMb: string;
+  cpuVcpu: string;
+  memoryGb: string;
   swapMb: string;
-  diskMb: string;
+  diskGb: string;
   ioWeight: string;
   maxDatabases: string;
   maxBackups: string;
@@ -65,10 +65,10 @@ const EMPTY_FORM: PlanFormValues = {
   compareAtPriceReais: '',
   currency: 'BRL',
   billingPeriod: 'monthly',
-  cpuLimitPercent: '100',
-  memoryMb: '1024',
+  cpuVcpu: '1',
+  memoryGb: '1',
   swapMb: '0',
-  diskMb: '5120',
+  diskGb: '5',
   ioWeight: '500',
   maxDatabases: '0',
   maxBackups: '0',
@@ -98,10 +98,10 @@ function planToForm(p: AdminPlan): PlanFormValues {
     compareAtPriceReais: p.compareAtPriceCents != null ? (p.compareAtPriceCents / 100).toString() : '',
     currency: p.currency,
     billingPeriod: p.billingPeriod,
-    cpuLimitPercent: String(p.cpuLimitPercent),
-    memoryMb: String(p.memoryMb),
+    cpuVcpu: percentToVcpu(p.cpuLimitPercent),
+    memoryGb: mbToGb(p.memoryMb),
     swapMb: String(p.swapMb),
-    diskMb: String(p.diskMb),
+    diskGb: mbToGb(p.diskMb),
     ioWeight: String(p.ioWeight),
     maxDatabases: String(p.maxDatabases),
     maxBackups: String(p.maxBackups),
@@ -127,6 +127,40 @@ function n(v: string): number | undefined {
   return t === '' ? undefined : Number(t);
 }
 
+// Every price field's own placeholder shows the Brazilian comma-decimal
+// convention ("49,90") — an admin typing that literally, as prompted,
+// produced `Number("49,90")` === NaN before this existed, which
+// silently cleared the price on save. `Number()` itself only ever
+// accepts a period, so both formats need normalizing here, not just
+// the one the placeholder happens to suggest.
+function parseReais(v: string): number {
+  return Number(v.trim().replace(',', '.'));
+}
+
+// The form edits CPU/memória/disco the way an admin thinks about them
+// (vCPUs, GB) — Plan.cpuLimitPercent/memoryMb/diskMb themselves stay in
+// the API's own units (a Docker cgroup quota where 100 = one full core,
+// and MB), same convention formatVcpu/formatMemory already use for
+// read-only display elsewhere. Conversion happens only at this form's
+// two boundaries: planToForm (load) and toInput (save) below.
+function percentToVcpu(percent: number): string {
+  const vcpu = percent / 100;
+  return Number.isInteger(vcpu) ? String(vcpu) : String(Number(vcpu.toFixed(2)));
+}
+
+function vcpuToPercent(v: string): number {
+  return Math.round(Number(v.trim().replace(',', '.')) * 100);
+}
+
+function mbToGb(mb: number): string {
+  const gb = mb / 1024;
+  return Number.isInteger(gb) ? String(gb) : String(Number(gb.toFixed(2)));
+}
+
+function gbToMb(v: string): number {
+  return Math.round(Number(v.trim().replace(',', '.')) * 1024);
+}
+
 function toInput(v: PlanFormValues): CreatePlanInput {
   return {
     name: v.name.trim(),
@@ -134,14 +168,14 @@ function toInput(v: PlanFormValues): CreatePlanInput {
     description: v.description.trim() || undefined,
     isPublic: v.isPublic,
     sortOrder: n(v.sortOrder),
-    priceCents: v.priceReais.trim() ? Math.round(Number(v.priceReais) * 100) : undefined,
-    compareAtPriceCents: v.compareAtPriceReais.trim() ? Math.round(Number(v.compareAtPriceReais) * 100) : undefined,
+    priceCents: v.priceReais.trim() ? Math.round(parseReais(v.priceReais) * 100) : undefined,
+    compareAtPriceCents: v.compareAtPriceReais.trim() ? Math.round(parseReais(v.compareAtPriceReais) * 100) : undefined,
     currency: v.currency,
     billingPeriod: v.billingPeriod,
-    cpuLimitPercent: n(v.cpuLimitPercent),
-    memoryMb: Number(v.memoryMb),
+    cpuLimitPercent: v.cpuVcpu.trim() ? vcpuToPercent(v.cpuVcpu) : undefined,
+    memoryMb: gbToMb(v.memoryGb),
     swapMb: n(v.swapMb),
-    diskMb: Number(v.diskMb),
+    diskMb: gbToMb(v.diskGb),
     ioWeight: n(v.ioWeight),
     maxDatabases: n(v.maxDatabases),
     maxBackups: n(v.maxBackups),
@@ -162,7 +196,7 @@ function toInput(v: PlanFormValues): CreatePlanInput {
 }
 
 function isValid(v: PlanFormValues): boolean {
-  if (!v.name.trim() || !v.slug.trim() || !v.memoryMb.trim() || !v.diskMb.trim()) return false;
+  if (!v.name.trim() || !v.slug.trim() || !v.memoryGb.trim() || !v.diskGb.trim()) return false;
   const ranges: [string, string][] = [
     [v.recommendedPlayersMin, v.recommendedPlayersMax],
     [v.recommendedModsMin, v.recommendedModsMax],
@@ -173,8 +207,9 @@ function isValid(v: PlanFormValues): boolean {
   // that isn't actually higher than the real price would just 400 on
   // submit; catching it here means the "Salvar" button itself reflects
   // the invalid state instead of a round trip to find out.
-  const price = v.priceReais.trim() ? Number(v.priceReais) : 0;
-  const comparePrice = v.compareAtPriceReais.trim() ? Number(v.compareAtPriceReais) : null;
+  const price = v.priceReais.trim() ? parseReais(v.priceReais) : 0;
+  const comparePrice = v.compareAtPriceReais.trim() ? parseReais(v.compareAtPriceReais) : null;
+  if (Number.isNaN(price) || (comparePrice != null && Number.isNaN(comparePrice))) return false;
   if (comparePrice != null && comparePrice <= price) return false;
   return true;
 }
@@ -367,17 +402,17 @@ function PlanFormModal({ open, mode, plan, onClose }: { open: boolean; mode: 'cr
         <fieldset className="space-y-4">
           <legend className="text-xs font-semibold tracking-wide text-text-faint uppercase">Recursos</legend>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <Field label="CPU (%)" htmlFor="plan-cpu" required>
-              <Input id="plan-cpu" value={values.cpuLimitPercent} onChange={(e) => patch({ cpuLimitPercent: e.target.value })} />
+            <Field label="CPU (vCPUs)" htmlFor="plan-cpu" required hint="1 vCPU = 100% de um núcleo.">
+              <Input id="plan-cpu" value={values.cpuVcpu} onChange={(e) => patch({ cpuVcpu: e.target.value })} placeholder="1" />
             </Field>
-            <Field label="Memória (MB)" htmlFor="plan-mem" required>
-              <Input id="plan-mem" value={values.memoryMb} onChange={(e) => patch({ memoryMb: e.target.value })} />
+            <Field label="Memória (GB)" htmlFor="plan-mem" required>
+              <Input id="plan-mem" value={values.memoryGb} onChange={(e) => patch({ memoryGb: e.target.value })} placeholder="2" />
             </Field>
             <Field label="Swap (MB)" htmlFor="plan-swap">
               <Input id="plan-swap" value={values.swapMb} onChange={(e) => patch({ swapMb: e.target.value })} />
             </Field>
-            <Field label="Disco (MB)" htmlFor="plan-disk" required>
-              <Input id="plan-disk" value={values.diskMb} onChange={(e) => patch({ diskMb: e.target.value })} />
+            <Field label="Disco (GB)" htmlFor="plan-disk" required>
+              <Input id="plan-disk" value={values.diskGb} onChange={(e) => patch({ diskGb: e.target.value })} placeholder="5" />
             </Field>
             <Field label="Peso de I/O" htmlFor="plan-io">
               <Input id="plan-io" value={values.ioWeight} onChange={(e) => patch({ ioWeight: e.target.value })} />
@@ -548,7 +583,7 @@ function PlanDriftPanel({ planId }: { planId: string }) {
 export function PlansPage() {
   const { data: plans, isLoading, isError } = useQuery({ queryKey: ['admin', 'plans'], queryFn: listPlans });
   const { data: occupancy } = useQuery({ queryKey: ['admin', 'capacity', 'plans'], queryFn: getPlanCapacity });
-  const occupancyById = new Map((occupancy ?? []).map((o) => [o.id, o.occupied]));
+  const occupancyById = new Map((occupancy ?? []).map((o) => [o.id, o]));
   const [formOpen, setFormOpen] = useState<{ mode: 'create' | 'edit'; plan: AdminPlan | null } | null>(null);
   const [driftOpenId, setDriftOpenId] = useState<string | null>(null);
 
@@ -585,6 +620,14 @@ export function PlansPage() {
           {plans.map((p) => {
             const players = formatRange(p.recommendedPlayersMin, p.recommendedPlayersMax);
             const mods = formatRange(p.recommendedModsMin, p.recommendedModsMax);
+            const occ = occupancyById.get(p.id);
+            // Capacity plan (auto-derivation) §6/§11 — `effectiveSlots` is
+            // min(capacidade real dos nodes, maxSlots) whenever occ is
+            // loaded; `null` means genuinely unlimited (no maxSlots AND
+            // every eligible node unlimited). The physical number is
+            // called out separately only when it's the TIGHTER of the
+            // two — i.e. the admin's commercial ceiling is unrealistic.
+            const physicalTighter = occ && p.maxSlots != null && occ.derivedSlots != null && occ.derivedSlots < p.maxSlots;
             return (
               <Card key={p.id}>
                 <CardBody>
@@ -597,10 +640,13 @@ export function PlansPage() {
                         {discountPercent(p.priceCents, p.compareAtPriceCents) != null && (
                           <Badge tone="warn">{discountPercent(p.priceCents, p.compareAtPriceCents)}% off</Badge>
                         )}
-                        {p.maxSlots != null && (
-                          <Badge tone={(occupancyById.get(p.id) ?? 0) >= p.maxSlots ? 'fail' : 'neutral'}>
-                            {occupancyById.get(p.id) ?? 0} / {p.maxSlots} vagas
+                        {occ && (
+                          <Badge tone={occ.effectiveSlots != null && occ.occupied >= occ.effectiveSlots ? 'fail' : physicalTighter ? 'warn' : 'neutral'}>
+                            {occ.occupied} / {occ.effectiveSlots ?? '∞'} vaga{occ.effectiveSlots === 1 ? '' : 's'}
                           </Badge>
+                        )}
+                        {physicalTighter && (
+                          <Badge tone="warn">capacidade física: {occ!.derivedSlots}</Badge>
                         )}
                       </div>
                       <p className="mt-0.5 font-mono text-xs text-text-faint">

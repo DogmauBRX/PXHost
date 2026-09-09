@@ -3,6 +3,7 @@ import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-quer
 import { Plus, Search, ShieldCheck, Users } from 'lucide-react';
 import { blockUser, createUser, listUsers, unblockUser, updateUser } from './admin.api';
 import { ApiError } from '@/shared/api/client';
+import { formatDateTimeShort } from '@/shared/format/datetime';
 import type { AdminUserSummary } from '@/shared/api/types';
 import {
   Alert,
@@ -36,8 +37,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 function formatDate(value: string | null): string {
-  if (!value) return '—';
-  return new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  return value ? formatDateTimeShort(value) : '—';
 }
 
 interface UserFormValues {

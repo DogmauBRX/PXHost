@@ -5,6 +5,7 @@ import { PasswordService } from '../auth/password.service';
 import { SessionRevocationService } from '../auth/session-revocation.service';
 import { AuditService } from '../audit/audit.service';
 import { UpdateAccountDto, ChangePasswordDto } from './dto/account.dto';
+import { normalizeCpf, isValidCpf } from './cpf.util';
 
 // Same discipline as UsersService.SAFE_SELECT (users.service.ts) — never
 // passwordHash/totpSecretEnc/recoveryCodesEnc. language/timezone are
@@ -25,6 +26,15 @@ const ACCOUNT_SELECT = {
   lastLoginAt: true,
   totpEnabledAt: true,
   createdAt: true,
+  cpf: true,
+  billingPostalCode: true,
+  billingAddressLine: true,
+  billingAddressNumber: true,
+  billingAddressComplement: true,
+  billingNeighborhood: true,
+  billingCity: true,
+  billingState: true,
+  billingCountry: true,
 } satisfies Prisma.UserSelect;
 
 @Injectable()
@@ -66,16 +76,30 @@ export class AccountService {
       if (!valid) throw new UnauthorizedException('Current password is incorrect');
     }
 
-    if (dto.email || dto.username) {
+    // The backend is the real source of truth on CPF validity — the
+    // frontend's own check (cpf.ts) is only there for immediate zod
+    // feedback, never trusted alone. Normalized to digits-only before
+    // both the checksum check and persistence.
+    const cpf = dto.cpf !== undefined ? normalizeCpf(dto.cpf) : undefined;
+    if (cpf !== undefined && !isValidCpf(cpf)) {
+      throw new BadRequestException('cpf is not a valid CPF');
+    }
+    const billingPostalCode = dto.billingPostalCode !== undefined ? dto.billingPostalCode.replace(/\D/g, '') : undefined;
+
+    if (dto.email || dto.username || cpf) {
       const clash = await this.prisma.user.findFirst({
         where: {
           deletedAt: null,
           id: { not: userId },
-          OR: [...(dto.email ? [{ email: dto.email }] : []), ...(dto.username ? [{ username: dto.username }] : [])],
+          OR: [
+            ...(dto.email ? [{ email: dto.email }] : []),
+            ...(dto.username ? [{ username: dto.username }] : []),
+            ...(cpf ? [{ cpf }] : []),
+          ],
         },
         select: { id: true },
       });
-      if (clash) throw new ConflictException('A user with that email or username already exists');
+      if (clash) throw new ConflictException('A user with that email, username or CPF already exists');
     }
 
     const updated = await this.prisma.user.update({
@@ -86,6 +110,14 @@ export class AccountService {
         username: dto.username,
         email: dto.email,
         emailVerifiedAt: dto.email !== undefined ? null : undefined,
+        cpf,
+        billingPostalCode,
+        billingAddressLine: dto.billingAddressLine,
+        billingAddressNumber: dto.billingAddressNumber,
+        billingAddressComplement: dto.billingAddressComplement,
+        billingNeighborhood: dto.billingNeighborhood,
+        billingCity: dto.billingCity,
+        billingState: dto.billingState,
       },
       select: ACCOUNT_SELECT,
     });
@@ -93,13 +125,31 @@ export class AccountService {
     // Explicit allow-list, never a spread of the raw DTO — same reasoning
     // as UsersService.update's own comment: audit_logs is append-only, so
     // any field ever added to this DTO that shouldn't live there forever
-    // (currentPassword, obviously) would otherwise be permanent.
+    // (currentPassword, obviously) would otherwise be permanent. cpf
+    // itself is deliberately excluded from the metadata (a tax ID doesn't
+    // belong in an audit trail); billing address fields are logged as a
+    // boolean "changed" flag rather than their actual values for the same
+    // reason.
     await this.audit.record({
       action: 'account.update',
       actorId: userId,
       targetType: 'user',
       targetId: userId,
-      metadata: { firstName: dto.firstName, lastName: dto.lastName, username: dto.username, email: dto.email },
+      metadata: {
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        username: dto.username,
+        email: dto.email,
+        cpfChanged: cpf !== undefined,
+        billingAddressChanged:
+          billingPostalCode !== undefined ||
+          dto.billingAddressLine !== undefined ||
+          dto.billingAddressNumber !== undefined ||
+          dto.billingAddressComplement !== undefined ||
+          dto.billingNeighborhood !== undefined ||
+          dto.billingCity !== undefined ||
+          dto.billingState !== undefined,
+      },
     });
 
     return this.toDto(updated);

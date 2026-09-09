@@ -28,12 +28,12 @@ describe('Templates / eggs (e2e)', () => {
       parallelism: 2,
     });
     await prisma.user.create({
-      data: { email: `tpl-admin-${suffix}@pxhost.local`, username: `tpl-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
+      data: { email: `tpl-admin-${suffix}@gxhost.local`, username: `tpl-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
     });
     const login = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
-      payload: { email: `tpl-admin-${suffix}@pxhost.local`, password: 'AdminPass!234567' },
+      payload: { email: `tpl-admin-${suffix}@gxhost.local`, password: 'AdminPass!234567' },
     });
     adminToken = JSON.parse(login.body).accessToken;
   });
@@ -41,7 +41,7 @@ describe('Templates / eggs (e2e)', () => {
   afterAll(async () => {
     if (templateId) await prisma.serverTemplate.deleteMany({ where: { id: templateId } });
     if (groupId) await prisma.templateGroup.deleteMany({ where: { id: groupId } });
-    await prisma.user.updateMany({ where: { email: `tpl-admin-${suffix}@pxhost.local` }, data: { deletedAt: new Date() } });
+    await prisma.user.updateMany({ where: { email: `tpl-admin-${suffix}@gxhost.local` }, data: { deletedAt: new Date() } });
     await app.close();
   });
 

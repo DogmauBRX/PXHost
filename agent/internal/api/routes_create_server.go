@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/pxhost/agent/internal/panel"
-	"github.com/pxhost/agent/internal/spec"
-	"github.com/pxhost/agent/internal/srv"
+	"github.com/gxhost/agent/internal/panel"
+	"github.com/gxhost/agent/internal/spec"
+	"github.com/gxhost/agent/internal/srv"
 )
 
 // createServerRequest mirrors the panel's CreateAgentServerRequest

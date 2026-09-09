@@ -16,7 +16,7 @@ describe('Public registration (e2e)', () => {
   let app: NestFastifyApplication;
   let prisma: PrismaService;
   const suffix = Date.now();
-  const email = `register-${suffix}@pxhost.local`;
+  const email = `register-${suffix}@gxhost.local`;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();

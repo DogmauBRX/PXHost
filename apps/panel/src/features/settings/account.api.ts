@@ -9,6 +9,14 @@ export interface UpdateAccountInput {
   username?: string;
   email?: string;
   currentPassword?: string;
+  cpf?: string;
+  billingPostalCode?: string;
+  billingAddressLine?: string;
+  billingAddressNumber?: string;
+  billingAddressComplement?: string;
+  billingNeighborhood?: string;
+  billingCity?: string;
+  billingState?: string;
 }
 export const updateAccount = (input: UpdateAccountInput) => apiFetch<ClientAccount>('/api/client/account', { method: 'PATCH', body: JSON.stringify(input) });
 

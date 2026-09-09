@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { CapacityService } from '../capacity/capacity.service';
-import { nodeFitReasons } from '../capacity/capacity.math';
+import { nodeAcceptsNewServers, nodeFitReasons, resolveNodeCapacity } from '../capacity/capacity.math';
 import { deriveHealthStatus } from '../nodes/nodes.service';
 import { fitScore, rankCandidates } from './scheduler.math';
 
@@ -75,8 +75,28 @@ export class NodeSchedulerService {
           continue;
         }
 
+        // Capacity plan (auto-derivation): resolves auto-vs-manual once,
+        // then feeds the SAME shape nodeFitReasons/fitScore already
+        // consumed — see resolveNodeCapacity's own doc comment. In auto
+        // mode, an unconfigured/stale node is eliminated here too (the
+        // health check above only catches offline/degraded, not "never
+        // reported hardware telemetry").
+        const resolved = resolveNodeCapacity(node);
+        const acceptance = nodeAcceptsNewServers({
+          capacityMode: node.capacityMode,
+          maintenanceMode: node.maintenanceMode,
+          health,
+          memory: resolved.memory,
+          disk: resolved.disk,
+          telemetryStale: resolved.telemetryStale,
+        });
+        if (!acceptance.ok) {
+          candidates.push({ nodeId: node.id, name: node.name, eliminated: true, reason: acceptance.reason });
+          continue;
+        }
+
         const usage = await this.capacity.usageForNode(tx, node.id);
-        const reasons = nodeFitReasons(node, usage, request);
+        const reasons = nodeFitReasons(resolved, usage, request);
         if (reasons.length > 0) {
           candidates.push({ nodeId: node.id, name: node.name, eliminated: true, reason: reasons.join('; ') });
           continue;
@@ -89,8 +109,8 @@ export class NodeSchedulerService {
         }
 
         const priority = priorityById.get(node.id) ?? 0;
-        const score = fitScore(node, usage, request, priority, health === 'unknown');
-        const memoryFreeMb = Math.max(node.memoryTotalMb - node.memoryReservedMb - usage.memoryMb, 0);
+        const score = fitScore(resolved, usage, request, priority, health === 'unknown');
+        const memoryFreeMb = Math.max(resolved.memoryTotalMb - resolved.memoryReservedMb - usage.memoryMb, 0);
         candidates.push({ nodeId: node.id, name: node.name, eliminated: false, score });
         survivors.push({ nodeId: node.id, name: node.name, score, priority, memoryFreeMb });
       }

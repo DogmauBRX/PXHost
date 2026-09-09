@@ -4,7 +4,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { AgentClient } from '../nodes/agent-client.service';
 import { AuditService } from '../audit/audit.service';
 import { CapacityService } from '../capacity/capacity.service';
-import { nodeFitReasons } from '../capacity/capacity.math';
+import { nodeFitReasons, resolveNodeCapacity } from '../capacity/capacity.math';
 import { CreatePlanDto, UpdatePlanDto } from './dto/plan.dto';
 import { PLAN_CLIENT_SELECT } from '../authorization/server-access.service';
 import { PublicPlansService } from '../public/public-plans.service';
@@ -331,7 +331,7 @@ export class PlansService {
         const node = await tx.node.findFirst({ where: { id: nodeId, deletedAt: null } });
         if (!node) continue;
         const usage = await this.capacity.usageForNode(tx, nodeId);
-        const reasons = nodeFitReasons(node, usage, { memoryMb: delta.memoryMb, diskMb: delta.diskMb, cpuPercent: delta.cpuPercent });
+        const reasons = nodeFitReasons(resolveNodeCapacity(node), usage, { memoryMb: delta.memoryMb, diskMb: delta.diskMb, cpuPercent: delta.cpuPercent });
         results.push({
           nodeId,
           nodeName: node.name,
@@ -389,7 +389,7 @@ export class PlansService {
         if (!node) continue; // can't actually happen — a node with servers referencing it can't be deleted (NodesService.remove's in-use guard)
         const usage = await this.capacity.usageForNode(tx, nodeId);
         const delta = deltas.get(nodeId)!;
-        const reasons = nodeFitReasons(node, usage, { memoryMb: delta.memoryMb, diskMb: delta.diskMb, cpuPercent: delta.cpuPercent });
+        const reasons = nodeFitReasons(resolveNodeCapacity(node), usage, { memoryMb: delta.memoryMb, diskMb: delta.diskMb, cpuPercent: delta.cpuPercent });
         if (reasons.length > 0) shortfalls.push(`${node.name} (${reasons.join('; ')})`);
       }
       if (shortfalls.length > 0) {
@@ -398,22 +398,25 @@ export class PlansService {
         );
       }
 
-      for (const row of rows) {
-        await tx.server.update({
-          where: { id: row.id },
-          data: {
-            cpuLimitPercent: plan.cpuLimitPercent,
-            memoryMb: plan.memoryMb,
-            swapMb: plan.swapMb,
-            diskMb: plan.diskMb,
-            ioWeight: plan.ioWeight,
-            oomKillEnabled: plan.oomKillEnabled,
-            maxDatabases: plan.maxDatabases,
-            maxBackups: plan.maxBackups,
-            maxSchedules: plan.maxSchedules,
-          },
-        });
-      }
+      // Every row gets the SAME data (the plan's own current values) — one
+      // updateMany instead of N sequential updates, since this all runs
+      // under the plan+node locks acquired above and each extra round trip
+      // is time those locks stay held, blocking concurrent creates/
+      // scheduling on the affected nodes.
+      await tx.server.updateMany({
+        where: { id: { in: rows.map((row) => row.id) } },
+        data: {
+          cpuLimitPercent: plan.cpuLimitPercent,
+          memoryMb: plan.memoryMb,
+          swapMb: plan.swapMb,
+          diskMb: plan.diskMb,
+          ioWeight: plan.ioWeight,
+          oomKillEnabled: plan.oomKillEnabled,
+          maxDatabases: plan.maxDatabases,
+          maxBackups: plan.maxBackups,
+          maxSchedules: plan.maxSchedules,
+        },
+      });
       return { rows, plan };
     });
 

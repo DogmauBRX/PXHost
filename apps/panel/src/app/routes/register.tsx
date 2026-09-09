@@ -5,6 +5,7 @@ import { RegisterForm } from '@/features/public/RegisterForm';
 import { Seo } from '@/features/public/Seo';
 import { Logo } from '@/ui/brand/Logo';
 import { Wordmark } from '@/ui/brand/Wordmark';
+import { HeroCircuitBackground } from '@/features/public/HeroCircuitBackground';
 
 // Same `redirect` contract as /login (see that route's own doc comment)
 // — the commercial checkout flow sends a not-yet-authenticated visitor
@@ -29,13 +30,17 @@ function RegisterPage() {
 
   return (
     <div className="login-hero relative flex min-h-screen items-center justify-center px-4 py-12">
-      <Seo title="Criar conta" description="Crie sua conta PXHost para assinar um plano e gerenciar seu servidor de jogos." path="/register" />
-      <div className="flex w-full max-w-sm flex-col items-center">
+      <HeroCircuitBackground className="login-hero__circuit pointer-events-none absolute inset-0 h-full w-full" />
+      <Seo title="Criar conta" description="Crie sua conta GXhost para assinar um plano e gerenciar seu servidor de jogos." path="/register" />
+      <div className="relative flex w-full max-w-sm flex-col items-center">
         <Link to="/" className="mb-8 flex flex-col items-center gap-4">
-          <Logo size={72} />
+          <div className="login-hero__logo-wrap">
+            <div className="login-hero__logo-glow" />
+            <Logo size={72} className="relative" />
+          </div>
           <Wordmark className="text-5xl" />
         </Link>
-        <div className="w-full rounded-xl border border-border bg-surface p-8 shadow-lg">
+        <div className="w-full rounded-xl border border-border-strong bg-surface p-8 shadow-lg">
           <h1 className="mb-6 text-lg font-semibold text-text">Criar conta</h1>
           <RegisterForm redirectTo={redirectTo} />
           <Link

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { lockNode, lockPlan } from './capacity.locks';
-import type { NodeUsage } from './capacity.math';
+import { nodeAcceptsNewServers, resolveNodeCapacity, slotsForPlanOnNode, type NodeUsage } from './capacity.math';
+import { deriveHealthStatus } from '../nodes/nodes.service';
 
 /** Every server that has EVER been assigned a uid on a node starts counting from here — unchanged from the pre-capacity-Fase-1 constant of the same name in servers.service.ts/transfers.service.ts. */
 export const UID_BASE = 100000;
@@ -125,6 +126,139 @@ export class CapacityService {
       diskMb: (settled._sum.diskMb ?? 0) + inFlightDisk,
       cpuPercent: (settled._sum.cpuLimitPercent ?? 0) + inFlightCpu,
     };
+  }
+
+  /**
+   * Batched sibling of `usageForNode` — capacity plan (auto-derivation)
+   * §11's per-plan-per-node vagas display and the public catalog's
+   * capacity-aware availability both need usage for EVERY node at once;
+   * looping `usageForNode` there would be N+1 queries per request. Same
+   * two-source sum (settled servers + in-flight incoming transfers),
+   * batched with `groupBy`/a single `findMany` instead of per-node
+   * `aggregate` calls. Read-only reporting only — the locked create/
+   * transfer paths keep calling `usageForNode` under the node's advisory
+   * lock, never this.
+   */
+  async usageForNodes(tx: Prisma.TransactionClient, nodeIds: string[]): Promise<Map<string, NodeUsage>> {
+    const usage = new Map<string, NodeUsage>(nodeIds.map((id) => [id, { memoryMb: 0, diskMb: 0, cpuPercent: 0 }]));
+    if (nodeIds.length === 0) return usage;
+
+    const [settled, inFlight] = await Promise.all([
+      tx.server.groupBy({
+        by: ['nodeId'],
+        where: { nodeId: { in: nodeIds }, status: { not: 'deleting' } },
+        _sum: { memoryMb: true, diskMb: true, cpuLimitPercent: true },
+      }),
+      tx.serverTransfer.findMany({
+        where: { targetNodeId: { in: nodeIds }, status: { in: [...ACTIVE_TRANSFER_STATUSES] } },
+        select: { targetNodeId: true, server: { select: { memoryMb: true, diskMb: true, cpuLimitPercent: true } } },
+      }),
+    ]);
+
+    for (const row of settled) {
+      const u = usage.get(row.nodeId);
+      if (!u) continue;
+      u.memoryMb += row._sum.memoryMb ?? 0;
+      u.diskMb += row._sum.diskMb ?? 0;
+      u.cpuPercent += row._sum.cpuLimitPercent ?? 0;
+    }
+    for (const t of inFlight) {
+      const u = usage.get(t.targetNodeId);
+      if (!u) continue;
+      u.memoryMb += t.server.memoryMb;
+      u.diskMb += t.server.diskMb;
+      u.cpuPercent += t.server.cpuLimitPercent;
+    }
+    return usage;
+  }
+
+  /**
+   * Whether AT LEAST ONE node in the whole system is genuinely deployed
+   * and roughly alive — 'online' or 'degraded', never 'unknown' (never
+   * heartbeated, e.g. a fresh dev DB with plans but no bootstrapped
+   * agent yet) or 'offline'. The ONE gate `PublicPlansService` checks
+   * before letting real node capacity influence the public catalog at
+   * all — see that service's own doc comment for the exact incident
+   * ("every plan showed Esgotado on a fresh DB with zero nodes") this
+   * exists to prevent from ever happening again, now scoped correctly:
+   * an infra outage or a not-yet-deployed environment falls back to
+   * maxSlots-only availability instead of blanking the whole storefront.
+   */
+  async hasAnyHealthyNode(tx: Prisma.TransactionClient): Promise<boolean> {
+    const nodes = await tx.node.findMany({ where: { deletedAt: null }, select: { lastHeartbeatAt: true } });
+    return nodes.some((n) => {
+      const health = deriveHealthStatus(n.lastHeartbeatAt);
+      return health === 'online' || health === 'degraded';
+    });
+  }
+
+  /**
+   * Sum of `slotsForPlanOnNode` across every node eligible for (respecting
+   * `PlanNode` restrictions, same opt-in rule `isNodeAllowedForPlan`
+   * enforces on write) and currently ACCEPTING new servers for each plan
+   * — the same computation `CapacityReportService.planUsage()` makes per
+   * plan for the admin UI, factored out here so `PublicPlansService` (a
+   * different module, no per-node breakdown needed) can reuse the exact
+   * same rule without a second implementation. `null` in the returned
+   * map means unlimited on every eligible, accepting node (or no
+   * eligible node contributed a finite number at all).
+   *
+   * Only call this after confirming `hasAnyHealthyNode` — this method
+   * itself doesn't check that, so a caller that skips the check would
+   * reproduce the exact "everything looks sold out" bug that guard
+   * exists to prevent.
+   */
+  async derivedSlotsForPlans(
+    tx: Prisma.TransactionClient,
+    plans: { id: string; memoryMb: number; diskMb: number; cpuLimitPercent: number }[],
+  ): Promise<Map<string, number | null>> {
+    const result = new Map<string, number | null>();
+    if (plans.length === 0) return result;
+
+    const [nodes, planNodeRows] = await Promise.all([
+      tx.node.findMany({ where: { deletedAt: null } }),
+      tx.planNode.findMany({ where: { planId: { in: plans.map((p) => p.id) } } }),
+    ]);
+    const usageByNode = await this.usageForNodes(tx, nodes.map((n) => n.id));
+
+    const restrictionsByPlan = new Map<string, Set<string>>();
+    for (const row of planNodeRows) {
+      if (!restrictionsByPlan.has(row.planId)) restrictionsByPlan.set(row.planId, new Set());
+      restrictionsByPlan.get(row.planId)!.add(row.nodeId);
+    }
+
+    for (const plan of plans) {
+      const restricted = restrictionsByPlan.get(plan.id);
+      const eligibleNodes = restricted ? nodes.filter((n) => restricted.has(n.id)) : nodes;
+      const request = { memoryMb: plan.memoryMb, diskMb: plan.diskMb, cpuPercent: plan.cpuLimitPercent };
+
+      // Starts at 0 (not null) — a plan with no eligible/accepting node
+      // anywhere has ZERO real capacity, never "unlimited". The instant
+      // ANY eligible+accepting node reports unlimited (null) for this
+      // plan, the whole sum flips to null and STAYS there — one node
+      // that can host infinitely many is enough to make the plan
+      // unlimited overall, regardless of what any other node contributes.
+      let derived: number | null = 0;
+      for (const node of eligibleNodes) {
+        const health = deriveHealthStatus(node.lastHeartbeatAt);
+        const resolved = resolveNodeCapacity(node);
+        const acceptance = nodeAcceptsNewServers({
+          capacityMode: node.capacityMode,
+          maintenanceMode: node.maintenanceMode,
+          health,
+          memory: resolved.memory,
+          disk: resolved.disk,
+          telemetryStale: resolved.telemetryStale,
+        });
+        if (!acceptance.ok) continue; // contributes 0 — same as planUsage()'s per-node "reason" path
+        const usage = usageByNode.get(node.id) ?? { memoryMb: 0, diskMb: 0, cpuPercent: 0 };
+        const { slots } = slotsForPlanOnNode(resolved, usage, request);
+        if (slots === null) derived = null;
+        else if (derived !== null) derived += slots;
+      }
+      result.set(plan.id, derived);
+    }
+    return result;
   }
 
   /**

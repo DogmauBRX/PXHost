@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pxhost/agent/internal/spec"
+	"github.com/gxhost/agent/internal/spec"
 )
 
 // NodeFile is the on-disk shape of a node profile for local/dev use.

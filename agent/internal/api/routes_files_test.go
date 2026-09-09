@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/pxhost/agent/internal/auth"
-	"github.com/pxhost/agent/internal/spec"
-	"github.com/pxhost/agent/internal/srv"
+	"github.com/gxhost/agent/internal/auth"
+	"github.com/gxhost/agent/internal/spec"
+	"github.com/gxhost/agent/internal/srv"
 )
 
 const filesTestNodeUUID = "node-files-test"

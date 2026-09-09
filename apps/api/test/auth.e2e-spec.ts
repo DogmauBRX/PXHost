@@ -20,7 +20,7 @@ describe('Auth (e2e)', () => {
   let app: NestFastifyApplication;
   let prisma: PrismaService;
   let redis: RedisService;
-  const email = `e2e-auth-${Date.now()}@pxhost.local`;
+  const email = `e2e-auth-${Date.now()}@gxhost.local`;
   const password = 'CorrectHorseBatteryStaple!23';
 
   beforeAll(async () => {
@@ -32,6 +32,20 @@ describe('Auth (e2e)', () => {
 
     prisma = app.get(PrismaService);
     redis = app.get(RedisService);
+
+    // Login brute-force protection is keyed by IP only, and this test
+    // app has no `trustProxy` (unlike main.ts's real one — see the
+    // dedicated rate-limit test at the bottom of this file), so every
+    // `app.inject()` call anywhere in this file reports the SAME
+    // loopback address and shares ONE Redis bucket. Flushing it here —
+    // same reasoning as the `forgot/reset password` describe block's own
+    // `pwreset_rl:*` flush below — keeps every OTHER test in this file
+    // from failing on a stray 429 just because the shared dev Redis
+    // already had login attempts counted against that IP from an earlier
+    // run, a different spec file, or a developer's own manual testing.
+    const staleLoginRlKeys = await redis.client.keys('login_rl:*');
+    if (staleLoginRlKeys.length > 0) await redis.client.del(...staleLoginRlKeys);
+
     const passwordHash = await argon2.hash(password, {
       type: argon2.argon2id,
       memoryCost: 65536,
@@ -81,7 +95,7 @@ describe('Auth (e2e)', () => {
     const noSuchUser = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
-      payload: { email: 'definitely-not-registered@pxhost.local', password: 'wrong' },
+      payload: { email: 'definitely-not-registered@gxhost.local', password: 'wrong' },
     });
     expect(noSuchUser.statusCode).toBe(wrongPw.statusCode);
     expect(JSON.parse(noSuchUser.body).message).toBe(JSON.parse(wrongPw.body).message);
@@ -186,7 +200,7 @@ describe('Auth (e2e)', () => {
       if (staleRateLimitKeys.length > 0) await redis.client.del(...staleRateLimitKeys);
 
       const passwordHash = await argon2.hash(resetPassword_, { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
-      resetEmail = `e2e-pwreset-${Date.now()}@pxhost.local`;
+      resetEmail = `e2e-pwreset-${Date.now()}@gxhost.local`;
       const user = await prisma.user.create({
         data: { email: resetEmail, username: `e2e-pwreset-${Date.now()}`, passwordHash, isActive: true, emailVerifiedAt: new Date() },
       });
@@ -216,7 +230,7 @@ describe('Auth (e2e)', () => {
     });
 
     it('a nonexistent email gets the IDENTICAL response and creates no token', async () => {
-      const nonexistentEmail = `e2e-pwreset-nosuchuser-${Date.now()}@pxhost.local`;
+      const nonexistentEmail = `e2e-pwreset-nosuchuser-${Date.now()}@gxhost.local`;
       const known = await app.inject({ method: 'POST', url: '/api/auth/forgot-password', payload: { email: resetEmail } });
       const before = await redis.client.keys('pwreset:*');
       const unknown = await app.inject({ method: 'POST', url: '/api/auth/forgot-password', payload: { email: nonexistentEmail } });
@@ -228,7 +242,7 @@ describe('Auth (e2e)', () => {
     });
 
     it('exceeding the per-email rate limit returns 429', async () => {
-      const rateLimitedEmail = `e2e-pwreset-ratelimit-${Date.now()}@pxhost.local`;
+      const rateLimitedEmail = `e2e-pwreset-ratelimit-${Date.now()}@gxhost.local`;
       let last: { statusCode: number } = { statusCode: 0 };
       for (let i = 0; i < 6; i++) {
         last = await app.inject({ method: 'POST', url: '/api/auth/forgot-password', payload: { email: rateLimitedEmail } });
@@ -306,4 +320,30 @@ describe('Auth (e2e)', () => {
       expect(auditRow).not.toBeNull();
     });
   });
+
+  it(
+    "exceeding the per-IP login rate limit returns 429 — flush-then-exceed, since app.inject() (no trustProxy configured on this test app, unlike main.ts's real one) always reports the SAME loopback address, so every login call anywhere in this file/suite/a developer's own manual testing shares one Redis bucket. Placed LAST in this file on purpose: it deliberately exhausts that shared budget, and everything above needs a working, non-rate-limited login to pass",
+    async () => {
+      const rlKeys = await redis.client.keys('login_rl:*');
+      if (rlKeys.length > 0) await redis.client.del(...rlKeys);
+
+      let last: { statusCode: number } = { statusCode: 0 };
+      for (let i = 0; i < 101; i++) {
+        last = await app.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          payload: { email: 'definitely-not-registered@gxhost.local', password: 'wrong' },
+        });
+      }
+      expect(last.statusCode).toBe(429);
+
+      // Flushed again afterward so this doesn't leave the shared bucket
+      // poisoned for the REST of its 15-minute window — another spec
+      // file, or a developer manually testing login right after running
+      // this suite, shares the same dev Redis instance.
+      const afterKeys = await redis.client.keys('login_rl:*');
+      if (afterKeys.length > 0) await redis.client.del(...afterKeys);
+    },
+    15000,
+  );
 });

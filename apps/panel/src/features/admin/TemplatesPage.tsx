@@ -10,6 +10,7 @@ import {
   removeTemplate,
   removeTemplateVariable,
   updateTemplate,
+  updateTemplateVariable,
 } from './admin.api';
 import { ApiError } from '@/shared/api/client';
 import type { AdminTemplate, AdminTemplateVariable, SoftwareKind } from '@/shared/api/types';
@@ -43,9 +44,90 @@ import {
   Modal,
   PageHeader,
   Select,
+  Toggle,
 } from '@/ui/primitives';
 
-// ---- Variables sub-panel — unchanged behavior, restyled ----
+// ---- One variable's inline edit form — rules/description/viewable/editable/order weren't reachable from the panel at all before (only add/remove existed); this is what lets an admin restrict e.g. MINECRAFT_VERSION to `required|string|in:1.21.1,1.20.6` without touching the database directly. ----
+
+function EditVariableRow({
+  templateId,
+  variable,
+  onDone,
+}: {
+  templateId: string;
+  variable: AdminTemplateVariable;
+  onDone: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(variable.name);
+  const [description, setDescription] = useState(variable.description ?? '');
+  const [defaultValue, setDefaultValue] = useState(variable.defaultValue ?? '');
+  const [rules, setRules] = useState(variable.rules ?? 'nullable|string');
+  const [isUserViewable, setIsUserViewable] = useState(variable.isUserViewable);
+  const [isUserEditable, setIsUserEditable] = useState(variable.isUserEditable);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await updateTemplateVariable(templateId, variable.id, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        defaultValue,
+        rules: rules.trim() || 'nullable|string',
+        isUserViewable,
+        isUserEditable,
+      });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'templates'] });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Não foi possível salvar a variável.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mb-2 space-y-2 rounded-lg border border-border bg-surface p-3">
+      {error && <p className="text-xs text-fail">{error}</p>}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <Field label="Nome amigável" htmlFor={`v-name-${variable.id}`}>
+          <Input id={`v-name-${variable.id}`} value={name} onChange={(e) => setName(e.target.value)} className="text-xs" />
+        </Field>
+        <Field label="Valor padrão" htmlFor={`v-default-${variable.id}`}>
+          <Input id={`v-default-${variable.id}`} value={defaultValue} onChange={(e) => setDefaultValue(e.target.value)} className="font-mono text-xs" />
+        </Field>
+        <Field label="Descrição" htmlFor={`v-desc-${variable.id}`} className="sm:col-span-2">
+          <Input id={`v-desc-${variable.id}`} value={description} onChange={(e) => setDescription(e.target.value)} className="text-xs" />
+        </Field>
+        <Field
+          label="Regras"
+          htmlFor={`v-rules-${variable.id}`}
+          hint="Formato Laravel: required|string|max:16 ou required|integer|min:512 ou required|in:1.21.1,1.20.6 — o mesmo que valida no checkout e ao editar o servidor."
+          className="sm:col-span-2"
+        >
+          <Input id={`v-rules-${variable.id}`} value={rules} onChange={(e) => setRules(e.target.value)} placeholder="nullable|string" className="font-mono text-xs" />
+        </Field>
+      </div>
+      <div className="flex flex-wrap gap-6">
+        <Toggle id={`v-viewable-${variable.id}`} checked={isUserViewable} onChange={setIsUserViewable} label="Visível ao cliente" />
+        <Toggle id={`v-editable-${variable.id}`} checked={isUserEditable} onChange={setIsUserEditable} label="Editável pelo cliente" />
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" size="sm" onClick={onDone}>
+          Cancelar
+        </Button>
+        <Button variant="primary" size="sm" disabled={saving || !name.trim()} onClick={() => void handleSave()}>
+          {saving ? 'Salvando…' : 'Salvar'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ---- Variables sub-panel ----
 
 function TemplateVariables({ templateId, variables }: { templateId: string; variables: AdminTemplateVariable[] }) {
   const queryClient = useQueryClient();
@@ -53,6 +135,7 @@ function TemplateVariables({ templateId, variables }: { templateId: string; vari
   const [envVariable, setEnvVariable] = useState('');
   const [defaultValue, setDefaultValue] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   async function handleAdd() {
     if (!name.trim() || !envVariable.trim()) return;
@@ -89,16 +172,27 @@ function TemplateVariables({ templateId, variables }: { templateId: string; vari
       <p className="mb-2 text-xs font-semibold tracking-wide text-text-faint uppercase">Variáveis</p>
       {variables.length > 0 && (
         <div className="mb-2 space-y-0.5">
-          {variables.map((v) => (
-            <div key={v.id} className="flex items-center justify-between gap-2 py-0.5 font-mono text-xs text-text">
-              <span className="truncate">
-                {v.envVariable} = {v.defaultValue ?? '(vazio)'} <span className="text-text-faint">({v.name})</span>
-              </span>
-              <Button variant="ghost" size="sm" onClick={() => void handleRemove(v.id)}>
-                Remover
-              </Button>
-            </div>
-          ))}
+          {variables.map((v) =>
+            editingId === v.id ? (
+              <EditVariableRow key={v.id} templateId={templateId} variable={v} onDone={() => setEditingId(null)} />
+            ) : (
+              <div key={v.id} className="flex items-center justify-between gap-2 py-0.5 font-mono text-xs text-text">
+                <span className="truncate">
+                  {v.envVariable} = {v.defaultValue ?? '(vazio)'} <span className="text-text-faint">({v.name})</span>
+                  {!v.isUserViewable && <span className="ml-2 font-sans text-text-faint">oculta</span>}
+                  {!v.isUserEditable && <span className="ml-2 font-sans text-text-faint">não editável</span>}
+                </span>
+                <span className="flex shrink-0 gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => setEditingId(v.id)}>
+                    Editar
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => void handleRemove(v.id)}>
+                    Remover
+                  </Button>
+                </span>
+              </div>
+            ),
+          )}
         </div>
       )}
       {error && <p className="mb-2 text-xs text-fail">{error}</p>}
@@ -188,7 +282,7 @@ function TemplateFormFields({
             <Input id="tpl-name" value={values.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="Paper" />
           </Field>
           <Field label="Autor" htmlFor="tpl-author" required>
-            <Input id="tpl-author" value={values.author} onChange={(e) => onChange({ author: e.target.value })} placeholder="pxhost" />
+            <Input id="tpl-author" value={values.author} onChange={(e) => onChange({ author: e.target.value })} placeholder="gxhost" />
           </Field>
           <Field label="Grupo" htmlFor="tpl-group" required>
             <Select id="tpl-group" value={values.groupId} onChange={(e) => onChange({ groupId: e.target.value })}>
@@ -489,6 +583,17 @@ export function TemplatesPage() {
     }
   }
 
+  const [toggleError, setToggleError] = useState<string | null>(null);
+  async function handleToggle(t: AdminTemplate, patch: { isActive?: boolean; isPublic?: boolean }) {
+    setToggleError(null);
+    try {
+      await updateTemplate(t.id, patch);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'templates'] });
+    } catch (err) {
+      setToggleError(err instanceof ApiError ? err.message : 'Não foi possível atualizar o template.');
+    }
+  }
+
   const groupNameById = new Map((groups ?? []).map((g) => [g.id, g.name]));
   const visible = (templates ?? []).filter((t) => {
     if (!search.trim()) return true;
@@ -536,6 +641,7 @@ export function TemplatesPage() {
 
       {groupError && <Alert className="mb-6">{groupError}</Alert>}
       {deleteError && <Alert className="mb-6">{deleteError}</Alert>}
+      {toggleError && <Alert className="mb-6">{toggleError}</Alert>}
       {isError && <Alert className="mb-6">Não foi possível carregar os templates.</Alert>}
 
       {isLoading ? (
@@ -569,9 +675,28 @@ export function TemplatesPage() {
                         <Badge tone="warn">software não definido</Badge>
                       )}
                       {!t.isActive && <Badge tone="neutral">inativo</Badge>}
+                      {t.isPublic ? <Badge tone="ok">público</Badge> : <Badge tone="neutral">não público</Badge>}
                     </div>
                     <p className="mt-1 font-mono text-xs text-text-faint">{Object.values(t.dockerImages).join(', ')}</p>
                     <p className="font-mono text-xs text-text-faint">$ {t.startupCommand}</p>
+                    {/* Quick switches — the two flags that decide whether a customer can ever
+                        reach this template through checkout: `isActive` (usable at all) and
+                        `isPublic` (visible/selectable to a customer, GET /api/public/templates).
+                        Kept out of the edit modal so flipping either doesn't require a full save. */}
+                    <div className="mt-2 flex flex-wrap gap-6">
+                      <Toggle
+                        id={`t-active-${t.id}`}
+                        checked={t.isActive}
+                        onChange={(checked) => void handleToggle(t, { isActive: checked })}
+                        label="Ativo"
+                      />
+                      <Toggle
+                        id={`t-public-${t.id}`}
+                        checked={t.isPublic}
+                        onChange={(checked) => void handleToggle(t, { isPublic: checked })}
+                        label="Público (aparece no checkout)"
+                      />
+                    </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <Button variant="secondary" size="sm" onClick={() => setEditing(t)}>

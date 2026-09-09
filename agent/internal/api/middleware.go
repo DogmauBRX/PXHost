@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/pxhost/agent/internal/auth"
+	"github.com/gxhost/agent/internal/auth"
 )
 
 // requireNodeToken gates the REST control endpoints the panel calls

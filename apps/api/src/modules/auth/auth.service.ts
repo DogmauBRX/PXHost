@@ -8,6 +8,7 @@ import { AuditService } from '../audit/audit.service';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 import { SessionRevocationService } from './session-revocation.service';
+import { TurnstileService } from './turnstile.service';
 
 export interface RequestMeta {
   ip?: string | null;
@@ -24,6 +25,32 @@ export interface LoginResult {
 
 const MAX_FAILED_LOGINS = 5;
 const LOCKOUT_MINUTES = 15;
+
+// Login brute-force protection — same hand-rolled INCR+EXPIRE scheme as
+// register/reset-password below (`checkRegisterRateLimit`/
+// `checkResetRateLimit`), keyed by IP only. Deliberately NOT keyed by
+// email too, unlike those two: MAX_FAILED_LOGINS/LOCKOUT_MINUTES above
+// already lock any KNOWN account after 5 bad passwords, persisted on the
+// User row itself (survives a Redis flush, and is the stricter of the
+// two) — a second, redundant per-email Redis counter would add nothing.
+// What that DB-column lockout can't reach is exactly what this closes:
+// the `!user` branch of `login()` returns before any lockout bookkeeping
+// ever runs, so spraying MANY different (real or made-up) email
+// addresses from one source — credential stuffing, account enumeration —
+// was previously unthrottled altogether. Checked first thing in
+// `login()`, before the account lookup, so it covers that branch too.
+const LOGIN_RL_WINDOW_SECONDS = 15 * 60;
+// High enough to never interfere with a legitimate shared IP (an office/
+// school NAT, a mobile carrier) or, incidentally, with this repo's own
+// e2e suite — dozens of spec files each log in a handful of test users
+// via `app.inject()`, which defaults to the SAME loopback address for
+// every one of them, so this counter is effectively shared across the
+// entire suite in one Redis instance. Still a real ceiling against a
+// high-volume automated run: combined with MAX_FAILED_LOGINS' tighter
+// 5-per-account lockout above (the primary defense for any ONE targeted
+// account), this is the backstop against spraying many DIFFERENT (real
+// or made-up) accounts from a single source.
+const LOGIN_RL_LIMIT_PER_IP = 100;
 
 // Client account management, Fase 1 — password-reset token. Same shape as
 // NodeBootstrapService's bootstrap token (node-bootstrap.service.ts):
@@ -61,9 +88,13 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly sessionRevocation: SessionRevocationService,
     private readonly mail: MailService,
+    private readonly turnstile: TurnstileService,
   ) {}
 
-  async login(email: string, plainPassword: string, meta: RequestMeta): Promise<LoginResult> {
+  async login(email: string, plainPassword: string, meta: RequestMeta, captchaToken?: string): Promise<LoginResult> {
+    await this.turnstile.verify(captchaToken, meta.ip);
+    await this.checkLoginRateLimit(meta.ip);
+
     const user = await this.prisma.user.findFirst({
       where: { email: { equals: email, mode: 'insensitive' }, deletedAt: null },
     });
@@ -149,7 +180,7 @@ export class AuthService {
   /**
    * Commercial site — public self-signup. Refuses at USE time when the
    * feature isn't opted into (`ALLOW_PUBLIC_REGISTRATION`, default
-   * false), the same posture `BillingWebhookService.verifySignature`
+   * false), the same posture `AsaasProvider.parseWebhook`
    * already established for an optional feature rather than gating it
    * only at the controller: a 404 here means "this deployment never
    * turned registration on," not "the route doesn't exist," and either
@@ -167,7 +198,10 @@ export class AuthService {
    * shape exactly) so the commercial checkout flow can go straight from
    * "create account" into "subscribe" without a second round trip.
    */
-  async register(dto: { name: string; email: string; password: string; confirmPassword: string }, meta: RequestMeta): Promise<LoginResult> {
+  async register(
+    dto: { name: string; email: string; password: string; confirmPassword: string; captchaToken?: string },
+    meta: RequestMeta,
+  ): Promise<LoginResult> {
     if (!this.config.get<boolean>('ALLOW_PUBLIC_REGISTRATION')) {
       throw new NotFoundException('Not found');
     }
@@ -175,6 +209,7 @@ export class AuthService {
       throw new BadRequestException('password and confirmPassword must match');
     }
 
+    await this.turnstile.verify(dto.captchaToken, meta.ip);
     await this.checkRegisterRateLimit(dto.email, meta.ip);
 
     const email = dto.email.trim();
@@ -201,6 +236,24 @@ export class AuthService {
       ...result,
       user: { id: user.id, email: user.email, username: user.username, globalRole: user.globalRole },
     };
+  }
+
+  /**
+   * `ip` absent (no `trustProxy` in front, or a genuinely IP-less
+   * request) never blocks — there's nothing to key a counter on, and
+   * refusing every request in that case would be worse than the brute-
+   * force risk this exists to reduce. In production behind Caddy/
+   * Cloudflare (deploy plan), `main.ts`'s `trustProxy: true` means this
+   * is always populated with the real client address, never the proxy's.
+   */
+  private async checkLoginRateLimit(ip: string | null | undefined): Promise<void> {
+    if (!ip) return;
+    const key = `login_rl:ip:${ip}`;
+    const count = await this.redis.client.incr(key);
+    if (count === 1) await this.redis.client.expire(key, LOGIN_RL_WINDOW_SECONDS);
+    if (count > LOGIN_RL_LIMIT_PER_IP) {
+      throw new HttpException('Muitas tentativas de login em pouco tempo — aguarde antes de tentar novamente.', HttpStatus.TOO_MANY_REQUESTS);
+    }
   }
 
   private async checkRegisterRateLimit(email: string, ip: string | null | undefined): Promise<void> {
@@ -314,7 +367,8 @@ export class AuthService {
    * `SET` before it is a sub-ms operation, so both the "user exists" and
    * "user doesn't" branches return in comparable time.
    */
-  async requestPasswordReset(email: string, meta: RequestMeta): Promise<void> {
+  async requestPasswordReset(email: string, meta: RequestMeta, captchaToken?: string): Promise<void> {
+    await this.turnstile.verify(captchaToken, meta.ip);
     await this.checkResetRateLimit(email, meta.ip);
 
     const user = await this.prisma.user.findFirst({

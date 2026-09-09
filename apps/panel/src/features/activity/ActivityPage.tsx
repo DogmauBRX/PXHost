@@ -2,11 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Activity } from 'lucide-react';
 import { listActivity } from './activity.api';
 import { ApiError } from '@/shared/api/client';
+import { formatDateTime as formatDate } from '@/shared/format/datetime';
 import { Alert, EmptyState, LoadingRow, PageHeader, TBody, TD, TR, Table, TableWrap } from '@/ui/primitives';
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('pt-BR');
-}
 
 const EVENT_LABELS: Record<string, string> = {
   'server.power.start': 'Iniciou o servidor',

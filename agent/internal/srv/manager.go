@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/pxhost/agent/internal/spec"
+	"github.com/gxhost/agent/internal/spec"
 )
 
 // Manager is the registry of every server this agent knows about. In the
@@ -46,14 +46,4 @@ func (m *Manager) Remove(uuid string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.servers, uuid)
-}
-
-func (m *Manager) List() []*Server {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	out := make([]*Server, 0, len(m.servers))
-	for _, s := range m.servers {
-		out = append(out, s)
-	}
-	return out
 }

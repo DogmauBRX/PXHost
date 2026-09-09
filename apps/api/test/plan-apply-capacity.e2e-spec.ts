@@ -63,7 +63,7 @@ describe('Plans — apply respects node capacity (e2e)', () => {
 
     const passwordHash = await argon2.hash('PlanCapPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
     const admin = await prisma.user.create({
-      data: { email: `plan-cap-admin-${suffix}@pxhost.local`, username: `plan-cap-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
+      data: { email: `plan-cap-admin-${suffix}@gxhost.local`, username: `plan-cap-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
     });
     adminToken = JSON.parse((await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: admin.email, password: 'PlanCapPass!234567' } })).body).accessToken;
 
@@ -93,7 +93,7 @@ describe('Plans — apply respects node capacity (e2e)', () => {
     });
     planId = JSON.parse(planRes.body).id;
 
-    const ownerRes = await prisma.user.create({ data: { email: `plan-cap-owner-${suffix}@pxhost.local`, username: `plan-cap-owner-${suffix}`, passwordHash, isActive: true } });
+    const ownerRes = await prisma.user.create({ data: { email: `plan-cap-owner-${suffix}@gxhost.local`, username: `plan-cap-owner-${suffix}`, passwordHash, isActive: true } });
     for (let i = 0; i < 3; i++) {
       const createRes = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId: ownerRes.id, nodeId, templateId, planId, name: `plan-cap-e2e server ${i}` } });
       expect(createRes.statusCode).toBe(202);
@@ -110,7 +110,7 @@ describe('Plans — apply respects node capacity (e2e)', () => {
     await prisma.location.deleteMany({ where: { id: locationId } });
     await prisma.plan.deleteMany({ where: { id: planId } });
     await prisma.user.updateMany({
-      where: { email: { in: [`plan-cap-admin-${suffix}@pxhost.local`, `plan-cap-owner-${suffix}@pxhost.local`] } },
+      where: { email: { in: [`plan-cap-admin-${suffix}@gxhost.local`, `plan-cap-owner-${suffix}@gxhost.local`] } },
       data: { deletedAt: new Date() },
     });
     await new Promise<void>((resolve) => fakeAgent.close(() => resolve()));

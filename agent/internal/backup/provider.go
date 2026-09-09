@@ -14,7 +14,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/pxhost/agent/internal/fsx"
+	"github.com/gxhost/agent/internal/fsx"
 )
 
 var (

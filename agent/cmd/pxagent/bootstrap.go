@@ -6,9 +6,9 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/pxhost/agent/internal/config"
-	"github.com/pxhost/agent/internal/dockerx"
-	"github.com/pxhost/agent/internal/panel"
+	"github.com/gxhost/agent/internal/config"
+	"github.com/gxhost/agent/internal/dockerx"
+	"github.com/gxhost/agent/internal/panel"
 )
 
 // runBootstrapCmd redeems a single-use, admin-issued bootstrap token for a

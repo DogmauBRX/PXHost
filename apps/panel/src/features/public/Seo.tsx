@@ -41,7 +41,7 @@ function setCanonical(url: string): void {
  */
 export function Seo({ title, description, path }: SeoProps) {
   useEffect(() => {
-    const fullTitle = `${title} · PXHost`;
+    const fullTitle = `${title} · GXhost`;
     const url = `${window.location.origin}${path ?? window.location.pathname}`;
 
     document.title = fullTitle;

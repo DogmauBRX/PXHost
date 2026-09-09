@@ -96,7 +96,7 @@ export function AssistantChat({ serverId }: { serverId: string }) {
             <ChatBubble
               role="assistant"
               serverId={serverId}
-              blocks={[{ type: 'text', text: 'Oi! Sou o assistente PXHOST 🤖 Posso ajudar com o dia a dia do seu servidor — instalar mods/plugins, backups, configurações e mais. O que você quer fazer?' }]}
+              blocks={[{ type: 'text', text: 'Oi! Sou o assistente GXHOST 🤖 Posso ajudar com o dia a dia do seu servidor — instalar mods/plugins, backups, configurações e mais. O que você quer fazer?' }]}
             />
             <SuggestionChips suggestions={suggestions ?? []} onPick={(title) => void send(title)} disabled={sending} />
           </div>

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pxhost/agent/internal/backup"
-	"github.com/pxhost/agent/internal/spec"
+	"github.com/gxhost/agent/internal/backup"
+	"github.com/gxhost/agent/internal/spec"
 )
 
 func newBackupTestServer(t *testing.T) (*Server, *backup.LocalProvider) {

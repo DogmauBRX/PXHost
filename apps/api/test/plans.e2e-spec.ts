@@ -22,19 +22,19 @@ describe('Plans (e2e)', () => {
 
     const passwordHash = await argon2.hash('AdminPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
     await prisma.user.create({
-      data: { email: `plan-admin-${suffix}@pxhost.local`, username: `plan-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
+      data: { email: `plan-admin-${suffix}@gxhost.local`, username: `plan-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
     });
     const login = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
-      payload: { email: `plan-admin-${suffix}@pxhost.local`, password: 'AdminPass!234567' },
+      payload: { email: `plan-admin-${suffix}@gxhost.local`, password: 'AdminPass!234567' },
     });
     adminToken = JSON.parse(login.body).accessToken;
   });
 
   afterAll(async () => {
     if (planId) await prisma.plan.deleteMany({ where: { id: planId } });
-    await prisma.user.updateMany({ where: { email: `plan-admin-${suffix}@pxhost.local` }, data: { deletedAt: new Date() } });
+    await prisma.user.updateMany({ where: { email: `plan-admin-${suffix}@gxhost.local` }, data: { deletedAt: new Date() } });
     await app.close();
   });
 

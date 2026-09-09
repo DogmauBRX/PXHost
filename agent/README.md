@@ -1,7 +1,7 @@
-# PXHost Node Agent
+# GXhost Node Agent
 
 Go daemon that runs on each hosting node and drives Docker on behalf of the
-PXHost panel. See [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) section 4
+GXhost panel. See [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) section 4
 for the full design.
 
 ## Status: M14 — Billing hooks (final roadmap milestone; no agent-side bugs found)
@@ -181,7 +181,7 @@ the `servers` row's `node_id` had moved, the source's allocation was
 freed and the target's promoted to primary, and the server started
 normally on its new node. (One test-topology caveat, not a product bug:
 since both "nodes" share this one machine's single Docker Engine,
-container NAMES collide across them — `pxhost-<uuid>` on the source
+container NAMES collide across them — `gxhost-<uuid>` on the source
 blocks the identical name on the target until the source's copy is
 actually removed. A real deployment's two nodes have two separate Docker
 Engines, so this never arises there; proving it here required manually
@@ -692,7 +692,7 @@ What exists today:
   HTTP/WS API, optionally registering and auto-starting one or more
   servers, adopting an already-running container by name if one exists
   (a small preview of the full boot-reconciliation sweep that lands in M3).
-- `configs/seccomp-pxhost.json` — generated from Docker's own upstream
+- `configs/seccomp-gxhost.json` — generated from Docker's own upstream
   default profile (`hack/gen-seccomp`) by unconditionally stripping a
   denylist of dangerous syscalls, on top of the `CapDrop: ALL` that already
   makes most of them unreachable.
@@ -777,7 +777,7 @@ go build -o bin/wsclient ./hack/wsclient
 TOKEN=$(./bin/devtoken mint --key hack/smoketest/keys/panel-ed25519.key \
   --node <node_uuid from node.json> --server <uuid from server2.json>)
 ./bin/wsclient --url ws://127.0.0.1:8443/api/servers/<uuid>/ws \
-  --token "$TOKEN" --command "hello pxhost console" --duration 6s
+  --token "$TOKEN" --command "hello gxhost console" --duration 6s
 ```
 
 `hack/smoketest/{node,server2}.json` are a working example — `server2.json`

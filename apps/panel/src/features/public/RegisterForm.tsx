@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate } from '@tanstack/react-router';
 import { register } from '@/features/auth/auth.api';
+import { Turnstile, TURNSTILE_SITE_KEY } from '@/features/auth/Turnstile';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { ApiError } from '@/shared/api/client';
 import { Alert, Button, Field, Input } from '@/ui/primitives';
@@ -29,6 +30,7 @@ export function RegisterForm({ redirectTo }: { redirectTo?: string } = {}) {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState('');
 
   const {
     register: registerField,
@@ -39,7 +41,7 @@ export function RegisterForm({ redirectTo }: { redirectTo?: string } = {}) {
   async function onSubmit(values: FormValues) {
     setServerError(null);
     try {
-      const res = await register(values);
+      const res = await register({ ...values, captchaToken: captchaToken || undefined });
       setSession(res.accessToken, {
         id: res.user.id,
         email: res.user.email,
@@ -79,9 +81,16 @@ export function RegisterForm({ redirectTo }: { redirectTo?: string } = {}) {
         <Input id="confirmPassword" type="password" autoComplete="new-password" invalid={!!errors.confirmPassword} {...registerField('confirmPassword')} />
       </Field>
 
+      <Turnstile onVerify={setCaptchaToken} />
+
       {serverError && <Alert>{serverError}</Alert>}
 
-      <Button type="submit" variant="primary" disabled={isSubmitting} className="mt-1 w-full">
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={isSubmitting || (!!TURNSTILE_SITE_KEY && !captchaToken)}
+        className="mt-1 w-full"
+      >
         {isSubmitting ? 'Criando conta…' : 'Criar conta'}
       </Button>
     </form>

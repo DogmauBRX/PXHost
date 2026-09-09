@@ -24,6 +24,7 @@ import {
   TableWrap,
 } from '@/ui/primitives';
 import { formatBillingPeriod, formatPrice } from '@/shared/format/plan';
+import { formatDateTimeShort } from '@/shared/format/datetime';
 
 const PAGE_SIZE = 25;
 
@@ -46,8 +47,7 @@ const STATUS_TONE: Record<SubscriptionStatus, 'ok' | 'warn' | 'fail' | 'neutral'
 const STATUS_OPTIONS: SubscriptionStatus[] = ['pending', 'active', 'past_due', 'suspended', 'cancelled', 'expired'];
 
 function formatDate(value: string | null): string {
-  if (!value) return '—';
-  return new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  return value ? formatDateTimeShort(value) : '—';
 }
 
 /**

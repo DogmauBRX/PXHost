@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MapPin } from 'lucide-react';
 import { createLocation, listLocations } from './admin.api';
 import { ApiError } from '@/shared/api/client';
+import { formatDateTime as formatDate } from '@/shared/format/datetime';
 import {
   Alert,
   Button,
@@ -19,10 +20,6 @@ import {
   Table,
   TableWrap,
 } from '@/ui/primitives';
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('pt-BR');
-}
 
 export function LocationsPage() {
   const queryClient = useQueryClient();

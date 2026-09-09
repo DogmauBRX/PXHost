@@ -41,15 +41,6 @@ export const envSchema = z.object({
   PANEL_URL: z.string().url().default('http://localhost:5173'),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
 
-  // HMAC key for the external payment webhook (architecture doc roadmap
-  // M14). Optional, unlike every other secret above — this whole
-  // feature is itself marked "(deferred)" in the roadmap, and making it
-  // required would force every dev/test deployment to configure a
-  // billing secret just to boot. BillingWebhookService refuses to
-  // process any event at USE time if this is unset, rather than
-  // silently accepting an unverified payload.
-  BILLING_WEBHOOK_SECRET: z.string().min(1).optional(),
-
   // Client-features Fase 8: which AssistantProvider answers
   // /api/client/assistant/chat. 'kb' (default) is the deterministic
   // knowledge base — no external calls, no cost, no key needed. 'llm' is
@@ -58,16 +49,16 @@ export const envSchema = z.object({
   // above) because requiring it would force every dev/test deployment to
   // configure an LLM key just to boot — AssistantModule's provider
   // factory falls back to 'kb' with a boot warning if 'llm' is requested
-  // without a key, deliberately different from BillingWebhookService's
-  // refuse-at-use-time: a customer-facing assistant that 500s on every
+  // without a key, deliberately different from ASAAS_API_KEY's
+  // refuse-at-use-time below: a customer-facing assistant that 500s on every
   // message is worse than one that quietly answers from the catalog.
   ASSISTANT_PROVIDER: z.enum(['kb', 'llm']).default('kb'),
   ASSISTANT_LLM_API_KEY: z.string().min(1).optional(),
 
   // Client account management, Fase 1 — generic SMTP for password-reset
   // emails, no specific provider baked in. All optional, same posture as
-  // ASSISTANT_LLM_API_KEY just above (not BILLING_WEBHOOK_SECRET's
-  // refuse-at-use-time): MailService falls back to logging the reset
+  // ASSISTANT_LLM_API_KEY just above (not ASAAS_API_KEY's own
+  // refuse-at-use-time below): MailService falls back to logging the reset
   // link instead of failing when MAIL_HOST is unset, since the
   // forgot-password endpoint must always return 200 regardless of mail
   // outcome (anti-enumeration) — a "refuse" posture would have nowhere
@@ -98,6 +89,58 @@ export const envSchema = z.object({
   // only needs to diverge if the commercial site is ever served from a
   // different domain than the panel app itself.
   PUBLIC_SITE_URL: z.string().url().optional(),
+
+  // Payments plan (Asaas, migrated from Mercado Pago 2026-09) — all
+  // optional, refuse-at-USE-time posture (not ASSISTANT_LLM_API_KEY's
+  // silent-fallback posture): a deployment that hasn't configured Asaas must fail
+  // loudly the moment a customer tries to check out, never boot-fail
+  // (every dev/test environment must still start with none of this
+  // configured) and never silently accept an unverifiable payment.
+  //
+  // Asaas authenticates by API key (`access_token` header — NOT
+  // `Bearer`, confirmed against their own docs) plus, for webhooks, the
+  // separate WEBHOOK_TOKEN below — a static token, not an HMAC
+  // signature (see AsaasProvider.parseWebhook's own doc comment for why
+  // that makes the mandatory re-fetch-before-acting rule even more
+  // load-bearing here than it was for Mercado Pago).
+  ASAAS_API_KEY: z.string().min(1).optional(),
+  // Asaas's dashboard and API are genuinely separate environments with
+  // separate credentials (sandbox.asaas.com vs asaas.com; sandbox keys
+  // never work in production and vice versa) — this decides which base
+  // URL AsaasClient talks to. Defaults to the safe choice: a deployment
+  // that forgets to set this talks to sandbox, never accidentally to
+  // production.
+  ASAAS_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
+  // Override for the base URL — only needed for something unusual
+  // (a proxy, a mock server in CI). Normally unset; AsaasClient derives
+  // the real URL from ASAAS_ENVIRONMENT alone.
+  ASAAS_BASE_URL: z.string().url().optional(),
+  // The static token configured in Asaas's own dashboard (Integrações >
+  // Webhooks), sent back as the `asaas-access-token` header on every
+  // notification. AsaasProvider.parseWebhook compares it with
+  // timingSafeEqual — never the API key, a different value entirely.
+  ASAAS_WEBHOOK_TOKEN: z.string().min(1).optional(),
+
+  // Anti-bot for login/register/forgot-password (Cloudflare Turnstile).
+  // Optional, and off (verification skipped entirely) when unset — the
+  // same "explicit opt-in, zero dev/test friction" posture
+  // ALLOW_PUBLIC_REGISTRATION already uses, deliberately NOT
+  // ASAAS_API_KEY's refuse-at-use-time above: an unconfigured
+  // deployment should behave exactly like it did before this feature
+  // existed (nobody locked out of login), not fail every auth attempt
+  // because nobody has set up a Cloudflare account yet. The site key
+  // (public, safe in a browser bundle) is a SEPARATE var in the panel's
+  // own build — VITE_TURNSTILE_SITE_KEY, apps/panel/.env — never here.
+  TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
+
+  // Grace window between a subscription's currentPeriodEndsAt and the
+  // server actually being suspended for non-payment (payments plan's
+  // inadimplência flow) — a fixed operational knob, not a secret.
+  BILLING_GRACE_DAYS: z.coerce.number().int().nonnegative().default(3),
+  // How long a `pending` order (and the subscription slot it holds)
+  // survives an abandoned checkout before the billing-cycle job expires
+  // it — see Order.expiresAt's own doc comment in schema.prisma.
+  CHECKOUT_ORDER_TTL_MINUTES: z.coerce.number().int().positive().default(1440),
 });
 
 export type Env = z.infer<typeof envSchema>;

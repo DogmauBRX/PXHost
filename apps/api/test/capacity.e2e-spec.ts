@@ -36,17 +36,17 @@ describe('Capacity: CPU accounting + read API (e2e)', () => {
 
     const passwordHash = await argon2.hash('AdminPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
     await prisma.user.create({
-      data: { email: `cap-admin-${suffix}@pxhost.local`, username: `cap-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
+      data: { email: `cap-admin-${suffix}@gxhost.local`, username: `cap-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
     });
     const login = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
-      payload: { email: `cap-admin-${suffix}@pxhost.local`, password: 'AdminPass!234567' },
+      payload: { email: `cap-admin-${suffix}@gxhost.local`, password: 'AdminPass!234567' },
     });
     adminToken = JSON.parse(login.body).accessToken;
 
     const owner = await prisma.user.create({
-      data: { email: `cap-owner-${suffix}@pxhost.local`, username: `cap-owner-${suffix}`, passwordHash, isActive: true },
+      data: { email: `cap-owner-${suffix}@gxhost.local`, username: `cap-owner-${suffix}`, passwordHash, isActive: true },
     });
     ownerId = owner.id;
 
@@ -76,7 +76,7 @@ describe('Capacity: CPU accounting + read API (e2e)', () => {
     await prisma.node.deleteMany({ where: { locationId } });
     await prisma.location.deleteMany({ where: { id: locationId } });
     await prisma.user.updateMany({
-      where: { email: { in: [`cap-admin-${suffix}@pxhost.local`, `cap-owner-${suffix}@pxhost.local`] } },
+      where: { email: { in: [`cap-admin-${suffix}@gxhost.local`, `cap-owner-${suffix}@gxhost.local`] } },
       data: { deletedAt: new Date() },
     });
     await app.close();
@@ -235,5 +235,203 @@ describe('Capacity: CPU accounting + read API (e2e)', () => {
 
     const count = await asAdmin((tx) => tx.server.count({ where: { nodeId } }));
     expect(count).toBe(0); // pure preview — nothing persisted
+  });
+
+  // ─────────── Capacity plan (auto-derivation) ───────────
+
+  it('a node left at capacityMode=manual (every node\'s default) is completely unaffected by auto-mode logic, even with zero telemetry', async () => {
+    const nodeId = await makeNode('manual-untouched', 4096);
+    const res = await authed(`/api/admin/capacity/nodes/${nodeId}`);
+    const body = JSON.parse(res.body);
+    expect(body.capacityMode).toBe('manual');
+    expect(body.acceptsNewServers).toBe(true);
+    expect(body.memory.provenance).toBe('manual');
+  });
+
+  it('auto mode derives commercial capacity from reported telemetry, not the declared columns', async () => {
+    const nodeId = await makeNode('auto-derives', 999); // declared total deliberately wrong/irrelevant in auto mode
+    await asAdmin((tx) =>
+      tx.node.update({
+        where: { id: nodeId },
+        data: { capacityMode: 'auto', reportedMemoryTotalMb: 32_000, reportedDiskTotalMb: 500_000, reportedAt: new Date(), lastHeartbeatAt: new Date() },
+      }),
+    );
+
+    const res = await authed(`/api/admin/capacity/nodes/${nodeId}`);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.capacityMode).toBe('auto');
+    expect(body.memory.provenance).toBe('auto');
+    expect(body.memory.detected).toBe(32_000);
+    expect(body.memory.totalPhysical).toBe(32_000); // NOT 999 — the declared column is ignored in auto mode
+    expect(body.acceptsNewServers).toBe(true);
+  });
+
+  it('auto mode prefers the cgroup memory LIMIT over the host-wide reported total (the LXC/Proxmox fix)', async () => {
+    const nodeId = await makeNode('auto-cgroup', 999);
+    await asAdmin((tx) =>
+      tx.node.update({
+        where: { id: nodeId },
+        data: {
+          capacityMode: 'auto',
+          reportedMemoryTotalMb: 192_000,
+          reportedMemoryLimitMb: 32_000,
+          reportedDiskTotalMb: 500_000,
+          reportedAt: new Date(),
+          lastHeartbeatAt: new Date(),
+        },
+      }),
+    );
+
+    const res = await authed(`/api/admin/capacity/nodes/${nodeId}`);
+    const body = JSON.parse(res.body);
+    expect(body.memory.detected).toBe(32_000);
+    expect(body.memory.totalPhysical).toBe(32_000);
+  });
+
+  it('auto mode with NO telemetry ever received refuses new servers — never falls back to unlimited', async () => {
+    const nodeId = await makeNode('auto-unconfigured');
+    await asAdmin((tx) => tx.node.update({ where: { id: nodeId }, data: { capacityMode: 'auto' } }));
+
+    const snapshot = JSON.parse((await authed(`/api/admin/capacity/nodes/${nodeId}`)).body);
+    expect(snapshot.acceptsNewServers).toBe(false);
+    expect(snapshot.memory.provenance).toBe('unconfigured');
+
+    const planId = await makePlan(100);
+    const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'e2e auto-unconfigured server' } });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('auto mode refuses new servers when the node is offline (no recent heartbeat), even with old telemetry on file', async () => {
+    const nodeId = await makeNode('auto-offline');
+    await asAdmin((tx) =>
+      tx.node.update({
+        where: { id: nodeId },
+        data: { capacityMode: 'auto', reportedMemoryTotalMb: 32_000, reportedAt: new Date(Date.now() - 10 * 60_000), lastHeartbeatAt: new Date(Date.now() - 10 * 60_000) },
+      }),
+    );
+
+    const planId = await makePlan(100);
+    const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'e2e auto-offline server' } });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('auto mode with fresh telemetry accepts a fitting create', async () => {
+    const nodeId = await makeNode('auto-accepts', 999);
+    await asAdmin((tx) =>
+      tx.node.update({
+        where: { id: nodeId },
+        data: { capacityMode: 'auto', reportedMemoryTotalMb: 8000, reportedDiskTotalMb: 500_000, memoryOverallocatePct: 0, reportedAt: new Date(), lastHeartbeatAt: new Date() },
+      }),
+    );
+
+    const planId = await makePlan(500);
+    const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'e2e auto-accepts server' } });
+    expect(res.statusCode).toBe(202);
+  });
+
+  it('§14 override guard: declaring a manual total ABOVE the detected hardware is refused without acknowledgeOverride', async () => {
+    const nodeId = await makeNode('override-guard', 4096);
+    await asAdmin((tx) => tx.node.update({ where: { id: nodeId }, data: { reportedMemoryTotalMb: 4096, reportedAt: new Date() } }));
+
+    const blocked = await authed(`/api/admin/nodes/${nodeId}`, { method: 'PATCH', payload: { memoryTotalMb: 999_999 } });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.body).toContain('CAPACITY_OVERRIDE_REQUIRED');
+
+    const stillOld = await authed(`/api/admin/capacity/nodes/${nodeId}`);
+    expect(JSON.parse(stillOld.body).memory.totalPhysical).toBe(4096); // refused — nothing changed
+
+    const acknowledged = await authed(`/api/admin/nodes/${nodeId}`, {
+      method: 'PATCH',
+      payload: { memoryTotalMb: 999_999, acknowledgeOverride: true, changeReason: 'e2e test override' },
+    });
+    expect(acknowledged.statusCode).toBe(200);
+    expect(JSON.parse(acknowledged.body).memoryTotalMb).toBe(999_999);
+  });
+
+  it('the override guard only applies to the dimension actually being changed, and never re-triggers on an unrelated edit', async () => {
+    const nodeId = await makeNode('override-scoped', 4096);
+    await asAdmin((tx) => tx.node.update({ where: { id: nodeId }, data: { reportedMemoryTotalMb: 100, reportedAt: new Date() } })); // already "over-declared" vs. detected
+    // Editing an UNRELATED field (name) must never require acknowledgeOverride, even though memoryTotalMb already exceeds detected.
+    const res = await authed(`/api/admin/nodes/${nodeId}`, { method: 'PATCH', payload: { name: `cap-e2e-node-renamed-${suffix}` } });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('the override guard is a no-op in auto mode — declared columns are not the ceiling there', async () => {
+    const nodeId = await makeNode('override-auto-exempt', 4096);
+    await asAdmin((tx) => tx.node.update({ where: { id: nodeId }, data: { capacityMode: 'auto', reportedMemoryTotalMb: 100, reportedAt: new Date() } }));
+    const res = await authed(`/api/admin/nodes/${nodeId}`, { method: 'PATCH', payload: { memoryTotalMb: 999_999 } });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('GET /api/admin/capacity/nodes/:id/plans reports derived vagas per plan, naming the limiting resource', async () => {
+    const nodeId = await makeNode('node-plans', 1000);
+    const planId = await makePlan(300); // 1000/300 = 3 servers worth of memory headroom
+    // Restricted to THIS node alone — an unrestricted plan's numbers here
+    // would also include every other node in the shared test database.
+    await authed(`/api/admin/plans/${planId}/nodes`, { method: 'PUT', payload: { nodes: [{ nodeId }] } });
+
+    const res = await authed(`/api/admin/capacity/nodes/${nodeId}/plans`);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.nodeId).toBe(nodeId);
+    const row = body.results.find((r: { planId: string }) => r.planId === planId);
+    expect(row).toBeDefined();
+    expect(row.slots).toBe(3);
+    expect(row.limiting).toBe('memory');
+  });
+
+  it('GET /api/admin/capacity/plans includes derivedSlots/effectiveSlots honoring maxSlots as an optional ceiling', async () => {
+    const nodeId = await makeNode('plan-derived', 1000);
+    const createRes = await authed('/api/admin/plans', {
+      method: 'POST',
+      payload: { name: `cap-e2e-plan-derived-${suffix}`, slug: `cap-e2e-plan-derived-${suffix}`, memoryMb: 300, diskMb: 512, maxSlots: 2 },
+    });
+    const planId = JSON.parse(createRes.body).id;
+    await authed(`/api/admin/plans/${planId}/nodes`, { method: 'PUT', payload: { nodes: [{ nodeId }] } });
+
+    const res = await authed('/api/admin/capacity/plans');
+    const plan = JSON.parse(res.body).find((p: { id: string }) => p.id === planId);
+    expect(plan.derivedSlots).toBe(3); // 1000/300, scoped to this one restricted node
+    expect(plan.effectiveSlots).toBe(2); // min(3, maxSlots=2) — the commercial ceiling wins
+    expect(plan.remaining).toBe(2);
+  });
+
+  it('derivedSlots is 0 (never unlimited) for a plan with no eligible/accepting node at all', async () => {
+    // A node restricted to itself but too small to ever fit: contributes
+    // slots:0 (finite), not null — the plan overall must read 0, never
+    // "unlimited" for having nothing eligible.
+    const nodeId = await makeNode('no-eligible', 100);
+    const planId = await makePlan(4096); // far bigger than the 100MB node
+    await authed(`/api/admin/plans/${planId}/nodes`, { method: 'PUT', payload: { nodes: [{ nodeId }] } });
+
+    const res = await authed('/api/admin/capacity/plans');
+    const plan = JSON.parse(res.body).find((p: { id: string }) => p.id === planId);
+    expect(plan.derivedSlots).toBe(0);
+    expect(plan.perNode[0].slots).toBe(0);
+  });
+
+  it('one unlimited-capacity node makes the plan\'s derivedSlots unlimited overall, even alongside a bounded node', async () => {
+    const boundedId = await makeNode('mix-bounded', 300); // 1 slot worth
+    const unlimitedNode = await prisma.node.create({
+      data: {
+        locationId,
+        name: `cap-e2e-node-mix-unlimited-${suffix}`,
+        fqdn: `cap-e2e-node-mix-unlimited-${suffix}.test`,
+        memoryTotalMb: 1000,
+        memoryOverallocatePct: -1, // unlimited memory ceiling
+        diskTotalMb: 1_000_000,
+        diskOverallocatePct: -1,
+      },
+    });
+    await authed(`/api/admin/nodes/${unlimitedNode.id}/allocations`, { method: 'POST', payload: { ip: '203.1.250.10', startPort: 27000, endPort: 27009 } });
+
+    const planId = await makePlan(300);
+    await authed(`/api/admin/plans/${planId}/nodes`, { method: 'PUT', payload: { nodes: [{ nodeId: boundedId }, { nodeId: unlimitedNode.id }] } });
+
+    const res = await authed('/api/admin/capacity/plans');
+    const plan = JSON.parse(res.body).find((p: { id: string }) => p.id === planId);
+    expect(plan.derivedSlots).toBeNull();
+    expect(plan.effectiveSlots).toBeNull(); // no maxSlots set on this fixture — nothing to cap it back down
   });
 });

@@ -8,9 +8,9 @@ import (
 
 func testNode() Node {
 	return Node{
-		DataDir:      "/var/lib/pxhost/servers",
-		NetworkName:  "pxhost0",
-		CgroupParent: "pxhost.slice",
+		DataDir:      "/var/lib/gxhost/servers",
+		NetworkName:  "gxhost0",
+		CgroupParent: "gxhost.slice",
 		UIDRangeMin:  100000,
 		UIDRangeMax:  165535,
 	}
@@ -94,7 +94,7 @@ func TestBuildContainerSpec_NetworkModeIsNeverHostOrNone(t *testing.T) {
 	if hc.NetworkMode.IsNone() {
 		t.Fatal("NetworkMode must never be none (that would defeat the DOCKER-USER egress policy path)")
 	}
-	if string(hc.NetworkMode) != "pxhost0" {
+	if string(hc.NetworkMode) != "gxhost0" {
 		t.Fatalf("expected the configured node bridge network, got %q", hc.NetworkMode)
 	}
 }
@@ -303,13 +303,13 @@ func TestBuildContainerSpec_RejectsPrivilegedPortAllocation(t *testing.T) {
 func TestBuildContainerSpec_SpecVersionLabelPresent(t *testing.T) {
 	cfg, _, _, err := BuildContainerSpec(testServer(), testNode())
 	mustOK(t, err)
-	if cfg.Labels["pxhost.spec.version"] == "" {
-		t.Fatal("expected a pxhost.spec.version label so boot reconciliation can flag stale containers for recreate")
+	if cfg.Labels["gxhost.spec.version"] == "" {
+		t.Fatal("expected a gxhost.spec.version label so boot reconciliation can flag stale containers for recreate")
 	}
-	if cfg.Labels["pxhost.managed"] != "true" {
-		t.Fatal("expected pxhost.managed=true label")
+	if cfg.Labels["gxhost.managed"] != "true" {
+		t.Fatal("expected gxhost.managed=true label")
 	}
-	if cfg.Labels["pxhost.server.uuid"] != testServer().UUID {
+	if cfg.Labels["gxhost.server.uuid"] != testServer().UUID {
 		t.Fatal("expected the server uuid label")
 	}
 }

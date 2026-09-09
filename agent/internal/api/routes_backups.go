@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/pxhost/agent/internal/auth"
-	"github.com/pxhost/agent/internal/backup"
-	"github.com/pxhost/agent/internal/srv"
+	"github.com/gxhost/agent/internal/auth"
+	"github.com/gxhost/agent/internal/backup"
+	"github.com/gxhost/agent/internal/srv"
 )
 
 func writeBackupError(w http.ResponseWriter, err error) {

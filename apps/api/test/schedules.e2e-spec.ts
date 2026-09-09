@@ -91,9 +91,9 @@ describe('Schedules (e2e)', () => {
     const port = (fakeAgent.address() as AddressInfo).port;
 
     const passwordHash = await argon2.hash('SchedPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
-    const admin = await prisma.user.create({ data: { email: `sched-admin-${suffix}@pxhost.local`, username: `sched-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true } });
-    const owner = await prisma.user.create({ data: { email: `sched-owner-${suffix}@pxhost.local`, username: `sched-owner-${suffix}`, passwordHash, isActive: true } });
-    const intruder = await prisma.user.create({ data: { email: `sched-intruder-${suffix}@pxhost.local`, username: `sched-intruder-${suffix}`, passwordHash, isActive: true } });
+    const admin = await prisma.user.create({ data: { email: `sched-admin-${suffix}@gxhost.local`, username: `sched-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true } });
+    const owner = await prisma.user.create({ data: { email: `sched-owner-${suffix}@gxhost.local`, username: `sched-owner-${suffix}`, passwordHash, isActive: true } });
+    const intruder = await prisma.user.create({ data: { email: `sched-intruder-${suffix}@gxhost.local`, username: `sched-intruder-${suffix}`, passwordHash, isActive: true } });
 
     adminToken = JSON.parse((await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: admin.email, password: 'SchedPass!234567' } })).body).accessToken;
     ownerToken = JSON.parse((await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: owner.email, password: 'SchedPass!234567' } })).body).accessToken;
@@ -133,7 +133,7 @@ describe('Schedules (e2e)', () => {
     await prisma.node.deleteMany({ where: { id: nodeId } });
     await prisma.location.deleteMany({ where: { id: locationId } });
     await prisma.user.updateMany({
-      where: { email: { in: [`sched-admin-${suffix}@pxhost.local`, `sched-owner-${suffix}@pxhost.local`, `sched-intruder-${suffix}@pxhost.local`] } },
+      where: { email: { in: [`sched-admin-${suffix}@gxhost.local`, `sched-owner-${suffix}@gxhost.local`, `sched-intruder-${suffix}@gxhost.local`] } },
       data: { deletedAt: new Date() },
     });
     await new Promise<void>((resolve) => fakeAgent.close(() => resolve()));

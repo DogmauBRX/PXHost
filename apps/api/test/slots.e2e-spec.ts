@@ -37,17 +37,17 @@ describe('Capacity: plan slots + node lock ordering (e2e)', () => {
 
     const passwordHash = await argon2.hash('AdminPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
     await prisma.user.create({
-      data: { email: `slots-admin-${suffix}@pxhost.local`, username: `slots-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
+      data: { email: `slots-admin-${suffix}@gxhost.local`, username: `slots-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
     });
     const login = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
-      payload: { email: `slots-admin-${suffix}@pxhost.local`, password: 'AdminPass!234567' },
+      payload: { email: `slots-admin-${suffix}@gxhost.local`, password: 'AdminPass!234567' },
     });
     adminToken = JSON.parse(login.body).accessToken;
 
     const owner = await prisma.user.create({
-      data: { email: `slots-owner-${suffix}@pxhost.local`, username: `slots-owner-${suffix}`, passwordHash, isActive: true },
+      data: { email: `slots-owner-${suffix}@gxhost.local`, username: `slots-owner-${suffix}`, passwordHash, isActive: true },
     });
     ownerId = owner.id;
 
@@ -77,7 +77,7 @@ describe('Capacity: plan slots + node lock ordering (e2e)', () => {
     await prisma.node.deleteMany({ where: { locationId } });
     await prisma.location.deleteMany({ where: { id: locationId } });
     await prisma.user.updateMany({
-      where: { email: { in: [`slots-admin-${suffix}@pxhost.local`, `slots-owner-${suffix}@pxhost.local`] } },
+      where: { email: { in: [`slots-admin-${suffix}@gxhost.local`, `slots-owner-${suffix}@gxhost.local`] } },
       data: { deletedAt: new Date() },
     });
     await app.close();

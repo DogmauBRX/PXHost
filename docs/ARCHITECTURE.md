@@ -1,4 +1,4 @@
-# PXHost — Game Server Hosting Platform: Architecture v1
+# GXhost — Game Server Hosting Platform: Architecture v1
 
 > Status: **approved design, pending implementation**. Own codebase, conceptually inspired by Pterodactyl/Wings (reference instance inspected: `dogbrx.ddns.net`, Pterodactyl 1.14.1). Repo was empty at design time.
 >
@@ -20,7 +20,7 @@
 | Agent auth (browser/API→agent) | Ed25519-signed short-lived JWTs, verified **offline** by the agent |
 | Agent auth (agent→panel) | Opaque node token (argon2id-hashed) + mTLS client cert |
 
-**Reference instance findings** (validates this design): Wings listens on `:8080`, SFTP on `:2022`, data at `/var/lib/pterodactyl/volumes`, `upload_limit: 100`, `allowed_mounts: []` by default, Let's Encrypt cert on the node FQDN. Client area tabs: Console, Files, Databases, Schedules, Users, Backups, Network, Startup, Settings, Activity. The reference panel displayed its Wings daemon token in cleartext in the admin UI — **PXHost never does this**: tokens are argon2id-hashed at rest and shown once, at creation only.
+**Reference instance findings** (validates this design): Wings listens on `:8080`, SFTP on `:2022`, data at `/var/lib/pterodactyl/volumes`, `upload_limit: 100`, `allowed_mounts: []` by default, Let's Encrypt cert on the node FQDN. Client area tabs: Console, Files, Databases, Schedules, Users, Backups, Network, Startup, Settings, Activity. The reference panel displayed its Wings daemon token in cleartext in the admin UI — **GXhost never does this**: tokens are argon2id-hashed at rest and shown once, at creation only.
 
 ## 1. Topology
 
@@ -189,13 +189,13 @@ Node capacity is checked **inside the create transaction**, under `pg_advisory_x
 
 `subscriptions` is the commercial contract between a customer and a plan — deliberately separate from `servers.plan_id`, which exists purely for the snapshot-not-reference billing/drift doctrine (§2.1). A subscription can exist with no server yet (`server_id IS NULL`, the only state this milestone ever produces — see below) and a server can exist with no subscription (an admin still creating one directly, the pre-existing path). The two connect only through the optional, unique `subscriptions.server_id`.
 
-Lifecycle: `pending -> active -> {past_due, suspended, cancelled, expired}`, with `active`/`past_due`/`suspended` able to recover back to `active`. `cancelled`/`expired` are terminal. **Only an admin can move a subscription into `active`** (`POST /api/admin/subscriptions/:id/status`) — there is no payment gateway yet (§9 below), so this is deliberately a manual gate, not a mock. A customer's own self-service action is limited to cancelling (`pending`/`active`/`past_due`/`suspended` -> `cancelled`).
+Lifecycle: `pending -> active -> {past_due, suspended, cancelled, expired}`, with `active`/`past_due`/`suspended` able to recover back to `active`. `cancelled`/`expired` are terminal. **Activation is driven by the Asaas payment webhook** (`POST /api/webhooks/asaas` -> `PaymentsWebhookService.process`, on `PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED`), which runs through the same `assertTransition` state machine `updateStatusAsAdmin` already used — see §9 and `docs/payments/asaas.md` §8/§10 for the full event map and the `past_due` grace-period/suspend cadence. `POST /api/admin/subscriptions/:id/status` still exists as a manual override for support, but is no longer the only path into `active`. A customer's own self-service action is limited to cancelling (`pending`/`active`/`past_due`/`suspended` -> `cancelled`, `POST /api/client/subscriptions/:id/cancel`) — which always cancels the subscription at Asaas first, so no further charge is ever generated regardless of timing (`docs/payments/asaas.md` §13).
 
 **Vagas (commercial stock) now count two disjoint sources**, added together: servers on the plan (`status <> 'deleting'`, unchanged from §2.6) plus subscriptions on the plan that are `pending`/`active`/`past_due`/`suspended` AND have no server yet. A subscription and its eventual server can never double-count the same slot — the moment a subscription is attached to a server, it drops out of the second term. This closes the hole where a plan could otherwise be oversold entirely through subscriptions, never actually creating a server.
 
-The public catalog (`GET /api/public/plans[/:slug]`, no auth) never exposes a raw slot count or anything node-shaped — only a computed `availability: { status: 'available'|'limited'|'sold_out', remaining }`, derived purely from the occupancy accounting above (`maxSlots` vs. occupied). Deliberately NOT also gated on whether a node currently exists to run the plan — found live, against a dev database with plans but zero nodes bootstrapped, that conflating "commercially full" with "not deployed yet" makes every plan read as sold out on a fresh install, and this milestone never provisions a server at subscribe time anyway (a `pending` subscription waits on an admin regardless of node state). Node fit belongs to the future auto-provisioning flow, not to what a visitor sees today. Cached 30s in Redis, invalidated on any plan create/update/remove.
+The public catalog (`GET /api/public/plans[/:slug]`, no auth) never exposes a raw slot count or anything node-shaped — only a computed `availability: { status: 'available'|'limited'|'sold_out', remaining }`, derived purely from the occupancy accounting above (`maxSlots` vs. occupied). Deliberately NOT also gated on whether a node currently exists to run the plan — found live, against a dev database with plans but zero nodes bootstrapped, that conflating "commercially full" with "not deployed yet" makes every plan read as sold out on a fresh install, and a `pending` subscription still never provisions a server at subscribe time anyway — it now waits on **payment confirmation via the Asaas webhook**, not an admin, before a server is ever created. Node fit belongs to the auto-provisioning flow described below, not to what a visitor sees today. Cached 30s in Redis, invalidated on any plan create/update/remove.
 
-**Auto-provisioning is explicitly out of scope for this milestone.** An `active` subscription does not create a server — an admin still does that by hand, the same as before subscriptions existed. `subscriptions.server_id` is the seam a future milestone hooks into (payment webhook -> `active` -> node selection -> `ServersService.create` -> attach `server_id`), listed in §8's roadmap but not built.
+**Auto-provisioning is live**, driven entirely by the payment webhook, not an admin click. When `PaymentsWebhookService` resolves a subscription's first charge to confirmed (`PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED`), `ProvisioningService` calls `ServersService.create` with the subscription's plan and the template the customer chose at checkout (`POST /api/client/checkout`'s DTO carries `templateId` directly — there is no plan->template link in the schema), goes through the exact same node-scheduler/capacity locks any admin-created server does (§2.6), and attaches the resulting `Server.id` back onto `subscriptions.server_id`. A failed attempt retries automatically (idempotent `provision-<orderId>` BullMQ job id, up to 5 attempts) and is visible/re-triggerable from `/admin/payments`. See `docs/payments/asaas.md` §6-§10 for the full checkout -> webhook -> provisioning pipeline, including why the webhook handler re-fetches every payment from Asaas's own API rather than trusting the notification body.
 
 ### 2.7 Server lifecycle — two orthogonal state machines
 
@@ -333,7 +333,7 @@ agent/
 |  +-- panel/              client.go, callbacks.go, safedial.go (SSRF-safe outbound dialer)
 |  +-- jobs/                local scheduler (heartbeat, quota walk, image prune, cert renewal)
 |  +-- limits/              token buckets
-+-- configs/{seccomp-pxhost.json, apparmor-pxhost-server, pxagent.service}
++-- configs/{seccomp-gxhost.json, apparmor-gxhost-server, pxagent.service}
 +-- hack/{fakepanel/, attack/}
 ```
 
@@ -351,11 +351,11 @@ Healthcheck: {Test: []string{"NONE"}}  // a template-supplied healthcheck is ano
 
 // container.HostConfig (essentials)
 Privileged:      false
-NetworkMode:     "pxhost0"
+NetworkMode:     "gxhost0"
 PidMode/IpcMode/UTSMode/UsernsMode/CgroupnsMode: all container-private, never host-shared
 ReadonlyRootfs:  true
 Tmpfs:           {"/tmp": "size=64m,noexec,nosuid,nodev", "/run": "size=8m,noexec,nosuid,nodev"}
-SecurityOpt:     ["no-new-privileges:true", "seccomp=<hardened-profile>", "apparmor=pxhost-server"]
+SecurityOpt:     ["no-new-privileges:true", "seccomp=<hardened-profile>", "apparmor=gxhost-server"]
 CapDrop:         ["ALL"]
 CapAdd:          []                // intentionally empty
 Mounts:          [{bind: <data-dir>/<uuid> -> /home/container, NonRecursive: true, RPrivate}]
@@ -370,7 +370,7 @@ Resources: {
 }
 ```
 
-**Capabilities:** drop `ALL`, add nothing — no `SYS_ADMIN`, `NET_ADMIN`, `SYS_PTRACE`, `SYS_MODULE`, `DAC_READ_SEARCH`, ever. **Seccomp:** Docker's default profile plus explicit denial of `ptrace`, `process_vm_read/writev`, `userfaultfd`, the whole `io_uring_*` family (a known seccomp-bypass vector via kernel worker context), `mount_setattr`/`fsopen`/`fsconfig`/`open_tree`/`move_mount`, `bpf`, `perf_event_open`, and `clone`/`unshare` with any `CLONE_NEW*` flag. **AppArmor:** a `pxhost-server` profile derived from `docker-default` adding `deny mount`, `deny ptrace`, `deny /proc/*/mem rw`, `deny network raw`. The agent **fails closed** — refuses to start any container if the AppArmor profile isn't loaded in the kernel or the seccomp JSON doesn't parse.
+**Capabilities:** drop `ALL`, add nothing — no `SYS_ADMIN`, `NET_ADMIN`, `SYS_PTRACE`, `SYS_MODULE`, `DAC_READ_SEARCH`, ever. **Seccomp:** Docker's default profile plus explicit denial of `ptrace`, `process_vm_read/writev`, `userfaultfd`, the whole `io_uring_*` family (a known seccomp-bypass vector via kernel worker context), `mount_setattr`/`fsopen`/`fsconfig`/`open_tree`/`move_mount`, `bpf`, `perf_event_open`, and `clone`/`unshare` with any `CLONE_NEW*` flag. **AppArmor:** a `gxhost-server` profile derived from `docker-default` adding `deny mount`, `deny ptrace`, `deny /proc/*/mem rw`, `deny network raw`. The agent **fails closed** — refuses to start any container if the AppArmor profile isn't loaded in the kernel or the seccomp JSON doesn't parse.
 
 **Image policy:** panel-supplied only, must match a configured registry-prefix allowlist, and — when `require_digest_pin: true` (default) — must be `@sha256:...` pinned; the agent re-verifies the pulled image's digest against the request before creating the container. Tag resolution to a digest is a **contract requirement on the panel** at template-save time.
 
@@ -378,7 +378,7 @@ Resources: {
 
 **Env var handling:** allowlist = the template's declared variables only; hardcoded rejection of `LD_PRELOAD`/`LD_LIBRARY_PATH`/`*_OPTIONS`/`BASH_ENV`/`IFS`/`PYTHONPATH` and friends; key regex `^[A-Z][A-Z0-9_]{0,63}$`; values reject NUL/newline, capped length, passed through byte-for-byte since they never reach a shell.
 
-**Networking:** one bridge (`pxhost0`, `enable_icc=false`), verified at boot by inspecting the actual kernel-level forwarding rule (not just the Docker object). `DOCKER-USER` chain (evaluated before Docker's own accept rules, survives daemon restarts) drops container<->container forwarding and blocks egress to `169.254.0.0/16` (cloud metadata/IMDS) and all RFC1918 ranges. **Separately**, an `INPUT` chain rule is required to stop a container reaching the *host's own* listening ports (including the agent's own control API) via the bridge gateway IP — `DOCKER-USER` alone does not cover this, since host-bound traffic is `INPUT`, not `FORWARD`. The agent additionally binds its control API to the node's management IP, never `0.0.0.0`, as a second layer. Same-port host<->container mapping is used everywhere (no NAT remapping) because game protocols embed the port in server-list/query responses.
+**Networking:** one bridge (`gxhost0`, `enable_icc=false`), verified at boot by inspecting the actual kernel-level forwarding rule (not just the Docker object). `DOCKER-USER` chain (evaluated before Docker's own accept rules, survives daemon restarts) drops container<->container forwarding and blocks egress to `169.254.0.0/16` (cloud metadata/IMDS) and all RFC1918 ranges. **Separately**, an `INPUT` chain rule is required to stop a container reaching the *host's own* listening ports (including the agent's own control API) via the bridge gateway IP — `DOCKER-USER` alone does not cover this, since host-bound traffic is `INPUT`, not `FORWARD`. The agent additionally binds its control API to the node's management IP, never `0.0.0.0`, as a second layer. Same-port host<->container mapping is used everywhere (no NAT remapping) because game protocols embed the port in server-list/query responses.
 
 **Volumes:** one bind mount per server, `<data>/<uuid> -> /home/container`, `NonRecursive`, `RPrivate`; source is resolved through the same jail as file operations before being handed to Docker, so a panel bug or compromise can't traverse `../..` into an arbitrary host path. Admin-defined extra mounts are validated against a **node-local** allowlist (never panel-supplied), exact-path match only (no globbing — prefix matching plus symlinks is an escape), forced read-only where configured. Any mount resolving to a socket path or under `/proc`, `/sys`, `/dev`, `/run`, `/etc` is hardcoded-rejected.
 
@@ -519,8 +519,8 @@ Node Agent goes first per the user's explicit requirement — it de-risks the ha
 | M11 | Subusers, granular RBAC, activity feed | API, Panel | Invited friend can restart but not delete backups; every mutation attributed in the feed |
 | M12 | Admin console | Panel, API | Onboard a new node and a new game from the UI only; plan-apply dry run works |
 | M13 | Hardening & operations | All | Live node-to-node transfer with no data loss; token rotation; log partition automation |
-| M14 | Billing hooks (deferred) | API | External payment event idempotently suspends/restores a server |
-| M15 | Commercial site: public catalog + subscriptions | API, Panel | Visitor browses plans and vagas-aware availability with no auth, signs up (behind `ALLOW_PUBLIC_REGISTRATION`), subscribes (`pending`), admin activates in `/admin/subscriptions`; customer sees it in `/client/subscription`. No payment gateway, no auto-provisioning — see §2.6.1 |
+| M14 | Billing hooks | API | Delivered, then removed — a generic idempotent webhook suspended/restored a server by `serverId` on an external payment event; superseded entirely by the fuller Asaas integration in M15 and deleted rather than kept alongside it (see `apps/api/README.md`'s M14 section for the historical record) |
+| M15 | Commercial site: public catalog + subscriptions + payments (Asaas) | API, Panel | Delivered. Visitor browses plans and vagas-aware availability with no auth, signs up (behind `ALLOW_PUBLIC_REGISTRATION`), checks out via Asaas (Pix or card); the subscription activates automatically on payment confirmation via webhook, which also auto-provisions the server — no admin step in the happy path. Overdue payment suspends after a grace period and reactivates on recovery; customer can self-cancel (immediate or at period end); admin can refund from `/admin/payments`. See §2.6.1 and `docs/payments/asaas.md` |
 
 \* = required for the minimal end-to-end vertical slice (M1-M6).
 
@@ -534,7 +534,7 @@ Node Agent goes first per the user's explicit requirement — it de-risks the ha
 4. **Self-service server deletion is disabled by default** — customers request, staff/automation execute — to prevent rage-deletes; toggleable per instance.
 5. **PostgreSQL floor is 17+**, targeting 18 for native `uuidv7()` (a one-line migration to swap the SQL-shim version if you start on 17).
 6. **Public self-signup is off by default** (`ALLOW_PUBLIC_REGISTRATION=false`) — an existing deployment's behavior never changes on upgrade; only an admin can create a user until an operator explicitly opts in.
-7. **Subscription activation is admin-only**, with no mock/test payment path reachable in production — see §2.6.1. A future payment webhook is the only intended way to automate this, and it reuses `SubscriptionsService.updateStatusAsAdmin`'s transition machine rather than adding a second one.
+7. **Subscription activation is payment-driven**, via the Asaas webhook — see §2.6.1 and `docs/payments/asaas.md`. `POST /api/admin/subscriptions/:id/status` remains only as a manual override for support, reusing the exact same `SubscriptionsService`/`assertTransition` machine the webhook path drives, rather than a second one.
 
 ---
 

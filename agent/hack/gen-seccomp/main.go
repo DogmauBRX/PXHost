@@ -1,10 +1,10 @@
-// Command gen-seccomp derives configs/seccomp-pxhost.json from Docker's
+// Command gen-seccomp derives configs/seccomp-gxhost.json from Docker's
 // upstream default profile (hack/gen-seccomp/seccomp-default.json) by unconditionally
-// stripping a fixed denylist of syscalls that PXHost containers must never
+// stripping a fixed denylist of syscalls that GXhost containers must never
 // reach, regardless of capabilities.
 //
 // Most of these are already unreachable once CapDrop:ALL is applied (Docker's
-// default profile gates them behind includes.caps), but PXHost strips them
+// default profile gates them behind includes.caps), but GXhost strips them
 // explicitly for defense in depth: a future template accidentally granted a
 // capability must not silently regain them. clone/clone3/unshare are left
 // untouched — the base profile already masks CLONE_NEW* flags for them
@@ -114,7 +114,7 @@ func main() {
 		}
 	}
 	sort.Strings(missing)
-	fmt.Printf("pxhost seccomp profile written: %s\n", os.Args[2])
+	fmt.Printf("gxhost seccomp profile written: %s\n", os.Args[2])
 	fmt.Printf("explicitly stripped %d/%d denylisted syscalls (rest were already absent, i.e. already denied): %v\n",
 		len(removedNames), len(denylist), missing)
 }

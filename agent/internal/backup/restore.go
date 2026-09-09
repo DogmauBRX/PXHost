@@ -9,7 +9,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/pxhost/agent/internal/fsx"
+	"github.com/gxhost/agent/internal/fsx"
 )
 
 // Tar has no upfront central directory the way zip does — sizes aren't

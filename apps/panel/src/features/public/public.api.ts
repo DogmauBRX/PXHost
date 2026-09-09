@@ -1,5 +1,5 @@
 import { API_URL, ApiError } from '@/shared/api/client';
-import type { PublicPlan } from '@/shared/api/types';
+import type { PublicPlan, PublicAnnouncement, PublicLocationStatus } from '@/shared/api/types';
 
 /**
  * The commercial catalog's own fetch helper — deliberately NOT `apiFetch`
@@ -26,3 +26,11 @@ async function publicFetch<T>(path: string, init: RequestInit = {}): Promise<T> 
 
 export const listPublicPlans = () => publicFetch<PublicPlan[]>('/api/public/plans');
 export const getPublicPlan = (slug: string) => publicFetch<PublicPlan>(`/api/public/plans/${encodeURIComponent(slug)}`);
+
+// `AnnouncementBanner` (rendered in both PublicShell and AppShell — the
+// route is `@Public()` on the API side regardless of who's logged in)
+// and the landing page's node-status section both go through this same
+// unauthenticated fetch helper, never `apiFetch` — see this file's own
+// doc comment on why.
+export const getPublicAnnouncement = () => publicFetch<PublicAnnouncement | null>('/api/public/status/announcement');
+export const getPublicNodeStatus = () => publicFetch<PublicLocationStatus[]>('/api/public/status/nodes');

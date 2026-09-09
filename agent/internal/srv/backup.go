@@ -8,8 +8,8 @@ import (
 	"path"
 	"time"
 
-	"github.com/pxhost/agent/internal/backup"
-	"github.com/pxhost/agent/internal/fsx"
+	"github.com/gxhost/agent/internal/backup"
+	"github.com/gxhost/agent/internal/fsx"
 )
 
 // ErrServerNotStopped is returned by Restore when the server isn't

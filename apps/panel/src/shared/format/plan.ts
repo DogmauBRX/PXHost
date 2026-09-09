@@ -20,6 +20,13 @@ export function formatMemory(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB` : `${mb} MB`;
 }
 
+/** `Plan.cpuLimitPercent` (the Docker cgroup CPU quota, 100 = one full core) shown the way a visitor thinks about it — "2 vCPU", not "200% de CPU". */
+export function formatVcpu(cpuLimitPercent: number): string {
+  const vcpu = cpuLimitPercent / 100;
+  const value = Number.isInteger(vcpu) ? vcpu : vcpu.toFixed(1);
+  return `${value} vCPU`;
+}
+
 // Mirrors the backend's own closed set (subscriptions_billing_period_check
 // / plans_billing_period_check — 'none' only ever appears on Plan, never
 // on a Subscription, which is always sold on a real recurring period).

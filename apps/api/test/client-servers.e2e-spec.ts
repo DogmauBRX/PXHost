@@ -40,14 +40,14 @@ describe('Client servers (e2e)', () => {
 
     const passwordHash = await argon2.hash('OwnerPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
     const admin = await prisma.user.create({
-      data: { email: `csrv-admin-${suffix}@pxhost.local`, username: `csrv-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
+      data: { email: `csrv-admin-${suffix}@gxhost.local`, username: `csrv-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
     });
     const owner = await prisma.user.create({
-      data: { email: `csrv-owner-${suffix}@pxhost.local`, username: `csrv-owner-${suffix}`, passwordHash, isActive: true },
+      data: { email: `csrv-owner-${suffix}@gxhost.local`, username: `csrv-owner-${suffix}`, passwordHash, isActive: true },
     });
     ownerId = owner.id;
     const intruder = await prisma.user.create({
-      data: { email: `csrv-intruder-${suffix}@pxhost.local`, username: `csrv-intruder-${suffix}`, passwordHash, isActive: true },
+      data: { email: `csrv-intruder-${suffix}@gxhost.local`, username: `csrv-intruder-${suffix}`, passwordHash, isActive: true },
     });
     intruderId = intruder.id;
 
@@ -116,7 +116,7 @@ describe('Client servers (e2e)', () => {
     await prisma.node.deleteMany({ where: { id: nodeId } });
     await prisma.location.deleteMany({ where: { id: locationId } });
     await prisma.user.updateMany({
-      where: { email: { in: [`csrv-admin-${suffix}@pxhost.local`, `csrv-owner-${suffix}@pxhost.local`, `csrv-intruder-${suffix}@pxhost.local`] } },
+      where: { email: { in: [`csrv-admin-${suffix}@gxhost.local`, `csrv-owner-${suffix}@gxhost.local`, `csrv-intruder-${suffix}@gxhost.local`] } },
       data: { deletedAt: new Date() },
     });
     await app.close();

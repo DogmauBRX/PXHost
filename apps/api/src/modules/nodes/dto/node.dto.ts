@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min, ValidateIf } from 'class-validator';
 
 export class CreateNodeDto {
   @IsUUID()
@@ -27,6 +27,15 @@ export class CreateNodeDto {
   @Min(1)
   @Max(65535)
   daemonPort?: number;
+
+  // Deploy plan — see the Node.controlAddress schema comment. Loosely
+  // validated (scheme + host[:port], IP or hostname both valid — a
+  // WireGuard tunnel address has no TLD) rather than @IsUrl, which
+  // rejects bare IPs by default.
+  @IsOptional()
+  @IsString()
+  @Matches(/^https?:\/\/[^\s/]+$/, { message: 'controlAddress must look like http(s)://host[:port]' })
+  controlAddress?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -103,6 +112,15 @@ export class CreateNodeDto {
   @IsInt()
   @Min(1)
   uploadSizeMb?: number;
+
+  // Capacity plan (auto-derivation) — defaults to 'manual' (the column
+  // default) when omitted, same as every node created before this
+  // feature existed. An admin CAN create a node already in 'auto' mode;
+  // the safety margins/alert thresholds stay at their column defaults
+  // (10/10/10, 70/85/95) until adjusted via PATCH — see UpdateNodeDto.
+  @IsOptional()
+  @IsIn(['manual', 'auto'])
+  capacityMode?: string;
 }
 
 export class UpdateNodeDto {
@@ -122,6 +140,30 @@ export class UpdateNodeDto {
   @IsOptional()
   @IsBoolean()
   maintenanceMode?: boolean;
+
+  // A future heads-up ("entra em manutenção às 22h"), distinct from
+  // `maintenanceMode` above — see the column's own schema.prisma doc
+  // comment. `null` explicitly clears it (an admin cancelling a planned
+  // window); `undefined` (the field simply absent) leaves it untouched,
+  // same convention every other optional field on this DTO already
+  // follows. `@ValidateIf` skips the ISO-8601 check only for that `null`
+  // case — `@IsOptional()` alone would also skip it for `undefined`, but
+  // NOT let `null` itself through as a valid value.
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsISO8601()
+  maintenanceScheduledAt?: string | null;
+
+  // Deploy plan — see CreateNodeDto's own doc comment and the
+  // Node.controlAddress schema comment. Unlike fqdn/scheme/daemonPort
+  // (immutable after create — the browser's target must never shift
+  // under an in-flight console/transfer link), the control-plane origin
+  // is meant to be adjusted post-bootstrap (e.g. once WireGuard is wired
+  // up for a node created before it existed), so it's updatable here.
+  @IsOptional()
+  @IsString()
+  @Matches(/^https?:\/\/[^\s/]+$/, { message: 'controlAddress must look like http(s)://host[:port]' })
+  controlAddress?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -176,6 +218,69 @@ export class UpdateNodeDto {
   @IsInt()
   @Min(-1)
   cpuOverallocatePct?: number;
+
+  // Capacity plan (auto-derivation) — see NodesService.update's own doc
+  // comment for the override guard these interact with.
+  @IsOptional()
+  @IsIn(['manual', 'auto'])
+  capacityMode?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(90)
+  memorySafetyMarginPct?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(90)
+  diskSafetyMarginPct?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(90)
+  cpuSafetyMarginPct?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  capacityWarnPct?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  capacityHighPct?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  capacityCriticalPct?: number;
+
+  // §14's override guard: PATCHing a declared total/percent ABOVE what
+  // the node has actually reported is refused with 409 unless this is
+  // explicitly set — see NodesService.update. Never persisted itself,
+  // just a one-shot confirmation flag for this single request.
+  @IsOptional()
+  @IsBoolean()
+  acknowledgeOverride?: boolean;
+
+  // Free-text audit trail for a manual capacity change (§23) — recorded
+  // in the audit entry's metadata, never a column on `nodes` itself.
+  @IsOptional()
+  @IsString()
+  @Length(1, 500)
+  changeReason?: string;
 }
 
 export class BootstrapRequestDto {
@@ -227,6 +332,17 @@ export class HeartbeatDto {
   @IsInt()
   @Min(0)
   reportedMemoryTotalMb?: number;
+
+  // The node's own cgroup memory limit — see schema.prisma's
+  // reportedMemoryLimitMb doc comment for why it's distinct from
+  // reportedMemoryTotalMb (the LXC/Proxmox host-vs-guest RAM problem
+  // capacity plan (auto-derivation) exists to fix). Same optional/
+  // best-effort contract as every other reported_* field here.
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reportedMemoryLimitMb?: number;
 
   @IsOptional()
   @Type(() => Number)

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive } from 'lucide-react';
 import { createBackup, deleteBackup, listBackups, mintBackupDownloadLink, restoreBackup } from './backups.api';
 import { ApiError } from '@/shared/api/client';
+import { formatBytes, formatDateTime as formatDate } from '@/shared/format/datetime';
 import {
   Alert,
   Button,
@@ -18,17 +19,6 @@ import {
 } from '@/ui/primitives';
 
 const CONFIRM_WORD = 'RESTAURAR';
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
-  return `${(n / 1024 ** 3).toFixed(2)} GB`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('pt-BR');
-}
 
 export function BackupsPage({ serverId }: { serverId: string }) {
   const queryClient = useQueryClient();

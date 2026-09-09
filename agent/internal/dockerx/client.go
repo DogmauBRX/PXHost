@@ -27,7 +27,7 @@ const pinnedAPIVersion = "1.43"
 // ManagedLabel is set on every container the agent creates and is the
 // filter used for both the Docker event stream and boot-time reconciliation
 // (architecture doc 4.2/4.3).
-const ManagedLabel = "pxhost.managed"
+const ManagedLabel = "gxhost.managed"
 
 type Client struct {
 	cli *client.Client
@@ -202,7 +202,7 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (container.Ins
 	return insp, nil
 }
 
-// ListManaged returns every container carrying the pxhost.managed=true
+// ListManaged returns every container carrying the gxhost.managed=true
 // label — used by boot reconciliation to rebuild in-memory state from
 // Docker's own durable labels (architecture doc 4.1).
 func (c *Client) ListManaged(ctx context.Context) ([]container.Summary, error) {

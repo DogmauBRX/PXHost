@@ -1,12 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, HardDrive, MemoryStick, Server, Users } from 'lucide-react';
+import { Activity, Cpu, HardDrive, MemoryStick, Server, Users } from 'lucide-react';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { getCapacityDashboard, listNodes, listUsers, listAuditLogs } from '@/features/admin/admin.api';
+import type { CapacityStatus } from '@/shared/api/types';
 import { Badge, Card, CardBody, CardHeader, CardTitle, EmptyState, PageHeader, StatCard } from '@/ui/primitives';
 
-const CAPACITY_TONE: Record<'normal' | 'warning' | 'critical', 'ok' | 'warn' | 'fail'> = {
+// Badge/StatCard only ever had 3 semantic slots (ok/warn/fail) — 'high'
+// compresses into 'warn' for THOSE two primitives; Meter is the one
+// place that actually renders the 4th level distinctly (its own
+// 'high' tone/--color-high token).
+const CAPACITY_TONE: Record<CapacityStatus, 'ok' | 'warn' | 'fail'> = {
   normal: 'ok',
   warning: 'warn',
+  high: 'warn',
   critical: 'fail',
 };
 
@@ -17,8 +23,9 @@ const HEALTH_TONE: Record<string, 'ok' | 'warn' | 'fail' | 'neutral'> = {
   unknown: 'neutral',
 };
 
-function worstStatus(statuses: ('normal' | 'warning' | 'critical')[]): 'normal' | 'warning' | 'critical' {
+function worstStatus(statuses: CapacityStatus[]): CapacityStatus {
   if (statuses.includes('critical')) return 'critical';
+  if (statuses.includes('high')) return 'high';
   if (statuses.includes('warning')) return 'warning';
   return 'normal';
 }
@@ -50,6 +57,23 @@ export function DashboardPage() {
   const memoryUsedPct = capacity.data && capacity.data.memory.commercial > 0 ? Math.round((capacity.data.memory.allocated / capacity.data.memory.commercial) * 100) : 0;
   const memoryStatus = capacity.data ? worstStatus(capacity.data.perNode.map((n) => n.memory.status)) : 'normal';
 
+  // Disk and CPU were previously fetched here and simply never
+  // rendered — the same real /api/admin/capacity aggregates, just
+  // never shown alongside RAM.
+  const diskGb = capacity.data ? Math.round(capacity.data.disk.commercial / 1024) : 0;
+  const diskUsedPct = capacity.data && capacity.data.disk.commercial > 0 ? Math.round((capacity.data.disk.allocated / capacity.data.disk.commercial) * 100) : 0;
+  const diskStatus = capacity.data ? worstStatus(capacity.data.perNode.map((n) => n.disk.status)) : 'normal';
+
+  // CPU is "percent of a core" — /100 gives vCPUs, the unit
+  // formatVcpu/the plan editor already use elsewhere. Nodes with
+  // accounting off (cpuTotalPercent<=0) fall out of `commercial` as 0
+  // for that node — same "0 total = unconfigured, not a real number"
+  // rule capacity.math.ts's ceilingFor already applies.
+  const cpuVcpu = capacity.data ? Math.round(capacity.data.cpu.commercial / 100) : 0;
+  const cpuUsedPct = capacity.data && capacity.data.cpu.commercial > 0 ? Math.round((capacity.data.cpu.allocated / capacity.data.cpu.commercial) * 100) : 0;
+  const cpuStatus = capacity.data ? worstStatus(capacity.data.perNode.filter((n) => n.cpu.accountingEnabled).map((n) => n.cpu.status)) : 'normal';
+  const cpuAccountingAnywhere = capacity.data?.perNode.some((n) => n.cpu.accountingEnabled) ?? false;
+
   return (
     <>
       <PageHeader title={`Olá, ${user?.username ?? 'Admin'}`} subtitle="Aqui está um resumo da sua infraestrutura." />
@@ -72,6 +96,22 @@ export function DashboardPage() {
           tone={CAPACITY_TONE[memoryStatus]}
           loading={capacity.isPending}
           hint={`${memoryUsedPct}% alocado${capacity.data?.memory.commercialIsFloor ? ' · pelo menos' : ' da capacidade comercial'}`}
+        />
+        <StatCard
+          label="Disco dos nodes"
+          value={`${diskGb} GB`}
+          icon={HardDrive}
+          tone={CAPACITY_TONE[diskStatus]}
+          loading={capacity.isPending}
+          hint={`${diskUsedPct}% alocado${capacity.data?.disk.commercialIsFloor ? ' · pelo menos' : ' da capacidade comercial'}`}
+        />
+        <StatCard
+          label="CPU dos nodes"
+          value={cpuAccountingAnywhere ? `${cpuVcpu} vCPU` : '—'}
+          icon={Cpu}
+          tone={cpuAccountingAnywhere ? CAPACITY_TONE[cpuStatus] : 'accent'}
+          loading={capacity.isPending}
+          hint={cpuAccountingAnywhere ? `${cpuUsedPct}% alocado${capacity.data?.cpu.commercialIsFloor ? ' · pelo menos' : ' da capacidade comercial'}` : 'Sem contabilização de CPU em nenhum node'}
         />
       </div>
 

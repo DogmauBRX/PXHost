@@ -1,4 +1,4 @@
-// PXHost Panel API — Prisma schema (M3: data foundation + identity).
+// GXhost Panel API — Prisma schema (M3: data foundation + identity).
 // Full v1 domain model per docs/ARCHITECTURE.md section 2. Status columns
 // are modelled as String, not native Postgres ENUM: values map 1:1 to
 // TypeScript string unions, and CHECK constraints (added in a follow-up
@@ -44,6 +44,25 @@ model User {
   failedLogins      Int       @default(0) @map("failed_logins") @db.SmallInt
   lockedUntil       DateTime? @map("locked_until") @db.Timestamptz
   tokensValidAfter  DateTime  @default(now()) @map("tokens_valid_after") @db.Timestamptz
+  // Billing profile — collected at checkout time (CreateSubscriptionDto
+  // never accepts these; SubscriptionsService.createForUser reads them
+  // straight off this row, see that method's own doc comment), never at
+  // signup (RegisterForm.tsx stays name/email/password-only — "commercial
+  // plan §8: don't ask for what isn't needed yet"). All nullable: most
+  // rows have none until their owner actually subscribes to something.
+  // billingCountry defaults 'BR' but isn't editable from the client yet
+  // — cpf itself is Brazil-specific, so there's nothing else to select
+  // today; the column exists so a future non-BR billing profile doesn't
+  // need its own migration.
+  cpf                       String?   @db.VarChar(11)
+  billingPostalCode         String?   @map("billing_postal_code") @db.VarChar(8)
+  billingAddressLine        String?   @map("billing_address_line")
+  billingAddressNumber      String?   @map("billing_address_number")
+  billingAddressComplement  String?   @map("billing_address_complement")
+  billingNeighborhood       String?   @map("billing_neighborhood")
+  billingCity               String?   @map("billing_city")
+  billingState              String?   @map("billing_state") @db.VarChar(2)
+  billingCountry            String?   @default("BR") @map("billing_country") @db.VarChar(2)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt         DateTime? @map("deleted_at") @db.Timestamptz
@@ -56,9 +75,10 @@ model User {
   auditActor     AuditLog[]      @relation("AuditActor")
   activity       ActivityLog[]   @relation("ActivityActor")
   createdTokens  NodeToken[]     @relation("NodeTokenCreatedBy")
-  createdBackups Backup[]        @relation("BackupCreatedBy")
   subscriptions  Subscription[]
   subscriptionEventsActedOn SubscriptionEvent[] @relation("SubscriptionEventActor")
+  orders         Order[]
+  paymentCustomers PaymentCustomer[]
 
   @@map("users")
 }
@@ -136,11 +156,34 @@ model Node {
   fqdn                     String
   scheme                   String    @default("https")
   daemonPort               Int       @default(8443) @map("daemon_port")
+  // Deploy plan — the panel↔agent CONTROL-PLANE origin, when it differs
+  // from what the browser uses (fqdn/scheme/daemonPort above, which stay
+  // the customer's direct console/file/backup target — see wsUrl's own
+  // doc comment, "never proxied through this API"). In the WireGuard
+  // topology this holds the node's private tunnel address (e.g.
+  // "http://10.10.0.2:8443") so AgentClientService reaches it over the
+  // VPN instead of the public hostname, while the browser keeps using
+  // the public fqdn unchanged. NULL (every node's default, including
+  // every dev/test node) means "same as the browser" — AgentClientService
+  // .baseURL falls back to scheme://fqdn:daemonPort exactly as it always
+  // has, so this column changes nothing until an admin sets it.
+  controlAddress           String?   @map("control_address")
   sftpPort                 Int       @default(2022) @map("sftp_port")
   daemonDataPath           String    @default("/var/lib/pxhost/volumes") @map("daemon_data_path")
   behindProxy              Boolean   @default(false) @map("behind_proxy")
   isPublic                 Boolean   @default(true) @map("is_public")
   maintenanceMode          Boolean   @default(false) @map("maintenance_mode")
+  // A future heads-up, distinct from `maintenanceMode` itself (which
+  // means "in maintenance right NOW"). Nullable/optional and purely
+  // informational — nothing in capacity math, scheduling, or the
+  // create/transfer capacity gates ever reads this column; only
+  // PublicStatusService does, to annotate a location's public status
+  // with "entra em manutenção em X" ahead of time. An admin setting
+  // `maintenanceMode=true` does NOT auto-clear this — the public read
+  // side simply stops surfacing it once the location's overall status
+  // is already 'maintenance' (see that service's own doc comment), so a
+  // stale value here is harmless either way.
+  maintenanceScheduledAt   DateTime? @map("maintenance_scheduled_at") @db.Timestamptz
   memoryTotalMb            Int       @map("memory_total_mb")
   memoryReservedMb         Int       @default(0) @map("memory_reserved_mb")
   memoryOverallocatePct    Int       @default(0) @map("memory_overallocate_pct")
@@ -151,16 +194,61 @@ model Node {
   cpuReservedPercent       Int       @default(0) @map("cpu_reserved_percent")
   cpuOverallocatePct       Int       @default(-1) @map("cpu_overallocate_pct")
   uploadSizeMb             Int       @default(256) @map("upload_size_mb")
+  // Capacity plan (auto-derivation) — 'manual' is the only mode every
+  // node created before this migration keeps behaving as: the DECLARED
+  // columns above stay the ceiling, unchanged. 'auto' is opt-in per
+  // node; CapacityService.resolveNodeCapacity is the one place that
+  // reads this to decide whether a dimension's total/reserved comes
+  // from the columns above or from reported telemetry below — nothing
+  // else branches on it. See nodes_capacity_mode_check.
+  capacityMode             String    @default("manual") @map("capacity_mode")
+  // Safety margin applied ON TOP OF the admin reserve above, only in
+  // 'auto' mode — folded into resolveNodeCapacity's effective `reserved`
+  // before it ever reaches ceilingFor, so ceilingFor/assertCapacity/
+  // headroomFor/snapshotDimension need no changes at all. Defaults (10%,
+  // 10%, 10%) are this feature's own global default — there is no
+  // settings table in this schema (every other cross-cutting config
+  // lives as env vars or, like this, as a per-row column with its
+  // @default acting as the effective global default).
+  memorySafetyMarginPct    Int       @default(10) @map("memory_safety_margin_pct")
+  diskSafetyMarginPct      Int       @default(10) @map("disk_safety_margin_pct")
+  cpuSafetyMarginPct       Int       @default(10) @map("cpu_safety_margin_pct")
+  // Usage-percent thresholds for capacityStatus's 4 levels (normal/
+  // warning/high/critical) — same "column default = global default"
+  // posture as the safety margins above. Applies in both capacity
+  // modes (a manual node's admin may still want custom alert levels).
+  capacityWarnPct          Int       @default(70) @map("capacity_warn_pct")
+  capacityHighPct          Int       @default(85) @map("capacity_high_pct")
+  capacityCriticalPct      Int       @default(95) @map("capacity_critical_pct")
   healthStatus             String    @default("unknown") @map("health_status")
   lastHeartbeatAt          DateTime? @map("last_heartbeat_at") @db.Timestamptz
   agentVersion             String?   @map("agent_version")
   dockerVersion             String?   @map("docker_version")
   // Capacity plan Fase 2: what the agent ACTUALLY reports about its host,
   // strictly separate from the declared commercial-capacity columns
-  // above — never copied into them. All nullable: no agent sends these
-  // yet (that wiring is Fase 7), and an old agent's heartbeat must keep
+  // above — never copied into them, and never written to directly by
+  // anything but a heartbeat. All nullable: no agent sends these yet
+  // (that wiring is Fase 7), and an old agent's heartbeat must keep
   // working with these left NULL forever if it's never upgraded.
+  //
+  // In 'manual' capacityMode (every node's default) these stay exactly
+  // what the field names always said: purely informational display data,
+  // never read by capacity.math.ts. In 'auto' mode, resolveNodeCapacity
+  // reads reportedMemoryLimitMb (falling back to reportedMemoryTotalMb),
+  // reportedDiskTotalMb, and reportedCpuCount as the dimension's total —
+  // the only three fields on this whole model that cross from "reported"
+  // into "enforced," and only for nodes that opted in.
   reportedMemoryTotalMb    Int?      @map("reported_memory_total_mb")
+  // The node's OWN cgroup memory limit (v2 memory.max / v1
+  // memory.limit_in_bytes), distinct from reportedMemoryTotalMb (the
+  // Docker daemon's host-wide MemTotal). Inside an LXC guest without
+  // lxcfs, MemTotal reports the PROXMOX HOST's full RAM, not the
+  // guest's share — this field is what actually lets 'auto' mode sell
+  // the guest's real capacity instead of the host's. NULL for an agent
+  // older than this milestone, or when cgroup is genuinely unlimited —
+  // resolveNodeCapacity falls back to reportedMemoryTotalMb in both
+  // cases, same as it always effectively has.
+  reportedMemoryLimitMb    Int?      @map("reported_memory_limit_mb")
   reportedCpuCount         Int?      @map("reported_cpu_count")
   reportedDiskTotalMb      Int?      @map("reported_disk_total_mb")
   reportedDiskFreeMb       Int?      @map("reported_disk_free_mb")
@@ -359,19 +447,24 @@ model ServerTemplate {
   installImage      String    @default("ghcr.io/pxhost/installers:debian") @map("install_image")
   installEntrypoint String    @default("bash") @map("install_entrypoint")
   installScript     String    @map("install_script")
-  features          String[]  @default([])
   // The single canonical software signal (Paper/Fabric/Forge/...), used to
   // pick the right addon directory (M-client-features roadmap) and to keep
   // the assistant from ever giving software-incompatible instructions.
-  // Deliberately NOT reusing `features` above: that array is dead
-  // Pterodactyl-inherited data (written once by the seed, read nowhere) and
-  // is a set of UI feature flags, not a software identity — overloading one
-  // column with two unrelated meanings was worse than a second column.
   // Nullable: null means "nobody has classified this template yet," which
   // degrades to "no addon guidance available," not a wrong guess.
   softwareKind      String?   @map("software_kind")
   forceOutgoingIp   Boolean   @default(false) @map("force_outgoing_ip")
   isActive          Boolean   @default(true) @map("is_active")
+  // Customer-facing visibility (payments plan §1) — deliberately separate
+  // from `isActive` (an admin-only "usable at all" switch): a template can
+  // be active-but-internal (isPublic=false, still assignable by an admin)
+  // or active-and-public (sellable through the customer checkout). Default
+  // false so no existing/admin-created template turns public by accident.
+  isPublic          Boolean   @default(false) @map("is_public")
+  // Display order in the public catalog only; irrelevant to admin listing
+  // (which orders by name).
+  sortOrder         Int       @default(0) @map("sort_order")
+  iconUrl           String?   @map("icon_url")
   version           Int       @default(1)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
@@ -484,6 +577,7 @@ model Plan {
   servers       Server[]
   nodes         PlanNode[]
   subscriptions Subscription[]
+  orders        Order[]
 
   @@map("plans")
 }
@@ -547,6 +641,14 @@ model Server {
   status             String    @default("installing")
   suspendedAt        DateTime? @map("suspended_at") @db.Timestamptz
   suspensionReason   String?   @map("suspension_reason")
+  // 'admin' (a human via ServersController) or 'billing' (billing-cycle
+  // / the payments webhook, actorId: null). The ONLY thing that lets
+  // ServersService.unsuspend refuse to undo an admin suspension just
+  // because a payment came in — before this column, unsuspend() was
+  // unconditional and any caller could reactivate ANY suspended server.
+  // NULL whenever suspendedAt is NULL (mirrors that column's own
+  // consistency CHECK).
+  suspensionSource   String?   @map("suspension_source")
   powerState         String    @default("offline") @map("power_state")
   powerStateAt       DateTime  @default(now()) @map("power_state_at") @db.Timestamptz
   lastDiskUsedMb     Int       @default(0) @map("last_disk_used_mb")
@@ -562,14 +664,12 @@ model Server {
   allocations Allocation[]
   variables   ServerVariable[]
   subusers    Subuser[]
-  backups     Backup[]
   databases   Database[]
   schedules   Schedule[]
   mounts      ServerMount[]
   activity    ActivityLog[]
   transfers   ServerTransfer[]
   metrics     ServerMetric1m[]
-  billingEvents BillingEvent[]
   // Nullable, unique on the Subscription side (a server has at most one
   // subscription) — see Subscription.serverId's doc comment. NULL for
   // every server today (nothing links the two yet) and for any server an
@@ -577,6 +677,11 @@ model Server {
   // (future, deliberately not built in this milestone — see §13/§35 of
   // the commercial plan) auto-provisioning flow assigns one.
   subscription  Subscription?
+  // Same shape as `subscription` above, one level up the chain: the
+  // Order that paid for this server, once ProvisioningService attaches
+  // it. NULL for every server created outside the checkout flow
+  // (admin-created directly, or created before this milestone).
+  order         Order?
 
   @@map("servers")
 }
@@ -614,31 +719,6 @@ model Subuser {
 }
 
 // ────────────────────── SERVER SERVICES ────────────────────────
-
-model Backup {
-  id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  serverId      String    @map("server_id") @db.Uuid
-  createdBy     String?   @map("created_by") @db.Uuid
-  name          String
-  adapter       String    @default("local")
-  status        String    @default("pending")
-  ignoredGlobs  String    @default("") @map("ignored_globs")
-  bytes         BigInt    @default(0)
-  checksum      String?
-  checksumAlgo  String    @default("sha256") @map("checksum_algo")
-  isLocked      Boolean   @default(false) @map("is_locked")
-  uploadId      String?   @map("upload_id")
-  errorMessage  String?   @map("error_message")
-  completedAt   DateTime? @map("completed_at") @db.Timestamptz
-  expiresAt     DateTime? @map("expires_at") @db.Timestamptz
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
-
-  server  Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
-  creator User?  @relation("BackupCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
-
-  @@map("backups")
-}
 
 model DatabaseHost {
   id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
@@ -748,25 +828,6 @@ model ServerTransfer {
   @@map("server_transfers")
 }
 
-// BillingEvent's id IS the external payment provider's own event id, not
-// a generated uuid — that's what makes the webhook handler idempotent
-// (architecture doc roadmap M14: "idempotently suspends/restores"): a
-// second delivery of the same event hits this table's primary key and
-// is a no-op, with no separate dedup table or cache needed. See
-// BillingWebhookService's doc comment for the full reasoning.
-model BillingEvent {
-  id          String   @id // external event id, e.g. Stripe's "evt_..."
-  serverId    String   @map("server_id") @db.Uuid
-  type        String
-  action      String // 'suspend' | 'restore' — what this event resolved to
-  receivedAt  DateTime @default(now()) @map("received_at") @db.Timestamptz
-  rawPayload  Json     @map("raw_payload")
-
-  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
-
-  @@map("billing_events")
-}
-
 // ────────────────────── OBSERVABILITY ──────────────────────────
 
 model ActivityLog {
@@ -859,6 +920,42 @@ model Subscription {
   currentPeriodEndsAt DateTime? @map("current_period_ends_at") @db.Timestamptz
   cancelledAt         DateTime? @map("cancelled_at") @db.Timestamptz
   cancelReason        String?   @map("cancel_reason")
+  // Set by a customer cancelling an active/past_due subscription who
+  // still wants their current paid period honored (payments plan §19)
+  // — the subscription stays `active` and the server keeps running
+  // until `currentPeriodEndsAt`, at which point billing-cycle finishes
+  // the cancellation (status -> 'cancelled') instead of generating a
+  // renewal order. False for an IMMEDIATE cancel (the normal path,
+  // unchanged) and for every subscription created before this column
+  // existed.
+  cancelAtPeriodEnd   Boolean   @default(false) @map("cancel_at_period_end")
+  // What the customer chose at checkout — 'pix' (per-period Checkout Pro,
+  // manual/notified renewal) or 'card' (Mercado Pago PreApproval,
+  // automatic recurring charge). NULL for every subscription created
+  // before this column existed — treated identically to 'pix' by every
+  // reader (manual-renewal is the only behavior that ever existed).
+  paymentMethod            String?   @map("payment_method")
+  // The Mercado Pago preapproval id — card only. The ONLY key the
+  // subscription_preapproval/subscription_authorized_payment webhooks
+  // are allowed to look this row up by (never amount/name), same
+  // doctrine Order.externalReference already follows.
+  externalSubscriptionId   String?   @unique @map("external_subscription_id")
+  // true for BOTH pix and card since the Asaas migration (2026-09) —
+  // `POST /v3/subscriptions` is a scheduler that generates a new charge
+  // every cycle for either billingType, so there is no more manual-
+  // renewal method distinction. billing-cycle applies the SAME grace
+  // period (BILLING_GRACE_DAYS) to both on PAYMENT_OVERDUE — the
+  // Mercado-Pago-era asymmetry (card deferring to MP's own retry
+  // cadence) no longer applies. False only for subscriptions still on
+  // the legacy `provider = 'mercadopago'` rows kept for history.
+  autoRenew                Boolean   @default(false) @map("auto_renew")
+  // Mercado-Pago-era flag (preapproval "authorized" before the first
+  // charge settles, ~1h later). The Asaas flow has no such gap —
+  // provisioning always waits for an actual PaymentConfirmed — so this
+  // column is unused (stays false) for every `provider = 'asaas'` row.
+  // Left in place rather than dropped: still meaningful on legacy
+  // Mercado Pago rows kept for financial history.
+  firstChargePending       Boolean   @default(false) @map("first_charge_pending")
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -866,6 +963,7 @@ model Subscription {
   plan   Plan                 @relation(fields: [planId], references: [id], onDelete: Restrict)
   server Server?              @relation(fields: [serverId], references: [id], onDelete: SetNull)
   events SubscriptionEvent[]
+  orders Order[]
 
   @@index([userId, status])
   @@index([planId, status])
@@ -896,4 +994,206 @@ model SubscriptionEvent {
 
   @@index([subscriptionId])
   @@map("subscription_events")
+}
+
+// ─────────────────────── BILLING / PAYMENTS ──────────────────────────
+// Multi-provider payments (Asaas since 2026-09, Mercado Pago before
+// that — see PAYMENT_PROVIDER/PaymentProvider's own doc comment).
+// `PaymentCustomer` links a User to their id on ONE provider;
+// `Order` is the platform's OWN commercial pedido (what was bought, at
+// what price, in what state, and what it should provision once paid);
+// `Payment` is one gateway transaction against an order (an order can
+// have several — a Pix that expired, then a new charge the next
+// cycle); `PaymentWebhookEvent` is delivery/idempotency bookkeeping for
+// inbound notifications. Nothing here is provider-specific in shape —
+// swapping/adding a provider changes one class under `modules/payments/`
+// (the only place allowed to import a provider's SDK/HTTP client) and
+// nothing in this section.
+
+// Links a User to their customer id on ONE payment provider. Composite-
+// unique on (provider, userId): at most one Asaas customer per user
+// (re-used across every subscription/order that user ever creates,
+// never re-created). Also unique on (provider, externalCustomerId) —
+// the reverse lookup a reconciliation job would need. No RLS: written/
+// read only by the webhook handler and OrdersService's own admin-
+// equivalent RLS context, same posture `payments` already documents —
+// never queried directly under a customer's own JWT context.
+model PaymentCustomer {
+  id                 String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId             String   @map("user_id") @db.Uuid
+  provider           String
+  externalCustomerId String   @map("external_customer_id")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, userId])
+  @@unique([provider, externalCustomerId])
+  @@map("payment_customers")
+}
+
+model Order {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // The webhook's ONLY lookup key (payments plan's own rule: never
+  // accept a notification just because amount/product name happen to
+  // match). Server-generated (randomBytes), never accepted from the
+  // client, and never reused.
+  externalReference String @unique @map("external_reference")
+  userId            String @map("user_id") @db.Uuid
+  planId            String @map("plan_id") @db.Uuid
+  // NULL until the Subscription is created alongside this order, in the
+  // same transaction (OrdersService.createCheckoutOrder).
+  subscriptionId String? @map("subscription_id") @db.Uuid
+  // NULL until provisioning succeeds. UNIQUE — same "at most one" shape
+  // as Subscription.serverId, and the actual idempotency guard
+  // ProvisioningService relies on: a retry sees this already set and
+  // no-ops instead of provisioning a second server.
+  serverId    String? @unique @map("server_id") @db.Uuid
+  kind        String  @default("plan_initial")
+  amountCents Int     @map("amount_cents")
+  currency    String  @db.Char(3)
+  status      String  @default("pending")
+  // 'asaas' since the 2026-09 migration; legacy rows keep 'mercadopago'
+  // untouched, for financial history — see PaymentProvider's own doc
+  // comment for why nothing outside `modules/payments/` ever reads
+  // this column to decide behavior.
+  provider    String  @default("asaas")
+
+  // Unused by the Checkout Bricks flow (card and Pix are both created
+  // without a Preference/redirect) — left in place, not removed: a
+  // future non-Bricks provider integration could still populate these.
+  externalPreferenceId String?   @map("external_preference_id")
+  checkoutUrl          String?   @map("checkout_url")
+  // The Pix QR, captured SYNCHRONOUSLY from Payment.create's own
+  // response (payment_method_id: 'pix') — never regenerated on a page
+  // reload, so the customer always sees the SAME QR they were first
+  // shown until it's paid or expires.
+  pixQrCode            String?   @map("pix_qr_code")
+  pixQrCodeBase64      String?   @map("pix_qr_code_base64")
+  paymentMethod        String?   @map("payment_method")
+  installments         Int?
+  paidAmountCents      Int?      @map("paid_amount_cents")
+  paidAt               DateTime? @map("paid_at") @db.Timestamptz
+  // A `pending` order older than this stops holding its subscription's
+  // slot (payments plan's billing-cycle job) — an abandoned checkout
+  // must not permanently squat commercial capacity.
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz
+
+  provisioningStatus   String  @default("not_required") @map("provisioning_status")
+  provisioningError    String? @map("provisioning_error")
+  provisioningAttempts Int     @default(0) @map("provisioning_attempts")
+
+  // Immutable snapshot of what was actually purchased — server name,
+  // templateId (+ its name/group at purchase time), the requested
+  // template variables, and the plan's resource numbers at purchase
+  // time. An admin editing the Plan or Template later must never
+  // retroactively change what an already-placed order provisions — same
+  // "snapshot, not reference" doctrine Server's own plan-derived columns
+  // already follow (architecture doc 2.1).
+  config Json
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan         Plan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
+  subscription Subscription?         @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  server       Server?               @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  payments     Payment[]
+  webhookEvents PaymentWebhookEvent[]
+
+  @@index([userId, status])
+  @@index([status])
+  @@index([subscriptionId])
+  @@index([externalPreferenceId])
+  @@map("orders")
+}
+
+// One gateway transaction per row. `id` is the PROVIDER's own payment id
+// used verbatim as the primary key (same doctrine the earlier, now-
+// removed billing-webhook placeholder used for its own event id) — a
+// webhook redelivering the same payment hits a real unique-constraint
+// violation on insert, which IS the idempotency guard, not a check the
+// application has to get right on its own.
+model Payment {
+  id                  String    @id
+  orderId             String    @map("order_id") @db.Uuid
+  // The 9 statuses Mercado Pago's own docs enumerate for a payment
+  // (checkout-api/response-handling/collection-results) — never a
+  // provider-specific value the platform invented.
+  status              String
+  statusDetail        String?   @map("status_detail")
+  amountCents         Int       @map("amount_cents")
+  paidAmountCents     Int?      @map("paid_amount_cents")
+  currency            String    @db.Char(3)
+  paymentMethodId     String?   @map("payment_method_id")
+  paymentTypeId       String?   @map("payment_type_id")
+  installments        Int?
+  approvedAt          DateTime? @map("approved_at") @db.Timestamptz
+  refundedAmountCents Int       @default(0) @map("refunded_amount_cents")
+  // Sanitized snapshot of the gateway's own payment object — never card
+  // number/CVV (Mercado Pago's API doesn't return those either); used
+  // for admin diagnosis, never re-parsed by application logic.
+  raw       Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // RESTRICT, not CASCADE: financial history is permanent (payments
+  // plan's own repeated rule) — an order can never be deleted out from
+  // under a payment record. DB-level DELETE is also revoked on this
+  // table entirely (see 0022_payments' own comment).
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([status])
+  @@map("payments")
+}
+
+// Delivery/idempotency bookkeeping for inbound notifications. `id` is
+// the notification's own id (same PK-as-idempotency-key doctrine as
+// `Payment.id` above): Mercado Pago retries an unacknowledged
+// notification every 15 minutes (its own documented policy) — a
+// redelivery hits a duplicate-key error on insert and is treated as
+// already-received, never reprocessed.
+model PaymentWebhookEvent {
+  id          String    @id
+  provider    String    @default("mercadopago")
+  type        String
+  action      String?
+  dataId      String?   @map("data_id")
+  orderId     String?   @map("order_id") @db.Uuid
+  status      String    @default("received")
+  error       String?
+  raw         Json
+  receivedAt  DateTime  @default(now()) @map("received_at") @db.Timestamptz
+  processedAt DateTime? @map("processed_at") @db.Timestamptz
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("payment_webhook_events")
+}
+
+// ─────────────────────── SITE CONFIGURATION ──────────────────────────
+
+// A site-wide warning/announcement banner, admin-editable, shown to
+// every visitor — logged out on the public marketing site AND logged in
+// on the panel (AppShell and PublicShell each render their own copy of
+// the same banner component; see AnnouncementBanner.tsx — there is no
+// shared parent layout to inject it into once). Single row: no admin
+// history of past announcements is kept, just the current one.
+// SiteAnnouncementService finds the first row or creates a default
+// (inactive, empty message) — the same find-or-create posture
+// prisma/seed.ts already uses for the root admin — rather than keying
+// on a magic fixed id. No RLS: like `plans`/`nodes`, this is global
+// config, not per-tenant data.
+model SiteAnnouncement {
+  id        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  message   String    @default("")
+  isActive  Boolean   @default(false) @map("is_active")
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@map("site_announcements")
 }

@@ -1,4 +1,4 @@
-module github.com/pxhost/agent
+module github.com/gxhost/agent
 
 go 1.27.0
 

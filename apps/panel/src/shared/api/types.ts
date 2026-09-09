@@ -17,6 +17,18 @@ export interface ClientAccount {
   lastLoginAt: string | null;
   twoFactorEnabled: boolean;
   createdAt: string;
+  // Billing profile — collected at checkout time (CheckoutPage.tsx), not
+  // signup. All null until the owner subscribes to a plan for the first
+  // time. billingCountry is deliberately absent — server-managed, always
+  // "BR" today, not client-editable (see the User model's schema comment).
+  cpf: string | null;
+  billingPostalCode: string | null;
+  billingAddressLine: string | null;
+  billingAddressNumber: string | null;
+  billingAddressComplement: string | null;
+  billingNeighborhood: string | null;
+  billingCity: string | null;
+  billingState: string | null;
 }
 
 // Mirrors apps/api/src/modules/templates/software.ts's describeSoftware()
@@ -257,6 +269,12 @@ export interface AdminNode {
   fqdn: string;
   scheme: string;
   daemonPort: number;
+  // Deploy plan — the panel↔agent control-plane origin, when it differs
+  // from fqdn/scheme/daemonPort (which stay the browser's own direct
+  // console/file/backup target, unchanged). Null = same as the browser
+  // uses, the default for every node. Set this to a node's private
+  // WireGuard address to keep the control plane off the public internet.
+  controlAddress: string | null;
   daemonDataPath: string;
   memoryTotalMb: number;
   memoryReservedMb: number;
@@ -269,15 +287,36 @@ export interface AdminNode {
   cpuOverallocatePct: number;
   isPublic: boolean;
   maintenanceMode: boolean;
+  // A future heads-up, distinct from `maintenanceMode` itself — see
+  // that column's own doc comment on the API side (schema.prisma).
+  maintenanceScheduledAt: string | null;
   healthStatus: string;
   lastHeartbeatAt: string | null;
   agentVersion: string | null;
   createdAt: string;
+  // Capacity plan (auto-derivation) — 'manual' (every node's default)
+  // keeps the declared columns above as the ceiling; 'auto' derives it
+  // from reported telemetry instead. Margins/thresholds always apply
+  // (thresholds even in manual mode — see capacityStatus).
+  capacityMode: 'manual' | 'auto';
+  memorySafetyMarginPct: number;
+  diskSafetyMarginPct: number;
+  cpuSafetyMarginPct: number;
+  capacityWarnPct: number;
+  capacityHighPct: number;
+  capacityCriticalPct: number;
   // Capacity plan Fase 2/7: what the agent ACTUALLY reports, distinct
   // from the declared columns above. Null until an agent new enough to
   // send them heartbeats at least once — never copied into the declared
-  // fields, and never the number a capacity ceiling is computed from.
+  // fields directly (only resolveNodeCapacity, in 'auto' mode, reads
+  // reportedMemoryLimitMb/reportedMemoryTotalMb/reportedDiskTotalMb/
+  // reportedCpuCount as a ceiling).
   reportedMemoryTotalMb: number | null;
+  // The node's own cgroup memory limit — preferred over
+  // reportedMemoryTotalMb in auto mode (the LXC/Proxmox host-vs-guest
+  // RAM fix). Null on an agent older than this milestone, or when the
+  // cgroup is genuinely unlimited.
+  reportedMemoryLimitMb: number | null;
   reportedCpuCount: number | null;
   reportedDiskTotalMb: number | null;
   reportedDiskFreeMb: number | null;
@@ -312,6 +351,20 @@ export interface BootstrapTokenResponse {
   command: string;
 }
 
+// Capacity plan (auto-derivation) — the 4-level alert vocabulary
+// (🟢🟡🟠🔴), backed by Meter's own 'high' tone/`--color-high` token.
+export type CapacityStatus = 'normal' | 'warning' | 'high' | 'critical';
+
+// A dimension's provenance chain (§25: detected → margin → effective →
+// reserved → available) — mirrors the API's `ResolvedDimension`.
+// 'manual': `declared` IS `effectiveTotal`, `detected` may still be
+// present for display (a manual node can still have telemetry) but was
+// never consulted. 'auto': `effectiveTotal` comes from `detected`.
+// 'unconfigured': auto mode with no telemetry for this dimension yet —
+// never a green light for new sales (see `NodeCapacitySnapshot
+// .acceptsNewServers`).
+export type CapacityProvenance = 'auto' | 'manual' | 'unconfigured';
+
 // Capacity plan Fase 2/3 — shapes returned by /api/admin/capacity/*.
 // `ceiling`/`available` are `null` for a genuinely unlimited dimension
 // (overallocatePct === -1); `commercial` is always a finite number for
@@ -328,7 +381,13 @@ export interface CapacityDimensionSnapshot {
   allocated: number;
   available: number | null;
   usedPct: number;
-  status: 'normal' | 'warning' | 'critical';
+  status: CapacityStatus;
+  // §25's chain, for display — `totalPhysical`/`reservedAmount` above
+  // are already the EFFECTIVE (post-margin) values `ceilingFor` used;
+  // these three are the raw inputs that produced them.
+  provenance: CapacityProvenance;
+  detected: number | null;
+  safetyMarginPct: number;
 }
 
 export interface NodeCapacitySnapshot {
@@ -338,6 +397,11 @@ export interface NodeCapacitySnapshot {
   maintenanceMode: boolean;
   isPublic: boolean;
   serverCount: number;
+  // Capacity plan (auto-derivation)
+  capacityMode: 'manual' | 'auto';
+  telemetryStale: boolean;
+  acceptsNewServers: boolean;
+  acceptsNewServersReason: string | null;
   memory: CapacityDimensionSnapshot;
   disk: CapacityDimensionSnapshot;
   cpu: CapacityDimensionSnapshot & { accountingEnabled: boolean };
@@ -361,6 +425,18 @@ export interface CapacityDashboard {
   perNode: NodeCapacitySnapshot[];
 }
 
+// One node's contribution to a plan's derived vagas — `slots: 0` with a
+// `reason` (not a fit failure) means the node itself refuses new servers
+// right now (maintenance, or auto mode without trustworthy telemetry —
+// see `NodeCapacitySnapshot.acceptsNewServers`).
+export interface PlanNodeSlots {
+  nodeId: string;
+  nodeName: string;
+  slots: number | null;
+  limiting: 'memory' | 'disk' | 'cpu' | null;
+  reason: string | null;
+}
+
 export interface PlanOccupancy {
   id: string;
   name: string;
@@ -370,6 +446,26 @@ export interface PlanOccupancy {
   diskMb: number;
   cpuLimitPercent: number;
   occupied: number;
+  // Capacity plan (auto-derivation) §6/§11 — `maxSlots` mirrors
+  // `AdminPlan.maxSlots` (the optional commercial ceiling); `derivedSlots`
+  // is the sum of real node capacity across every eligible node (`null` =
+  // unlimited); `effectiveSlots` is `min(derivedSlots, maxSlots)` and
+  // `remaining` is `effectiveSlots - occupied`, floored at 0. `perNode`
+  // is the §16 breakdown.
+  maxSlots: number | null;
+  derivedSlots: number | null;
+  effectiveSlots: number | null;
+  remaining: number | null;
+  perNode: PlanNodeSlots[];
+}
+
+// GET /api/admin/capacity/nodes/:id/plans — the same derivation as
+// `PlanOccupancy.perNode`, scoped to one node, for every plan.
+export interface NodePlanSlots {
+  nodeId: string;
+  nodeName: string;
+  acceptsNewServers: boolean;
+  results: { planId: string; planName: string; slots: number | null; limiting: 'memory' | 'disk' | 'cpu' | null; reason: string | null }[];
 }
 
 export interface CapacitySimulateResult {
@@ -420,6 +516,9 @@ export interface AdminTemplate {
   installScript: string;
   softwareKind: SoftwareKind | null;
   isActive: boolean;
+  isPublic: boolean;
+  sortOrder: number;
+  iconUrl: string | null;
   createdAt: string;
   variables: AdminTemplateVariable[];
 }
@@ -635,6 +734,110 @@ export interface PublicPlan {
   availability: PlanAvailability;
 }
 
+// GET /api/public/templates — the software catalog a customer picks from
+// at checkout (never installScript/dockerImages/node-shaped fields, see
+// the API's PublicTemplatesService doc comment). `options` are the
+// template's own customer-editable variables, already translated into a
+// form-ready shape by the SAME `rules` string the backend validates
+// against on submit — see `deriveOptionShape` there.
+export type PublicTemplateOptionKind = 'text' | 'integer' | 'boolean' | 'choice';
+
+export interface PublicTemplateOption {
+  envVariable: string;
+  name: string;
+  description: string | null;
+  defaultValue: string;
+  kind: PublicTemplateOptionKind;
+  required: boolean;
+  min?: number;
+  max?: number;
+  choices?: string[];
+}
+
+export interface PublicTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  iconUrl: string | null;
+  softwareKind: string | null;
+  group: { id: string; name: string; iconUrl: string | null };
+  options: PublicTemplateOption[];
+}
+
+// GET/POST /api/client/orders, /api/client/checkout — Checkout Bricks:
+// no `checkoutUrl` is ever returned for pix/card (no redirect exists in
+// this flow at all); `pixQrCode`/`pixQrCodeBase64` are populated only
+// for `paymentMethod: 'pix'`, both `null` for `'card'`.
+export type OrderStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded' | 'expired';
+export type OrderProvisioningStatus = 'not_required' | 'pending' | 'running' | 'done' | 'failed';
+
+export interface Order {
+  id: string;
+  externalReference: string;
+  planId: string;
+  subscriptionId: string | null;
+  serverId: string | null;
+  kind: 'plan_initial' | 'plan_renewal' | 'addon';
+  amountCents: number;
+  currency: string;
+  status: OrderStatus;
+  provider: string;
+  checkoutUrl: string | null;
+  pixQrCode: string | null;
+  pixQrCodeBase64: string | null;
+  paymentMethod: 'pix' | 'card' | null;
+  installments: number | null;
+  paidAmountCents: number | null;
+  paidAt: string | null;
+  expiresAt: string | null;
+  provisioningStatus: OrderProvisioningStatus;
+  provisioningError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// GET /api/admin/orders — one Asaas charge attempt against an order
+// (an order can have several over its renewal history). Never card
+// data — see Payment's own backend doc comment.
+export interface Payment {
+  id: string;
+  orderId: string;
+  status: string;
+  statusDetail: string | null;
+  amountCents: number;
+  paidAmountCents: number | null;
+  currency: string;
+  paymentMethodId: string | null;
+  installments: number | null;
+  approvedAt: string | null;
+  refundedAmountCents: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaymentWebhookEvent {
+  id: string;
+  provider: string;
+  type: string;
+  action: string | null;
+  dataId: string | null;
+  status: 'received' | 'processed' | 'ignored' | 'failed';
+  error: string | null;
+  receivedAt: string;
+  processedAt: string | null;
+}
+
+export interface AdminOrder extends Order {
+  user: { id: string; email: string; username: string };
+  plan: { id: string; name: string };
+  server: { id: string; name: string; nodeId: string } | null;
+}
+
+export interface AdminOrderDetail extends AdminOrder {
+  payments: Payment[];
+  webhookEvents: PaymentWebhookEvent[];
+}
+
 export type SubscriptionStatus = 'pending' | 'active' | 'past_due' | 'suspended' | 'cancelled' | 'expired';
 
 // The plan fields a subscription's own detail view needs — never the
@@ -674,6 +877,13 @@ export interface Subscription {
   currentPeriodEndsAt: string | null;
   cancelledAt: string | null;
   cancelReason: string | null;
+  // Checkout Bricks pivot: 'card' auto-renews via Mercado Pago's own
+  // preapproval (autoRenew true, externalSubscriptionId set); 'pix'
+  // renews only when the customer pays a new order (renewForUser).
+  paymentMethod: 'pix' | 'card' | null;
+  externalSubscriptionId: string | null;
+  autoRenew: boolean;
+  firstChargePending: boolean;
   createdAt: string;
   updatedAt: string;
   plan: SubscriptionPlanSummary;
@@ -696,4 +906,39 @@ export interface AdminSubscriptionList {
   total: number;
   limit: number;
   offset: number;
+}
+
+// ───────────────── SITE ANNOUNCEMENT + NODE STATUS ──────────────────
+
+// GET/PATCH /api/admin/site-announcement — the full row, admin-only.
+export interface SiteAnnouncement {
+  id: string;
+  message: string;
+  isActive: boolean;
+  updatedAt: string;
+}
+
+// GET /api/public/status/announcement — `null` means "nothing to show,"
+// the frontend's whole contract: render if non-null, never a separate
+// isActive check on top (mirrors PublicStatusService.getPublic's own
+// doc comment on the API side).
+export interface PublicAnnouncement {
+  message: string;
+  updatedAt: string;
+}
+
+// GET /api/public/status/nodes — aggregated per LOCATION, never a raw
+// node name/fqdn (see PublicStatusService's own doc comment for why).
+export type LocationStatusLevel = 'operational' | 'degraded' | 'maintenance' | 'offline';
+
+export interface PublicLocationStatus {
+  id: string;
+  name: string;
+  shortCode: string;
+  country: string | null;
+  status: LocationStatusLevel;
+  // The nearest FUTURE scheduled maintenance among this location's
+  // nodes, or null — only ever set when `status !== 'maintenance'` (see
+  // PublicStatusService's own doc comment).
+  nextMaintenanceAt: string | null;
 }

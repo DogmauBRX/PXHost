@@ -33,7 +33,7 @@ describe('Account (e2e)', () => {
     prisma = app.get(PrismaService);
 
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
-    userEmail = `account-e2e-${suffix}@pxhost.local`;
+    userEmail = `account-e2e-${suffix}@gxhost.local`;
     const user = await prisma.user.create({
       data: { email: userEmail, username: `account-e2e-${suffix}`, passwordHash, isActive: true, emailVerifiedAt: new Date() },
     });
@@ -81,7 +81,7 @@ describe('Account (e2e)', () => {
   it('rejects an email change without currentPassword', async () => {
     const res = await authed('/api/client/account', {
       method: 'PATCH',
-      payload: { email: `account-e2e-new-${suffix}@pxhost.local` },
+      payload: { email: `account-e2e-new-${suffix}@gxhost.local` },
     });
     expect(res.statusCode).toBe(400);
   });
@@ -89,13 +89,13 @@ describe('Account (e2e)', () => {
   it('rejects an email change with the wrong currentPassword', async () => {
     const res = await authed('/api/client/account', {
       method: 'PATCH',
-      payload: { email: `account-e2e-new-${suffix}@pxhost.local`, currentPassword: 'wrong' },
+      payload: { email: `account-e2e-new-${suffix}@gxhost.local`, currentPassword: 'wrong' },
     });
     expect(res.statusCode).toBe(401);
   });
 
   it('accepts an email change with the correct currentPassword and clears emailVerifiedAt', async () => {
-    const newEmail = `account-e2e-new-${suffix}@pxhost.local`;
+    const newEmail = `account-e2e-new-${suffix}@gxhost.local`;
     const res = await authed('/api/client/account', {
       method: 'PATCH',
       payload: { email: newEmail, currentPassword: password },
@@ -110,7 +110,7 @@ describe('Account (e2e)', () => {
   it('rejects changing email to one already taken', async () => {
     const other = await prisma.user.create({
       data: {
-        email: `account-e2e-taken-${suffix}@pxhost.local`,
+        email: `account-e2e-taken-${suffix}@gxhost.local`,
         username: `account-e2e-taken-${suffix}`,
         passwordHash: await argon2.hash('Whatever!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 }),
         isActive: true,
@@ -141,6 +141,57 @@ describe('Account (e2e)', () => {
       payload: { currentPassword: password, newPassword: 'NewPassword!234567', confirmPassword: 'Different!234567' },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects an invalid CPF', async () => {
+    const res = await authed('/api/client/account', {
+      method: 'PATCH',
+      payload: { cpf: '11111111111' }, // all-same-digit — passes the naive checksum, rejected explicitly
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a CPF already used by another account', async () => {
+    const other = await prisma.user.create({
+      data: {
+        email: `account-e2e-cpf-taken-${suffix}@gxhost.local`,
+        username: `account-e2e-cpf-taken-${suffix}`,
+        passwordHash: await argon2.hash('Whatever!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 }),
+        isActive: true,
+        // Deliberately not '11144477735'/'52998224725' — those are the
+        // shared "taken CPF" fixtures other e2e-spec files (subscriptions,
+        // checkout) create as long-lived users for their own suites, and
+        // Jest runs spec files in parallel workers against the same DB;
+        // reusing one caused a real cross-file race on this unique index.
+        cpf: '61234987031',
+      },
+    });
+    const res = await authed('/api/client/account', { method: 'PATCH', payload: { cpf: '61234987031' } });
+    expect(res.statusCode).toBe(409);
+    await prisma.user.updateMany({ where: { id: other.id }, data: { deletedAt: new Date() } });
+  });
+
+  it('accepts a valid CPF and billing address, including an empty (omitted) complement, and persists them', async () => {
+    const res = await authed('/api/client/account', {
+      method: 'PATCH',
+      payload: {
+        cpf: '529.982.247-25',
+        billingPostalCode: '01310-100',
+        billingAddressLine: 'Av. Paulista',
+        billingAddressNumber: '1000',
+        billingAddressComplement: '', // no complement — must not be rejected as "too short"
+        billingNeighborhood: 'Bela Vista',
+        billingCity: 'São Paulo',
+        billingState: 'SP',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.cpf).toBe('52998224725');
+    expect(body.billingPostalCode).toBe('01310100');
+    expect(body.billingAddressLine).toBe('Av. Paulista');
+    expect(body.billingCity).toBe('São Paulo');
+    expect(body.billingState).toBe('SP');
   });
 
   it('change-password with the correct currentPassword succeeds, logs in with the new password, and the caller\'s own token stops working', async () => {

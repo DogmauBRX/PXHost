@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Fragment+Mono:ital@0;1&family=Public+Sans:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fragment+Mono:ital@0;1&family=Public+Sans:wght@400;500;600;700&family=Orbitron:wght@600;700;800&display=swap");
 @import "tailwindcss";
 
 /*
@@ -15,13 +15,28 @@
 @theme {
   --font-sans: "Public Sans", -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Fragment Mono", "SFMono-Regular", Consolas, monospace;
+  /* The landing hero's whole message block (headline, tagline, and the
+     supporting paragraph — via the `font-display` utility this token
+     generates), not the rest of the page's body copy, which stays on
+     --font-sans. Orbitron (asked for something "mais futurista") is
+     wide and squared-off enough that it needs care outside a big short
+     headline: the supporting paragraph is sized down (text-base,
+     font-medium — see LandingPage.tsx) specifically so it doesn't wrap
+     into a dense, hard-to-read block at body-copy size. */
+  --font-display: "Orbitron", "Public Sans", -apple-system, "Segoe UI", sans-serif;
 
-  --color-bg: #f6f7f9;
-  --color-surface: #ffffff;
-  --color-surface-2: #f1f3f6;
+  /* Softened off-whites, not pure #fff/#f… — a genuinely white card next
+     to a saturated orange accent read as glaring (reported live: "está
+     bem forte a luminosidade branca"). Every step below is still
+     clearly "light mode," just a few points darker than the previous
+     pass, and the relative spacing between bg/surface/surface-2/field
+     is preserved so hover/elevation logic elsewhere needs no changes. */
+  --color-bg: #eef0f3;
+  --color-surface: #f9fafb;
+  --color-surface-2: #e9ecf0;
   /* Inputs need their own token: on light, `surface-2` is also the row-hover
      colour, so fields would read as hovered rows inside a white card. */
-  --color-field: #ffffff;
+  --color-field: #f5f6f8;
   --color-border: #e4e7ec;
   --color-border-strong: #cdd3dc;
   --color-text: #14181f;
@@ -43,6 +58,11 @@
   --color-ok-tint: #e9f7ef;
   --color-warn: #a16207;
   --color-warn-tint: #fdf4e3;
+  /* The capacity dashboard's 4th (🟠) alert level, between warn and fail
+     — deliberately a darker/more muted orange than `--color-accent`
+     (#ea580c) so a "high usage" meter never reads as a branded button. */
+  --color-high: #c2410c;
+  --color-high-tint: #fdf1e7;
   --color-fail: #c7302b;
   --color-fail-tint: #fdecea;
   /* Blue is not decoration: the stats chart draws CPU in `accent`, and an
@@ -83,6 +103,8 @@ html[data-theme="dark"] {
   --color-ok-tint: #12261c;
   --color-warn: #ddb157;
   --color-warn-tint: #2a2213;
+  --color-high: #fb923c;
+  --color-high-tint: #2e2013;
   --color-fail: #ef7b6b;
   --color-fail-tint: #2c1815;
   --color-info: #6ba5f8;
@@ -114,9 +136,27 @@ html[data-theme="dark"] {
  * fixed` pins every layer to the viewport — the page (not `<main>`)
  * scrolls, per AppShell's own doc comment, so a `scroll`-attached layer
  * would slide out of view on any page taller than one screen.
+ *
+ * The three decorative layers are gated behind `html[data-app-ready]`
+ * (set by main.tsx the instant React mounts) rather than always-on.
+ * `main()` awaits `bootstrapAuth()` — a network round trip — before its
+ * first render, so on every reload there's a real gap with `#root`
+ * empty and nothing yet on screen to sit "behind"; without this gate,
+ * that gap showed the full-strength dot grid on its own, ungrounded by
+ * any card or text, which read as a stray-orange-dots bug rather than
+ * texture. The flat `--color-bg` base colour (this app's existing
+ * anti-flash doctrine — see index.html's inline theme script) still
+ * applies immediately either way, so there is no white/blank flash.
  */
 body {
   background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html[data-app-ready] body {
   background-image:
     radial-gradient(60% 55% at 8% -10%, color-mix(in srgb, var(--color-accent) 24%, transparent) 0%, transparent 70%),
     radial-gradient(50% 48% at 100% 105%, color-mix(in srgb, var(--color-accent) 18%, transparent) 0%, transparent 70%),
@@ -124,10 +164,6 @@ body {
   background-size: 100% 100%, 100% 100%, 32px 32px;
   background-repeat: no-repeat, no-repeat, repeat;
   background-attachment: fixed, fixed, fixed;
-  color: var(--color-text);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
@@ -136,47 +172,149 @@ body {
 }
 
 /*
- * The login page's "hero" treatment — the one screen where the brand gets
- * a full-bleed moment. Four soft accent "aurora" blobs (no hard edges, no
- * grid lines — a crisp repeating lattice was tried here first and read as
- * busy rather than beautiful) breathing slowly: the single keyframe below
- * nudges all four gradient positions in DIFFERENT directions each half-
- * cycle, so the blobs drift apart and back together rather than moving in
- * lockstep. `color-mix()` against the theme's own tokens means light/dark
- * need no separate rule. `prefers-reduced-motion` turns the drift off
- * entirely rather than slowing it down.
+ * The auth screens' (login/register/forgot-password/reset-password)
+ * "hero" treatment — the one set of screens where the brand gets a
+ * full-bleed moment, distinct on purpose from the dot-grid wallpaper
+ * `body` carries everywhere INSIDE the panel (see that rule's own doc
+ * comment) — the circuit board is what a visitor sees before they're
+ * "in" anything; the dot grid is the working-dashboard texture once
+ * they are. `overflow: hidden` clips `.login-hero__circuit`'s edges to
+ * the viewport.
+ *
+ * `--color-bg` (the app's own base/darkest tone), not `--color-surface-2`
+ * (used here originally, and still what `.network-hero` uses) — the
+ * login CARD sits on `--color-surface`, and in dark mode `--color-
+ * surface-2` is actually LIGHTER than `--color-surface` (a hover-row
+ * tint, not a "recede behind the foreground" tone), so the card was
+ * elevation-INVERTED: darker than the backdrop it floats on, which read
+ * as the card blending/sinking into the page rather than sitting above
+ * it (reported live: "o painel de login... está muito misturado").
+ * `--color-bg` is darker than `--color-surface` in both themes, so the
+ * card is now unambiguously the lighter, foreground element — normal
+ * elevation, same direction every other surface-on-bg pairing in this
+ * app already uses.
  */
 .login-hero {
   position: relative;
-  background-image:
-    radial-gradient(38% 40% at 18% 22%, color-mix(in srgb, var(--color-accent) 32%, transparent) 0%, transparent 72%),
-    radial-gradient(34% 36% at 86% 14%, color-mix(in srgb, var(--color-accent-strong) 26%, transparent) 0%, transparent 72%),
-    radial-gradient(42% 44% at 82% 88%, color-mix(in srgb, var(--color-accent) 28%, transparent) 0%, transparent 72%),
-    radial-gradient(36% 38% at 12% 90%, color-mix(in srgb, var(--color-accent-strong) 22%, transparent) 0%, transparent 72%);
-  background-repeat: no-repeat;
-  animation: aurora-drift-a 24s ease-in-out infinite;
+  overflow: hidden;
+  background-color: var(--color-bg);
 }
 
-@keyframes aurora-drift-a {
+.login-hero__circuit {
+  opacity: 0.75;
+}
+
+/*
+ * `HeroCircuitBackground`'s animated "current flowing" effect (shared by
+ * the login hero and the landing page — one definition, both scenes
+ * benefit). `stroke-dasharray` + a continuously advancing negative
+ * `stroke-dashoffset` reads as a pulse of light traveling along each
+ * trace; the dash/gap numbers are a stylized approximation (every path
+ * has a different real length — this scene doesn't need pixel-perfect
+ * per-path sync for the effect to read as "board is alive").
+ *
+ * Deliberately NOT gated behind `prefers-reduced-motion` (unlike every
+ * other animation in this file) — confirmed live that this environment's
+ * own reduced-motion signal was silently swallowing the effect, and the
+ * decision (asked of the user directly) was to always show it: a small-
+ * amplitude, no-flash dash crawl carries none of the vestibular/
+ * photosensitive risk that motion-sickness guidance actually targets, so
+ * forcing it is a deliberate exception, not an oversight.
+ */
+.circuit-trace-flow path {
+  stroke-dasharray: 8 14;
+  animation: circuit-flow 7s linear infinite;
+}
+
+@keyframes circuit-flow {
+  to {
+    stroke-dashoffset: -220;
+  }
+}
+
+/*
+ * The board's brightest junctions "power on" in a staggered pulse (each
+ * circle's own `animation-delay`, set inline in the component) — reads
+ * as components lighting up in sequence across the board rather than
+ * one uniform blink. `transform-box: fill-box` scales each circle from
+ * its OWN center, not the SVG's origin (the default box for `transform`
+ * on an SVG shape) — without it every dot would balloon off toward
+ * (0,0) instead of pulsing in place.
+ */
+.circuit-pad-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: circuit-pad-glow 5.5s ease-in-out infinite;
+}
+
+@keyframes circuit-pad-glow {
   0%,
   100% {
-    background-position:
-      0% 0%,
-      0% 0%,
-      0% 0%,
-      0% 0%;
+    opacity: 0.55;
+    transform: scale(1);
   }
   50% {
-    background-position:
-      4% 5%,
-      -3% 4%,
-      -4% -4%,
-      3% -5%;
+    opacity: 1;
+    transform: scale(1.6);
+  }
+}
+
+/*
+ * The login hero's own logo mark (login.tsx/register.tsx/etc.) already
+ * paints above `.login-hero__circuit` on plain DOM order (it's a LATER
+ * sibling, and neither element sets a z-index to fight that) — this
+ * glow is what makes that separation actually READ, not just be
+ * technically true: a blurred accent-colored halo directly behind the
+ * hexagon, like the mark is a lit, powered component seated on the
+ * board rather than another set of thin lines lost among the same-
+ * colored traces around it. `.login-hero__logo-wrap`'s `position:
+ * relative` is what centers this on the icon specifically (not the
+ * wordmark text below it); sized wider than the mark itself and
+ * heavily blurred so it fades into the backdrop at its own edges
+ * instead of showing a hard-edged circle.
+ */
+.login-hero__logo-wrap {
+  position: relative;
+}
+
+.login-hero__logo-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 132px;
+  height: 132px;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--color-accent) 60%, transparent) 0%, transparent 72%);
+  filter: blur(20px);
+  pointer-events: none;
+}
+
+/*
+ * The Logo mark's own "status pulse" dot (Logo.tsx) — a slow breathing
+ * glow rather than a static dot, reinforcing the "a node, online" read
+ * the dot's own doc comment already describes. Scale rather than
+ * opacity alone so it reads as a soft pulse, not a blink.
+ */
+.logo-status-pulse {
+  transform-origin: center;
+  animation: logo-status-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes logo-status-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.25);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .login-hero {
+  .logo-status-pulse {
     animation: none;
   }
 }
@@ -201,6 +339,30 @@ body {
   background-clip: text;
   color: transparent;
   animation: wordmark-shimmer 5s linear infinite;
+}
+
+/*
+ * The login hero's title specifically (not the sidebar's small header
+ * usage of the same `.brand-wordmark` — that one stays exactly as it
+ * was) gets a solid outline around each letter, on top of the shimmering
+ * gradient fill: `-webkit-text-stroke` paints independently of `color`
+ * (which the rule above sets to `transparent` for the clipped-gradient
+ * fill), so the stroke stays fully opaque and visible even though the
+ * fill itself is a `background-clip: text` gradient. `paint-order:
+ * stroke fill` draws the stroke BEHIND the fill so it only reads as a
+ * clean outline at each glyph's edge, rather than eating into the
+ * letterforms. Needed now that the busy circuit-board backdrop sits
+ * directly behind the title (no more solid card underneath it) — the
+ * outline is what keeps "GXhost" legible against it in both themes.
+ * `--color-accent-strong` (not `--color-text`, tried first) — a dark/
+ * light theme-text-colored outline read as a harsh, mismatched border
+ * around the orange fill (reported live); a darker shade of the brand's
+ * own orange still separates the letterforms from the busy backdrop
+ * but reads as part of the same mark, not a contour drawn on top of it.
+ */
+.login-hero .brand-wordmark {
+  -webkit-text-stroke: 1.5px var(--color-accent-strong);
+  paint-order: stroke fill;
 }
 
 @keyframes wordmark-shimmer {
@@ -259,6 +421,325 @@ body {
   width: 100%;
   height: 100%;
   opacity: 0.4;
+}
+
+/*
+ * The landing page's own hero background. It used to reuse `.login-hero`
+ * (the auth screens' drifting aurora-blob glow) — but that class has no
+ * opaque background of its own, only translucent blobs, so the global
+ * `body` dot-grid wallpaper (declared above) always shows through the
+ * gaps between them. On the auth screens that reads as intentional
+ * texture; behind the network diagram it looked like stray orange dots
+ * flashing over the animation, most noticeably right on reload before
+ * the blobs' own drift settles — reported as a visual bug. This section
+ * instead paints a fully opaque panel (`--color-surface-2`, so the body
+ * texture can never bleed through) with `HeroCircuitBackground` — a
+ * glowing PCB trace diagram in the brand orange — faded into an ellipse
+ * centered behind the network animation itself, a server-room/
+ * motherboard read that fits a diagram of nodes and data packets, with
+ * no glow blob competing with it. That component already carries its
+ * own depth (faint/mid/bright trace layers), so the wrapper only needs
+ * to fade its edges, not dim it further. `NetworkAnimation` layers its
+ * own `.network-vignette` on top (see below) to keep its thin lines
+ * from blending into this backdrop's same-color traces where the two
+ * scenes overlap most.
+ */
+.network-hero {
+  background-color: var(--color-surface-2);
+}
+
+.network-hero__circuit {
+  mask-image: radial-gradient(65% 80% at 76% 50%, black 0%, black 45%, transparent 100%);
+  -webkit-mask-image: radial-gradient(65% 80% at 76% 50%, black 0%, black 45%, transparent 100%);
+}
+
+@media (max-width: 1023px) {
+  .network-hero__circuit {
+    mask-image: radial-gradient(75% 55% at 50% 65%, black 0%, black 35%, transparent 100%);
+    -webkit-mask-image: radial-gradient(75% 55% at 50% 65%, black 0%, black 35%, transparent 100%);
+  }
+}
+
+/*
+ * `NetworkAnimation`'s own backdrop — a frosted-glass panel behind the
+ * diagram, separating it from `HeroCircuitBackground` right behind it
+ * (see `.network-hero__circuit` above): same brand orange as this
+ * diagram's own connection lines, so without a real surface between
+ * them the two scenes' lines visually merged into one tangle. Two
+ * earlier attempts weren't enough: a soft radial vignette, then a flat
+ * `--color-surface` card — both still read as "blending into the page"
+ * because `.network-hero`'s own background is that exact same surface
+ * tone, so a same-color card had almost no edge to see. `backdrop-
+ * filter: blur()` sidesteps that entirely: it blurs whatever circuit
+ * traces sit behind this panel regardless of how close the colors are,
+ * which is an unmistakable seam a flat color match can't fake — the
+ * same "frosted" idea as each node's own `bg-surface/90 backdrop-blur`
+ * card, just for the whole scene. `--color-border-strong` (not the
+ * default `--color-border` every other card uses) for a harder, more
+ * visible edge, since this panel needs to read as a screen from across
+ * the whole hero, not just up close.
+ */
+.network-panel {
+  background: color-mix(in srgb, var(--color-surface) 38%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--color-border-strong);
+  box-shadow:
+    0 0 70px -15px color-mix(in srgb, var(--color-accent) 40%, transparent),
+    var(--shadow-lg);
+}
+
+/*
+ * The hero message's own outline — a stroke around each LETTER (via
+ * `-webkit-text-stroke`, inherited down to the h1/p children), not a
+ * bordered box around the whole block: a full frosted panel here was
+ * tried first ("coloque um contorno envolta da mensagem toda") but that
+ * read as "a box grouping everything" rather than "an outline around
+ * the words" once seen live, so this replaces it. Same
+ * `--color-accent-strong` stroke color as `.login-hero .brand-wordmark`
+ * below (that fix already established it reads better than a
+ * `--color-text` outline against a busy backdrop), and the same
+ * `paint-order: stroke fill` so the stroke sits behind the glyph fill
+ * instead of eating into the letterforms.
+ */
+.hero-message-outline {
+  -webkit-text-stroke: 1px var(--color-accent-strong);
+  paint-order: stroke fill;
+}
+
+/*
+ * "GXhost Network" — the landing hero animation (NetworkAnimation.tsx).
+ * The data packets themselves are pure SVG SMIL (`<animateMotion>` in
+ * the component, not here) — everything below is the CSS half: the
+ * central node's pulsing glow, and each satellite's status dot/label
+ * cycling Online → Deploying → Running on a shared 9s loop, staggered
+ * per node via each element's own inline `animation-delay` (set in the
+ * component, one value per node, applied to its dot and all three of
+ * its label spans so they stay in sync with each other while drifting
+ * out of sync with every other node).
+ */
+.network-glow-pulse {
+  filter: blur(24px);
+  opacity: 0.4;
+  animation: network-pulse 3s ease-in-out infinite;
+}
+
+@keyframes network-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
+
+.network-packet {
+  filter: drop-shadow(0 0 4px var(--color-accent));
+}
+
+/* Same three-phase clock (0-33% / 33-66% / 66-100% of a 9s loop) drives
+ * both the dot's color and which label span is opaque — a-phase is
+ * "Online" (ok/green), b-phase "Deploying" (warn/amber), c-phase
+ * "Running" (the brand accent, i.e. actively serving traffic).
+ */
+.network-status-dot {
+  animation: network-dot-cycle 9s ease-in-out infinite;
+}
+
+@keyframes network-dot-cycle {
+  0%,
+  30% {
+    background-color: var(--color-ok);
+  }
+  33%,
+  63% {
+    background-color: var(--color-warn);
+  }
+  66%,
+  96% {
+    background-color: var(--color-accent);
+  }
+  100% {
+    background-color: var(--color-ok);
+  }
+}
+
+.network-status-a,
+.network-status-b,
+.network-status-c {
+  transition: opacity 0.3s ease;
+}
+.network-status-a {
+  animation: network-status-a 9s ease-in-out infinite;
+}
+.network-status-b {
+  animation: network-status-b 9s ease-in-out infinite;
+}
+.network-status-c {
+  animation: network-status-c 9s ease-in-out infinite;
+}
+
+@keyframes network-status-a {
+  0%,
+  30% {
+    opacity: 1;
+  }
+  33%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes network-status-b {
+  0%,
+  30% {
+    opacity: 0;
+  }
+  33%,
+  63% {
+    opacity: 1;
+  }
+  66%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes network-status-c {
+  0%,
+  63% {
+    opacity: 0;
+  }
+  66%,
+  96% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/*
+ * Deliberately NOT gated behind `prefers-reduced-motion` — unlike the
+ * aurora drift and wordmark shimmer above (which wrap the whole page
+ * chrome a visitor can't avoid), this network diagram is a self-
+ * contained, skippable decorative scene the landing page is BUILT
+ * around showing off (commercial plan follow-up: "dar destaque e
+ * realçar a grandeza do site"). Found live: a system with animations
+ * turned off froze it on a single static frame, which read as broken
+ * rather than as a deliberate a11y accommodation, for content whose
+ * entire purpose is to be seen moving.
+ */
+
+/*
+ * The landing page's second hero animation (ServerProvisionAnimation
+ * .tsx) — a mock server card whose CPU/RAM/Storage bars climb from
+ * empty to a target width, hold, then reset, while an "ONLINE" badge
+ * fades in partway through and fades out again before the loop
+ * restarts. All three bars and the badge share the SAME 6s duration so
+ * they always replay in sync — no JS, no per-element delay math needed
+ * (unlike the network animation's deliberately staggered nodes, every
+ * piece of this one scene is telling a single, sequential story:
+ * resources climb, then the server reports ready).
+ */
+.provision-bar-cpu {
+  animation: provision-bar-cpu 6s ease-in-out infinite;
+}
+.provision-bar-ram {
+  animation: provision-bar-ram 6s ease-in-out infinite;
+}
+.provision-bar-storage {
+  animation: provision-bar-storage 6s ease-in-out infinite;
+}
+.provision-badge {
+  animation: provision-badge 6s ease-in-out infinite;
+}
+
+@keyframes provision-bar-cpu {
+  0%,
+  15% {
+    width: 0%;
+  }
+  40%,
+  92% {
+    width: 72%;
+  }
+  100% {
+    width: 0%;
+  }
+}
+@keyframes provision-bar-ram {
+  0%,
+  20% {
+    width: 0%;
+  }
+  45%,
+  92% {
+    width: 55%;
+  }
+  100% {
+    width: 0%;
+  }
+}
+@keyframes provision-bar-storage {
+  0%,
+  25% {
+    width: 0%;
+  }
+  50%,
+  92% {
+    width: 38%;
+  }
+  100% {
+    width: 0%;
+  }
+}
+@keyframes provision-badge {
+  0%,
+  55% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  62%,
+  92% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+/* Same call as the network animation above: this card exists specifically to be watched provisioning, so it stays animated regardless of `prefers-reduced-motion`. */
+
+/*
+ * `BrazilLatencyMap`'s city nodes — a soft ring around each pulsing
+ * outward, same "network node breathing" language as
+ * `.network-glow-pulse`, staggered per city via each circle's own
+ * inline `animation-delay`. `transform-box: fill-box` is load-bearing
+ * for SVG: without it, `scale()` on a `<circle>` transforms around the
+ * SVG viewport's origin (0,0) instead of the circle's own center,
+ * which would visibly drag the ring toward the top-left corner instead
+ * of pulsing in place.
+ */
+.brazil-node-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: brazil-node-pulse 3s ease-in-out infinite;
+}
+
+@keyframes brazil-node-pulse {
+  0%,
+  100% {
+    opacity: 0.18;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(2);
+  }
 }
 
 /* xterm.js ships its own base styles; this just lets it size to its flex parent */

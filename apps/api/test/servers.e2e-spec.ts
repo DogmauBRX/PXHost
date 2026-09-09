@@ -36,17 +36,17 @@ describe('Servers: create transaction + capacity race (e2e)', () => {
 
     const passwordHash = await argon2.hash('AdminPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
     const admin = await prisma.user.create({
-      data: { email: `srv-admin-${suffix}@pxhost.local`, username: `srv-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
+      data: { email: `srv-admin-${suffix}@gxhost.local`, username: `srv-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
     });
     const login = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
-      payload: { email: `srv-admin-${suffix}@pxhost.local`, password: 'AdminPass!234567' },
+      payload: { email: `srv-admin-${suffix}@gxhost.local`, password: 'AdminPass!234567' },
     });
     adminToken = JSON.parse(login.body).accessToken;
 
     const owner = await prisma.user.create({
-      data: { email: `srv-owner-${suffix}@pxhost.local`, username: `srv-owner-${suffix}`, passwordHash, isActive: true },
+      data: { email: `srv-owner-${suffix}@gxhost.local`, username: `srv-owner-${suffix}`, passwordHash, isActive: true },
     });
     ownerId = owner.id;
 
@@ -83,7 +83,7 @@ describe('Servers: create transaction + capacity race (e2e)', () => {
     await prisma.templateGroup.deleteMany({ where: { id: groupId } });
     await prisma.node.deleteMany({ where: { locationId } });
     await prisma.location.deleteMany({ where: { id: locationId } });
-    await prisma.user.updateMany({ where: { email: { in: [`srv-admin-${suffix}@pxhost.local`, `srv-owner-${suffix}@pxhost.local`] } }, data: { deletedAt: new Date() } });
+    await prisma.user.updateMany({ where: { email: { in: [`srv-admin-${suffix}@gxhost.local`, `srv-owner-${suffix}@gxhost.local`] } }, data: { deletedAt: new Date() } });
     await app.close();
   });
 

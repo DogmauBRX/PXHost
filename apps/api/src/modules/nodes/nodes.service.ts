@@ -112,6 +112,7 @@ export class NodesService {
           fqdn: dto.fqdn,
           scheme: dto.scheme ?? 'https',
           daemonPort: dto.daemonPort ?? 8443,
+          controlAddress: dto.controlAddress,
           sftpPort: dto.sftpPort ?? 2022,
           memoryTotalMb: dto.memoryTotalMb,
           memoryReservedMb: dto.memoryReservedMb ?? 0,
@@ -124,6 +125,7 @@ export class NodesService {
           cpuOverallocatePct: dto.cpuOverallocatePct ?? -1,
           isPublic: dto.isPublic ?? true,
           uploadSizeMb: dto.uploadSizeMb ?? 256,
+          capacityMode: dto.capacityMode ?? 'manual',
         },
         omit: OMIT_CONTROL_TOKEN,
       });
@@ -161,15 +163,47 @@ export class NodesService {
    * natural place to audit every field this update can actually touch,
    * including the commercial-capacity ones the capacity plan explicitly
    * requires auditing (reserve/overallocate/total changes).
+   *
+   * Capacity plan (auto-derivation) §14's override guard lives here too:
+   * PATCHing a declared total/percent to a value ABOVE what the node has
+   * actually reported is refused with `409 CAPACITY_OVERRIDE_REQUIRED`
+   * unless `dto.acknowledgeOverride` is set — an admin can still do it
+   * (this is an override, not a hard cap), but never by accident. Scoped
+   * to the dimension actually being CHANGED in this request (never
+   * re-triggered by an unrelated edit to an already-over-declared node),
+   * and only meaningful when the node stays/becomes 'manual' — in 'auto'
+   * mode the declared columns aren't the ceiling at all (see
+   * `resolveNodeCapacity`), so there's nothing to confirm.
    */
   async update(id: string, dto: UpdateNodeDto, actor: AuthenticatedUser) {
     const before = await this.get(id);
+
+    const effectiveMode = dto.capacityMode ?? before.capacityMode;
+    if (effectiveMode === 'manual') {
+      const detected = {
+        memory: before.reportedMemoryLimitMb ?? before.reportedMemoryTotalMb,
+        disk: before.reportedDiskTotalMb,
+        cpu: before.reportedCpuCount != null ? before.reportedCpuCount * 100 : null,
+      };
+      const exceeded = [
+        { label: 'memory', newValue: dto.memoryTotalMb, detected: detected.memory },
+        { label: 'disk', newValue: dto.diskTotalMb, detected: detected.disk },
+        { label: 'cpu', newValue: dto.cpuTotalPercent, detected: detected.cpu },
+      ].filter((c) => c.newValue !== undefined && c.detected !== null && c.newValue > c.detected);
+      if (exceeded.length > 0 && !dto.acknowledgeOverride) {
+        throw new ConflictException(
+          `CAPACITY_OVERRIDE_REQUIRED: declared ${exceeded.map((c) => c.label).join(', ')} exceeds detected hardware — pass acknowledgeOverride: true to confirm`,
+        );
+      }
+    }
 
     const data: Record<string, unknown> = {};
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.isPublic !== undefined) data.isPublic = dto.isPublic;
     if (dto.maintenanceMode !== undefined) data.maintenanceMode = dto.maintenanceMode;
+    if (dto.maintenanceScheduledAt !== undefined) data.maintenanceScheduledAt = dto.maintenanceScheduledAt === null ? null : new Date(dto.maintenanceScheduledAt);
+    if (dto.controlAddress !== undefined) data.controlAddress = dto.controlAddress;
     if (dto.memoryTotalMb !== undefined) data.memoryTotalMb = dto.memoryTotalMb;
     if (dto.memoryReservedMb !== undefined) data.memoryReservedMb = dto.memoryReservedMb;
     if (dto.memoryOverallocatePct !== undefined) data.memoryOverallocatePct = dto.memoryOverallocatePct;
@@ -179,6 +213,13 @@ export class NodesService {
     if (dto.cpuTotalPercent !== undefined) data.cpuTotalPercent = dto.cpuTotalPercent;
     if (dto.cpuReservedPercent !== undefined) data.cpuReservedPercent = dto.cpuReservedPercent;
     if (dto.cpuOverallocatePct !== undefined) data.cpuOverallocatePct = dto.cpuOverallocatePct;
+    if (dto.capacityMode !== undefined) data.capacityMode = dto.capacityMode;
+    if (dto.memorySafetyMarginPct !== undefined) data.memorySafetyMarginPct = dto.memorySafetyMarginPct;
+    if (dto.diskSafetyMarginPct !== undefined) data.diskSafetyMarginPct = dto.diskSafetyMarginPct;
+    if (dto.cpuSafetyMarginPct !== undefined) data.cpuSafetyMarginPct = dto.cpuSafetyMarginPct;
+    if (dto.capacityWarnPct !== undefined) data.capacityWarnPct = dto.capacityWarnPct;
+    if (dto.capacityHighPct !== undefined) data.capacityHighPct = dto.capacityHighPct;
+    if (dto.capacityCriticalPct !== undefined) data.capacityCriticalPct = dto.capacityCriticalPct;
 
     let updated;
     try {
@@ -211,6 +252,10 @@ export class NodesService {
         targetId: id,
         beforeState: Object.fromEntries(Object.keys(data).map((k) => [k, (before as Record<string, unknown>)[k]])),
         afterState: data,
+        // §23: a free-text reason for a manual capacity change, never a
+        // column — only ever present when the caller actually supplied
+        // one (e.g. the override confirmation dialog).
+        metadata: dto.changeReason ? { changeReason: dto.changeReason } : undefined,
       });
     }
     return { ...updated, healthStatus: deriveHealthStatus(updated.lastHeartbeatAt), telemetryDivergence: deriveTelemetryDivergence(updated) };

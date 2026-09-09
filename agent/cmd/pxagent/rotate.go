@@ -4,8 +4,8 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/pxhost/agent/internal/config"
-	"github.com/pxhost/agent/internal/panel"
+	"github.com/gxhost/agent/internal/config"
+	"github.com/gxhost/agent/internal/panel"
 )
 
 // runRotateTokenCmd is the one-shot CLI form of the same self-rotation

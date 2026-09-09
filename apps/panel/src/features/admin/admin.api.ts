@@ -6,6 +6,8 @@ import type {
   AdminAuditLog,
   AdminServerDetail,
   AdminServerSummary,
+  AdminOrder,
+  AdminOrderDetail,
   AdminSubscriptionDetail,
   AdminSubscriptionList,
   AdminTemplate,
@@ -15,6 +17,8 @@ import type {
   CapacitySimulateResult,
   Location,
   NodeCapacitySnapshot,
+  NodePlanSlots,
+  OrderStatus,
   Paginated,
   PartitionInfo,
   PlanApplyResult,
@@ -24,6 +28,7 @@ import type {
   ReadyzResponse,
   ServerTransfer,
   SigningKey,
+  SiteAnnouncement,
   SubscriptionStatus,
   TemplateGroup,
 } from '@/shared/api/types';
@@ -44,6 +49,7 @@ export interface CreateNodeInput {
   daemonPort?: number;
   memoryTotalMb: number;
   diskTotalMb: number;
+  capacityMode?: 'manual' | 'auto';
 }
 
 // Capacity plan Fase 3 — every field a node's commercial-capacity edit
@@ -58,6 +64,17 @@ export interface UpdateNodeInput {
   description?: string;
   isPublic?: boolean;
   maintenanceMode?: boolean;
+  // A future heads-up ("entra em manutenção às 22h"), distinct from
+  // `maintenanceMode` above — ISO-8601 string, or `null` to explicitly
+  // clear an already-scheduled window. `undefined` (the field simply
+  // omitted) leaves it untouched, same as every other optional field
+  // here.
+  maintenanceScheduledAt?: string | null;
+  // Deploy plan — the panel↔agent control-plane origin (e.g. a
+  // WireGuard tunnel address), when it differs from the browser's own
+  // fqdn/scheme/daemonPort target. Meant to be set post-bootstrap, once
+  // the node's private network is wired up — not on `CreateNodeInput`.
+  controlAddress?: string;
   memoryTotalMb?: number;
   memoryReservedMb?: number;
   memoryOverallocatePct?: number;
@@ -67,6 +84,19 @@ export interface UpdateNodeInput {
   cpuTotalPercent?: number;
   cpuReservedPercent?: number;
   cpuOverallocatePct?: number;
+  // Capacity plan (auto-derivation)
+  capacityMode?: 'manual' | 'auto';
+  memorySafetyMarginPct?: number;
+  diskSafetyMarginPct?: number;
+  cpuSafetyMarginPct?: number;
+  capacityWarnPct?: number;
+  capacityHighPct?: number;
+  capacityCriticalPct?: number;
+  // §14: confirms a declared total/percent above what the node has
+  // actually reported — required only when such a value is changing,
+  // never persisted itself. `changeReason` is free-text audit context.
+  acknowledgeOverride?: boolean;
+  changeReason?: string;
 }
 
 export const listNodes = () => apiFetch<AdminNode[]>('/api/admin/nodes');
@@ -107,6 +137,18 @@ export const addTemplateVariable = (
 ) => apiFetch(`/api/admin/eggs/${templateId}/variables`, { method: 'POST', body: JSON.stringify(input) });
 export const removeTemplateVariable = (templateId: string, variableId: string) => apiFetch<void>(`/api/admin/eggs/${templateId}/variables/${variableId}`, { method: 'DELETE' });
 
+export interface UpdateTemplateVariableInput {
+  name?: string;
+  description?: string;
+  defaultValue?: string;
+  rules?: string;
+  isUserViewable?: boolean;
+  isUserEditable?: boolean;
+  sortOrder?: number;
+}
+export const updateTemplateVariable = (templateId: string, variableId: string, input: UpdateTemplateVariableInput) =>
+  apiFetch(`/api/admin/eggs/${templateId}/variables/${variableId}`, { method: 'PATCH', body: JSON.stringify(input) });
+
 export interface UpdateTemplateInput {
   name?: string;
   author?: string;
@@ -120,6 +162,9 @@ export interface UpdateTemplateInput {
   installScript?: string;
   softwareKind?: SoftwareKind;
   isActive?: boolean;
+  isPublic?: boolean;
+  sortOrder?: number;
+  iconUrl?: string;
 }
 export const updateTemplate = (id: string, input: UpdateTemplateInput) =>
   apiFetch<AdminTemplate>(`/api/admin/eggs/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
@@ -169,6 +214,7 @@ export const applyPlan = (id: string) => apiFetch<PlanApplyResult>(`/api/admin/p
 export const getCapacityDashboard = () => apiFetch<CapacityDashboard>('/api/admin/capacity');
 export const getNodeCapacity = (nodeId: string) => apiFetch<NodeCapacitySnapshot>(`/api/admin/capacity/nodes/${nodeId}`);
 export const getPlanCapacity = () => apiFetch<PlanOccupancy[]>('/api/admin/capacity/plans');
+export const getNodePlanCapacity = (nodeId: string) => apiFetch<NodePlanSlots>(`/api/admin/capacity/nodes/${nodeId}/plans`);
 export const simulateCapacity = (input: { planId: string; nodeId?: string }) =>
   apiFetch<CapacitySimulateResult>('/api/admin/capacity/simulate', { method: 'POST', body: JSON.stringify(input) });
 
@@ -282,3 +328,29 @@ export const listSubscriptions = (params: ListSubscriptionsParams = {}) =>
 export const getSubscription = (id: string) => apiFetch<AdminSubscriptionDetail>(`/api/admin/subscriptions/${id}`);
 export const updateSubscriptionStatus = (id: string, status: SubscriptionStatus, reason?: string) =>
   apiFetch<AdminSubscriptionDetail>(`/api/admin/subscriptions/${id}/status`, { method: 'POST', body: JSON.stringify({ status, reason }) });
+
+// ---- Orders / payments (Asaas) ----
+
+export interface ListOrdersParams {
+  status?: OrderStatus;
+  paymentMethod?: 'pix' | 'card';
+  planId?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+export const listOrders = (params: ListOrdersParams = {}) => apiFetch<Paginated<AdminOrder>>(`/api/admin/orders${qs(params)}`);
+export const getOrder = (id: string) => apiFetch<AdminOrderDetail>(`/api/admin/orders/${id}`);
+export const retryProvisioning = (id: string) => apiFetch<{ enqueued: boolean }>(`/api/admin/orders/${id}/retry-provisioning`, { method: 'POST' });
+export const refundOrder = (id: string, reason: string) =>
+  apiFetch<{ requested: boolean; providerStatus: string | null }>(`/api/admin/orders/${id}/refund`, { method: 'POST', body: JSON.stringify({ reason }) });
+
+// ---- Site announcement ----
+
+export const getSiteAnnouncement = () => apiFetch<SiteAnnouncement>('/api/admin/site-announcement');
+export interface UpdateSiteAnnouncementInput {
+  message?: string;
+  isActive?: boolean;
+}
+export const updateSiteAnnouncement = (input: UpdateSiteAnnouncementInput) =>
+  apiFetch<SiteAnnouncement>('/api/admin/site-announcement', { method: 'PATCH', body: JSON.stringify(input) });

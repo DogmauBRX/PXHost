@@ -3,16 +3,15 @@ package api
 import (
 	"context"
 	"log/slog"
-	"net"
 	"net/http"
 	"time"
 
-	"github.com/pxhost/agent/internal/auth"
-	"github.com/pxhost/agent/internal/backup"
-	"github.com/pxhost/agent/internal/dockerx"
-	"github.com/pxhost/agent/internal/panel"
-	"github.com/pxhost/agent/internal/spec"
-	"github.com/pxhost/agent/internal/srv"
+	"github.com/gxhost/agent/internal/auth"
+	"github.com/gxhost/agent/internal/backup"
+	"github.com/gxhost/agent/internal/dockerx"
+	"github.com/gxhost/agent/internal/panel"
+	"github.com/gxhost/agent/internal/spec"
+	"github.com/gxhost/agent/internal/srv"
 )
 
 // Server is the agent's HTTP + WebSocket control surface.
@@ -217,18 +216,4 @@ func pathParam(r *http.Request, name string) string {
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	writeJSONResp(w, http.StatusOK, map[string]any{"status": "ok", "node": s.nodeUUID})
-}
-
-// localAddrHint is used only for the CLI's own log line when starting the
-// server; kept here rather than in cmd/pxagent to avoid duplicating the
-// "what does 0.0.0.0 mean" formatting logic.
-func localAddrHint(addr string) string {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return addr
-	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "localhost"
-	}
-	return net.JoinHostPort(host, port)
 }

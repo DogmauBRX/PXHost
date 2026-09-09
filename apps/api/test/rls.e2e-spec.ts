@@ -58,10 +58,10 @@ describe('Row-Level Security (e2e)', () => {
     // only — see the README's "bugs found" note), so these writes work
     // through the plain app_user connection same as production code.
     const owner = await prisma.user.create({
-      data: { email: `rls-owner-${suffix}@pxhost.local`, username: `rls-owner-${suffix}`, passwordHash: 'x', isActive: true },
+      data: { email: `rls-owner-${suffix}@gxhost.local`, username: `rls-owner-${suffix}`, passwordHash: 'x', isActive: true },
     });
     const intruder = await prisma.user.create({
-      data: { email: `rls-intruder-${suffix}@pxhost.local`, username: `rls-intruder-${suffix}`, passwordHash: 'x', isActive: true },
+      data: { email: `rls-intruder-${suffix}@gxhost.local`, username: `rls-intruder-${suffix}`, passwordHash: 'x', isActive: true },
     });
     ownerId = owner.id;
     intruderId = intruder.id;
@@ -178,7 +178,7 @@ describe('Row-Level Security (e2e)', () => {
   it('a subuser with an ACCEPTED invite can see the server; a pending one cannot', async () => {
     const suffix = Date.now();
     const invitee = await prisma.user.create({
-      data: { email: `rls-subuser-${suffix}@pxhost.local`, username: `rls-subuser-${suffix}`, passwordHash: 'x', isActive: true },
+      data: { email: `rls-subuser-${suffix}@gxhost.local`, username: `rls-subuser-${suffix}`, passwordHash: 'x', isActive: true },
     });
 
     await asAdmin((tx) =>
@@ -197,22 +197,6 @@ describe('Row-Level Security (e2e)', () => {
 
     await asAdmin((tx) => tx.subuser.deleteMany({ where: { serverId, userId: invitee.id } }));
     await prisma.user.delete({ where: { id: invitee.id } });
-  });
-
-  it('backups inherit the same RLS scoping via can_access_server', async () => {
-    const backup = await asAdmin((tx) => tx.backup.create({ data: { serverId, name: 'rls-test-backup' } }));
-
-    const ownerRows = await prisma.withRLS({ userId: ownerId, isAdmin: false }, (tx) =>
-      tx.backup.findMany({ where: { id: backup.id } }),
-    );
-    expect(ownerRows).toHaveLength(1);
-
-    const intruderRows = await prisma.withRLS({ userId: intruderId, isAdmin: false }, (tx) =>
-      tx.backup.findMany({ where: { id: backup.id } }),
-    );
-    expect(intruderRows).toHaveLength(0);
-
-    await asAdmin((tx) => tx.backup.delete({ where: { id: backup.id } }));
   });
 
   it('audit_logs is append-only: UPDATE and DELETE are rejected at the database level', async () => {

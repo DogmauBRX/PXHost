@@ -21,7 +21,7 @@ export function PlanDetailPage({ slug }: { slug: string }) {
   return (
     <div className="mx-auto max-w-xl px-4 py-14 sm:px-6 lg:px-8">
       {plan && (
-        <Seo title={plan.name} description={plan.description ?? `Conheça o plano ${plan.name} da PXHost.`} path={`/plans/${plan.slug}`} />
+        <Seo title={plan.name} description={plan.description ?? `Conheça o plano ${plan.name} da GXhost.`} path={`/plans/${plan.slug}`} />
       )}
 
       <Link to="/plans" className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-text-muted transition-colors hover:text-text">

@@ -4,7 +4,8 @@ import { AuditService } from '../audit/audit.service';
 import { AgentClient } from '../nodes/agent-client.service';
 import { CapabilityTokenService } from '../../core/capability-token/capability-token.service';
 import { CapacityService } from '../capacity/capacity.service';
-import { assertNodeFits } from '../capacity/capacity.math';
+import { assertNodeFits, nodeAcceptsNewServers, resolveNodeCapacity } from '../capacity/capacity.math';
+import { deriveHealthStatus } from '../nodes/nodes.service';
 import { TransferQueueService } from './transfer-queue.service';
 
 const ARCHIVE_TOKEN_TTL_SECONDS = 60 * 60; // 1h — generous for a large archive's fetch time, single-use regardless (jti burned on first GET)
@@ -48,14 +49,26 @@ export class TransfersService {
 
       const targetNode = await tx.node.findFirst({ where: { id: targetNodeId, deletedAt: null } });
       if (!targetNode) throw new NotFoundException('Target node not found');
-      if (targetNode.maintenanceMode) throw new ConflictException('Target node is in maintenance mode');
+
+      // Same resolveNodeCapacity/nodeAcceptsNewServers gate as
+      // ServersService.createOnNode — see that call site's doc comment.
+      const resolved = resolveNodeCapacity(targetNode);
+      const acceptance = nodeAcceptsNewServers({
+        capacityMode: targetNode.capacityMode,
+        maintenanceMode: targetNode.maintenanceMode,
+        health: deriveHealthStatus(targetNode.lastHeartbeatAt),
+        memory: resolved.memory,
+        disk: resolved.disk,
+        telemetryStale: resolved.telemetryStale,
+      });
+      if (!acceptance.ok) throw new ConflictException(`Target node unavailable: ${acceptance.reason ?? 'unknown reason'}`);
 
       // usageForNode already includes any OTHER transfer currently in
       // flight toward this same target — this transfer's own server is
       // still on its SOURCE node at this point (nodeId only flips in
       // handleResult), so it is correctly excluded from its own check.
       const usage = await this.capacity.usageForNode(tx, targetNodeId);
-      assertNodeFits(targetNode, usage, { memoryMb: server.memoryMb, diskMb: server.diskMb, cpuPercent: server.cpuLimitPercent });
+      assertNodeFits(resolved, usage, { memoryMb: server.memoryMb, diskMb: server.diskMb, cpuPercent: server.cpuLimitPercent });
 
       const allocation = targetAllocationId
         ? await tx.allocation.findFirst({ where: { id: BigInt(targetAllocationId), nodeId: targetNodeId, serverId: null } })

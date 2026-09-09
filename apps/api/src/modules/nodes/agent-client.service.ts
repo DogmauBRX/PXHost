@@ -272,10 +272,23 @@ export class AgentClient {
     return this.call(targetNodeId, 'POST', '/api/servers/transfer/import', req);
   }
 
+  /**
+   * Deploy plan (VPS + Cloudflare + WireGuard) — `node.controlAddress`,
+   * when set, is the origin THIS API uses to reach the agent (its
+   * private VPN address), letting the panel↔agent control plane stay
+   * off the public internet entirely. It never touches the values the
+   * BROWSER uses (`wsUrl`/`fileTransferUrl` below still build from
+   * scheme/fqdn/daemonPort — the customer's console/file/backup traffic
+   * keeps going straight to the node's public, TLS-terminated hostname,
+   * per that pair's own "never proxied through this API" doc comment).
+   * NULL (every node's default) falls back to the exact same
+   * scheme://fqdn:daemonPort this method has always used, so nothing
+   * changes for dev/test or any node an admin hasn't opted in.
+   */
   private async baseURL(nodeId: string): Promise<{ url: string; token: string }> {
     const node = await this.prisma.node.findFirst({
       where: { id: nodeId },
-      select: { scheme: true, fqdn: true, daemonPort: true, controlTokenEnc: true },
+      select: { scheme: true, fqdn: true, daemonPort: true, controlAddress: true, controlTokenEnc: true },
     });
     if (!node || !node.controlTokenEnc) {
       throw new ServiceUnavailableException('Node has not completed bootstrap (no control token on file)');
@@ -284,7 +297,8 @@ export class AgentClient {
       Buffer.from(node.controlTokenEnc).toString('utf8'),
       NodeBootstrapService.controlTokenAad(nodeId),
     );
-    return { url: `${node.scheme}://${node.fqdn}:${node.daemonPort}`, token };
+    const url = node.controlAddress ?? `${node.scheme}://${node.fqdn}:${node.daemonPort}`;
+    return { url, token };
   }
 
   private async call<T>(nodeId: string, method: string, path: string, body: unknown): Promise<T> {

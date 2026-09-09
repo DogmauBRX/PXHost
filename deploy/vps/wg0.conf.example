@@ -1,0 +1,20 @@
+# Deploy plan — WireGuard hub config for the VPS. Install as
+# /etc/wireguard/wg0.conf, generate real keys with `wg genkey | tee
+# privatekey | wg pubkey > publickey`, then `systemctl enable --now
+# wg-quick@wg0`. The VPS never initiates the handshake (nodes do, via
+# PersistentKeepalive in their own config) so it needs no Endpoint here.
+
+[Interface]
+Address = 10.10.0.1/24
+ListenPort = 51820
+PrivateKey = <vps-private-key>
+
+# Node 01 — R620
+[Peer]
+PublicKey = <node01-public-key>
+AllowedIPs = 10.10.0.2/32
+
+# Node 02 — Dual Xeon
+[Peer]
+PublicKey = <node02-public-key>
+AllowedIPs = 10.10.0.3/32

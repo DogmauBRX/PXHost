@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pxhost/agent/internal/backup"
+	"github.com/gxhost/agent/internal/backup"
 )
 
 func TestServer_ExportRejectsWhenNotStopped(t *testing.T) {

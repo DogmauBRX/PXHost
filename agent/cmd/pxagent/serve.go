@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pxhost/agent/internal/api"
-	"github.com/pxhost/agent/internal/auth"
-	"github.com/pxhost/agent/internal/config"
-	"github.com/pxhost/agent/internal/dockerx"
-	"github.com/pxhost/agent/internal/fsx"
-	"github.com/pxhost/agent/internal/hostinfo"
-	"github.com/pxhost/agent/internal/panel"
-	"github.com/pxhost/agent/internal/spec"
-	"github.com/pxhost/agent/internal/srv"
+	"github.com/gxhost/agent/internal/api"
+	"github.com/gxhost/agent/internal/auth"
+	"github.com/gxhost/agent/internal/config"
+	"github.com/gxhost/agent/internal/dockerx"
+	"github.com/gxhost/agent/internal/fsx"
+	"github.com/gxhost/agent/internal/hostinfo"
+	"github.com/gxhost/agent/internal/panel"
+	"github.com/gxhost/agent/internal/spec"
+	"github.com/gxhost/agent/internal/srv"
 )
 
 const agentVersion = "v0.4.0-dev" // bumped alongside milestones; reported on every heartbeat
@@ -253,6 +253,9 @@ func runHeartbeatLoop(ctx context.Context, nf config.NodeFile, tokenStore *api.T
 		if cachedStatic.PhysicalTopologyReliable {
 			req.ReportedCPUPhysicalCores = cachedStatic.CPUPhysicalCores
 			req.ReportedCPUSockets = cachedStatic.CPUSockets
+		}
+		if cachedStatic.MemoryLimitValid {
+			req.ReportedMemoryLimitMb = int64(cachedStatic.MemoryLimitBytes / (1024 * 1024))
 		}
 
 		dynamic := hostinfo.CollectDynamic()

@@ -49,6 +49,14 @@ export const ADMIN_PERMISSIONS = [
   // between the two.
   'subscriptions.view',
   'subscriptions.manage',
+  // Asaas migration — orders/payments admin visibility. Its own
+  // vocabulary for the same reason `subscriptions.*` is: an Order/
+  // Payment is neither "a customer account" nor "a subscription
+  // contract," it's the individual charge/provisioning record behind
+  // one. `.manage` gates the two admin actions that touch money/infra
+  // (retry-provisioning, refund) — `.view` alone never can.
+  'payments.view',
+  'payments.manage',
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
@@ -90,6 +98,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly (AdminPermission 
     'servers.manage',
     'subscriptions.view',
     'subscriptions.manage',
+    'payments.view',
+    'payments.manage',
   ],
   // The five `.view` keys preserve `support`'s CURRENT behavior — it
   // already passes AdminGuard and already reads nodes/plans/capacity/
@@ -97,7 +107,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly (AdminPermission 
   // hasn't my plan activated" needs to at least SEE the subscription —
   // this is not a grant of new mutation access, only read access
   // matching what every other resource here already gives `support`.
-  support: ['clients.view', 'clients.support', 'nodes.view', 'plans.view', 'capacity.view', 'servers.view', 'subscriptions.view'],
+  support: ['clients.view', 'clients.support', 'nodes.view', 'plans.view', 'capacity.view', 'servers.view', 'subscriptions.view', 'payments.view'],
   user: [],
 };
 

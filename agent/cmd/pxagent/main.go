@@ -1,4 +1,4 @@
-// Command pxagent is the PXHost Node Agent. M1 scope: a CLI driving the
+// Command pxagent is the GXhost Node Agent. M1 scope: a CLI driving the
 // Docker container lifecycle (create/start/stop/kill/rm/inspect) for one
 // server from local JSON config files, so the container spec builder and
 // the Docker client wrapper can be exercised against a real daemon before
@@ -16,9 +16,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pxhost/agent/internal/config"
-	"github.com/pxhost/agent/internal/dockerx"
-	"github.com/pxhost/agent/internal/srv"
+	"github.com/gxhost/agent/internal/config"
+	"github.com/gxhost/agent/internal/dockerx"
+	"github.com/gxhost/agent/internal/srv"
 )
 
 func main() {
@@ -55,7 +55,7 @@ func run(args []string) error {
 }
 
 func printUsage() {
-	fmt.Fprintln(os.Stderr, `pxagent - PXHost Node Agent
+	fmt.Fprintln(os.Stderr, `pxagent - GXhost Node Agent
 
 Usage:
   pxagent network ensure --node <node.json>
@@ -255,7 +255,7 @@ func findContainerID(ctx context.Context, dc *dockerx.Client, serverUUID string)
 	if err != nil {
 		return "", err
 	}
-	wantName := "/pxhost-" + serverUUID
+	wantName := "/gxhost-" + serverUUID
 	for _, c := range list {
 		for _, n := range c.Names {
 			if n == wantName {

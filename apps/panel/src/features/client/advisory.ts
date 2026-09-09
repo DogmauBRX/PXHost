@@ -16,7 +16,7 @@ export const CPU_WARN = 0.95;
 export const SUSTAINED_SAMPLES = 2;
 export const SUSTAINED_FRAMES = 5;
 
-const DISMISS_PREFIX = 'pxhost.advisory';
+const DISMISS_PREFIX = 'gxhost.advisory';
 const DISMISS_TTL_MS: Record<Exclude<Severity, 'none'>, number> = {
   warn: 7 * 24 * 60 * 60 * 1000,
   critical: 24 * 60 * 60 * 1000,

@@ -12,6 +12,37 @@ export class CreateTemplateGroupDto {
   description?: string;
 }
 
+export class UpdateTemplateVariableDto {
+  @IsOptional()
+  @IsString()
+  @Length(1, 191)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  defaultValue?: string;
+
+  @IsOptional()
+  @IsString()
+  rules?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isUserViewable?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isUserEditable?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+}
+
 export class TemplateVariableDto {
   @IsString()
   @Length(1, 191)
@@ -99,6 +130,20 @@ export class CreateServerTemplateDto {
   @ValidateNested({ each: true })
   @Type(() => TemplateVariableDto)
   variables?: TemplateVariableDto[];
+
+  // Defaults to false server-side (schema default) if omitted — a brand
+  // new template never becomes customer-facing by accident.
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  iconUrl?: string;
 }
 
 export class UpdateServerTemplateDto {
@@ -151,4 +196,16 @@ export class UpdateServerTemplateDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  iconUrl?: string;
 }

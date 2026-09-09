@@ -1,0 +1,17 @@
+# Deploy plan — WireGuard spoke config for one node (this example is
+# Node 01/R620; Node 02/Dual Xeon is identical with Address = 10.10.0.3/24
+# and its own key pair). Install as /etc/wireguard/wg0.conf, then
+# `systemctl enable --now wg-quick@wg0`. PersistentKeepalive keeps the
+# tunnel alive through any NAT between the node and the VPS — without it
+# the VPS-initiated control-plane calls (AgentClientService, via
+# node.controlAddress) can silently stop reaching a NATed node.
+
+[Interface]
+Address = 10.10.0.2/24
+PrivateKey = <node01-private-key>
+
+[Peer]
+PublicKey = <vps-public-key>
+Endpoint = <vps-public-ip>:51820
+AllowedIPs = 10.10.0.0/24
+PersistentKeepalive = 25

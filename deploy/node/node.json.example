@@ -1,0 +1,26 @@
+{
+  "data_dir": "/var/lib/gxhost/servers",
+  "install_dir": "/var/lib/gxhost/install",
+  "backup_dir": "/var/lib/gxhost/backups",
+  "transfer_dir": "/var/lib/gxhost/transfers",
+  "network_name": "gxhost0",
+  "network_subnet": "172.31.0.0/24",
+  "network_gateway": "172.31.0.1",
+  "cgroup_parent": "",
+  "uid_range_min": 100000,
+  "uid_range_max": 165535,
+  "seccomp_profile_path": "/etc/gxhost-agent/seccomp-gxhost.json",
+  "apparmor_profile": "",
+  "io_weight_supported": true,
+
+  "listen_addr": "0.0.0.0:8443",
+  "panel_public_key_path": "/etc/gxhost-agent/panel-ed25519.pub",
+  "ws_allowed_origins": ["https://gxhost.com.br"],
+
+  "log_max_size": "16m",
+  "log_max_file": "5",
+  "mount_allowlist": [],
+
+  "_comment": "node_uuid/node_token/panel_url/heartbeat_interval_seconds are written by `pxagent bootstrap` — do not set them by hand.",
+  "token_rotation_interval_hours": 168
+}

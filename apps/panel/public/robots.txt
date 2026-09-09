@@ -1,4 +1,4 @@
-# PXHost — public commercial pages are indexable; everything behind
+# GXhost — public commercial pages are indexable; everything behind
 # authentication is not (both because it's private and because it's
 # useless to a crawler that can't log in).
 User-agent: *

@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { SubscriptionsService } from './subscriptions.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
-import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/guards/jwt-auth.guard';
 
@@ -35,8 +34,10 @@ export class ClientSubscriptionsController {
     return this.subscriptions.getForUser(user.id, id);
   }
 
-  @Post(':id/cancel')
-  cancel(@Param('id') id: string, @Body() dto: CancelSubscriptionDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.subscriptions.cancelForUser(user.id, id, dto);
-  }
+  // Cancellation lives in ClientOrdersController (PaymentsModule) —
+  // since the Asaas migration it must also cancel at the provider, and
+  // OrdersService is the only place already holding that dependency.
+  // Keeping it here would require SubscriptionsModule to import
+  // PaymentsModule, which already imports SubscriptionsModule —
+  // a real circular dependency, not just an inconvenience.
 }

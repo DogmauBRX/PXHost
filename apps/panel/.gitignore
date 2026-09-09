@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# TanStack Router codegen temp cache
+.tanstack
+
 # Environment — never commit real values, only .env.example
 .env
 .env.*

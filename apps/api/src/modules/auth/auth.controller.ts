@@ -33,7 +33,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto, @Req() req: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
-    const result = await this.auth.login(dto.email, dto.password, requestMeta(req));
+    const result = await this.auth.login(dto.email, dto.password, requestMeta(req), dto.captchaToken);
     setRefreshCookie(reply, result.refreshToken, result.refreshExpiresAt);
     return {
       accessToken: result.accessToken,
@@ -96,7 +96,7 @@ export class AuthController {
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: FastifyRequest) {
-    await this.auth.requestPasswordReset(dto.email, requestMeta(req));
+    await this.auth.requestPasswordReset(dto.email, requestMeta(req), dto.captchaToken);
     return { message: 'Se existir uma conta associada a este email, enviaremos instruções para recuperar seu acesso.' };
   }
 

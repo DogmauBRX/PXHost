@@ -11,11 +11,11 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/pxhost/agent/internal/auth"
-	"github.com/pxhost/agent/internal/console"
-	"github.com/pxhost/agent/internal/dockerx"
-	"github.com/pxhost/agent/internal/panel"
-	"github.com/pxhost/agent/internal/srv"
+	"github.com/gxhost/agent/internal/auth"
+	"github.com/gxhost/agent/internal/console"
+	"github.com/gxhost/agent/internal/dockerx"
+	"github.com/gxhost/agent/internal/panel"
+	"github.com/gxhost/agent/internal/srv"
 )
 
 var (

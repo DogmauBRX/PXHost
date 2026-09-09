@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export type Theme = 'light' | 'dark';
 
-export const THEME_STORAGE_KEY = 'pxhost.theme';
+export const THEME_STORAGE_KEY = 'gxhost.theme';
 
 /**
  * Fired on `window` whenever the theme changes.
@@ -17,7 +17,7 @@ export const THEME_STORAGE_KEY = 'pxhost.theme';
  * instead, so the browser repaints them on a theme change for free —
  * no event needed there.)
  */
-export const THEME_CHANGE_EVENT = 'pxhost:themechange';
+export const THEME_CHANGE_EVENT = 'gxhost:themechange';
 
 interface ThemeState {
   theme: Theme;

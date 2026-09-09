@@ -1,0 +1,110 @@
+# Deploy plan (VPS + Cloudflare + WireGuard) — production compose for the
+# VPS side only (postgres/redis/mariadb/api/worker/panel/caddy). Nodes
+# run their OWN agent + Caddy directly on bare metal/systemd, not here —
+# see agent/README.md's deploy notes.
+#
+# Datastores publish NOTHING to the host (unlike docker-compose.dev.yml's
+# 5432/6379/3306, which exist only so a developer's own tools can reach
+# them) — every consumer here is another container on the same compose
+# network, and nothing outside this VPS should ever reach Postgres/Redis/
+# MariaDB directly.
+#
+# Before first boot: `docker compose -f docker-compose.prod.yml run --rm
+# api pnpm exec prisma migrate deploy`, then `... run --rm api pnpm exec
+# prisma db seed` (idempotent — see prisma/seed.ts's own doc comment,
+# safe to run on every deploy). Both as one-shot `run`, never baked into
+# a service's start command — see apps/api/Dockerfile's own comment on
+# why migrations never race across replicas.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gxhost
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: gxhost
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gxhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - gxhost_pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - gxhost_redis_data:/data
+
+  mariadb:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - gxhost_mariadb_data:/var/lib/mysql
+
+  api:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Same image as `api` — architecture doc 3.7's separate PROCESS, not a
+  # separate codebase. See apps/api/Dockerfile's own comment.
+  worker:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  panel:
+    build:
+      context: ./apps/panel
+      args:
+        VITE_API_URL: https://api.gxhost.com.br
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - gxhost_caddy_data:/data
+      - gxhost_caddy_config:/config
+    depends_on:
+      - api
+      - panel
+
+volumes:
+  gxhost_pg_data:
+  gxhost_redis_data:
+  gxhost_mariadb_data:
+  gxhost_caddy_data:
+  gxhost_caddy_config:

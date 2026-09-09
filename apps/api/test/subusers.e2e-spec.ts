@@ -79,9 +79,9 @@ describe('Subusers / RBAC / Activity (e2e)', () => {
     const port = (fakeAgent.address() as AddressInfo).port;
 
     const passwordHash = await argon2.hash('SubPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
-    const admin = await prisma.user.create({ data: { email: `sub-admin-${suffix}@pxhost.local`, username: `sub-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true } });
-    const owner = await prisma.user.create({ data: { email: `sub-owner-${suffix}@pxhost.local`, username: `sub-owner-${suffix}`, passwordHash, isActive: true } });
-    const friend = await prisma.user.create({ data: { email: `sub-friend-${suffix}@pxhost.local`, username: `sub-friend-${suffix}`, passwordHash, isActive: true } });
+    const admin = await prisma.user.create({ data: { email: `sub-admin-${suffix}@gxhost.local`, username: `sub-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true } });
+    const owner = await prisma.user.create({ data: { email: `sub-owner-${suffix}@gxhost.local`, username: `sub-owner-${suffix}`, passwordHash, isActive: true } });
+    const friend = await prisma.user.create({ data: { email: `sub-friend-${suffix}@gxhost.local`, username: `sub-friend-${suffix}`, passwordHash, isActive: true } });
     friendId = friend.id;
 
     adminToken = JSON.parse((await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: admin.email, password: 'SubPass!234567' } })).body).accessToken;
@@ -121,7 +121,7 @@ describe('Subusers / RBAC / Activity (e2e)', () => {
     await prisma.node.deleteMany({ where: { id: nodeId } });
     await prisma.location.deleteMany({ where: { id: locationId } });
     await prisma.user.updateMany({
-      where: { email: { in: [`sub-admin-${suffix}@pxhost.local`, `sub-owner-${suffix}@pxhost.local`, `sub-friend-${suffix}@pxhost.local`] } },
+      where: { email: { in: [`sub-admin-${suffix}@gxhost.local`, `sub-owner-${suffix}@gxhost.local`, `sub-friend-${suffix}@gxhost.local`] } },
       data: { deletedAt: new Date() },
     });
     await new Promise<void>((resolve) => fakeAgent.close(() => resolve()));
@@ -143,7 +143,7 @@ describe('Subusers / RBAC / Activity (e2e)', () => {
   it('a non-owner cannot invite subusers, even on a server they can somehow reach', async () => {
     // friend isn't invited yet, so this 404s the same as the test above —
     // covered again explicitly below once friend actually has access.
-    const res = await asFriend(`/api/client/servers/${serverId}/subusers`, { method: 'POST', payload: { email: 'nobody@pxhost.local', permissions: [] } });
+    const res = await asFriend(`/api/client/servers/${serverId}/subusers`, { method: 'POST', payload: { email: 'nobody@gxhost.local', permissions: [] } });
     expect(res.statusCode).toBe(404);
   });
 
@@ -152,7 +152,7 @@ describe('Subusers / RBAC / Activity (e2e)', () => {
   it("the owner invites the friend with control.restart but NOT backup.delete — exactly the DoD's example", async () => {
     const res = await asOwner(`/api/client/servers/${serverId}/subusers`, {
       method: 'POST',
-      payload: { email: `sub-friend-${suffix}@pxhost.local`, permissions: ['websocket.connect', 'control.console', 'control.restart', 'backup.read'] },
+      payload: { email: `sub-friend-${suffix}@gxhost.local`, permissions: ['websocket.connect', 'control.console', 'control.restart', 'backup.read'] },
     });
     expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body);
@@ -162,12 +162,12 @@ describe('Subusers / RBAC / Activity (e2e)', () => {
   });
 
   it('inviting an unknown permission key is rejected', async () => {
-    const res = await asOwner(`/api/client/servers/${serverId}/subusers`, { method: 'POST', payload: { email: `sub-friend-${suffix}@pxhost.local`, permissions: ['not.a.real.permission'] } });
+    const res = await asOwner(`/api/client/servers/${serverId}/subusers`, { method: 'POST', payload: { email: `sub-friend-${suffix}@gxhost.local`, permissions: ['not.a.real.permission'] } });
     expect(res.statusCode).toBe(400);
   });
 
   it('inviting the same user twice is rejected', async () => {
-    const res = await asOwner(`/api/client/servers/${serverId}/subusers`, { method: 'POST', payload: { email: `sub-friend-${suffix}@pxhost.local`, permissions: [] } });
+    const res = await asOwner(`/api/client/servers/${serverId}/subusers`, { method: 'POST', payload: { email: `sub-friend-${suffix}@gxhost.local`, permissions: [] } });
     expect(res.statusCode).toBe(409);
   });
 

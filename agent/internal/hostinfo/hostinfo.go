@@ -18,6 +18,9 @@
 package hostinfo
 
 import (
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -41,6 +44,17 @@ type StaticInfo struct {
 
 	VirtualizationSystem string // "kvm", "lxc", "" (bare metal or undetected)
 	VirtualizationRole   string // "guest", "host", ""
+
+	// The node's OWN cgroup memory limit — capacity plan (auto-derivation)'s
+	// fix for the LXC/Proxmox problem: mem.VirtualMemory()'s "total" (used
+	// by dockerx.Info's MemTotal too) reads /proc/meminfo, which an LXC
+	// guest without lxcfs sees UN-namespaced — the Proxmox HOST's full RAM,
+	// not the guest's actual share. This field is the guest's real ceiling.
+	// MemoryLimitValid is false (never a fabricated value) when no cgroup
+	// limit file exists (non-Linux, or a cgroup-less environment) or when
+	// the environment is genuinely unlimited — see readMemoryLimit.
+	MemoryLimitBytes uint64
+	MemoryLimitValid bool
 }
 
 // DynamicInfo changes every tick — callers should re-collect this on
@@ -100,7 +114,53 @@ func CollectStatic() StaticInfo {
 		}
 	}
 
+	if limit, ok := readMemoryLimit(); ok {
+		out.MemoryLimitBytes = limit
+		out.MemoryLimitValid = true
+	}
+
 	return out
+}
+
+const (
+	cgroupV2MemoryMax   = "/sys/fs/cgroup/memory.max"
+	cgroupV1MemoryLimit = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+)
+
+// cgroup v1 reports "no limit" as a huge sentinel close to the max
+// representable size (canonically 9223372036854771712 on 64-bit —
+// PAGE_COUNTER_MAX rounded to page size — but not a clean constant
+// across kernels/page sizes). A real machine's RAM is always
+// comfortably below 1 PiB, so anything at or above this threshold is
+// treated as "no limit set," the same meaning cgroup v2's literal
+// "max" string already has.
+const unlimitedCgroupV1Threshold = uint64(1) << 50
+
+// readMemoryLimit reads the cgroup memory limit — v2 first
+// (memory.max, "max" = unlimited), falling back to v1
+// (memory.limit_in_bytes, a huge sentinel = unlimited). Best-effort
+// like everything else in this package: ok=false whenever no limit
+// file exists (non-Linux, or a cgroup-less environment) or the
+// environment is genuinely unlimited, never a fabricated value.
+func readMemoryLimit() (limitBytes uint64, ok bool) {
+	if raw, err := os.ReadFile(cgroupV2MemoryMax); err == nil {
+		s := strings.TrimSpace(string(raw))
+		if s == "max" {
+			return 0, false
+		}
+		if v, err := strconv.ParseUint(s, 10, 64); err == nil && v > 0 {
+			return v, true
+		}
+		return 0, false
+	}
+	if raw, err := os.ReadFile(cgroupV1MemoryLimit); err == nil {
+		s := strings.TrimSpace(string(raw))
+		if v, err := strconv.ParseUint(s, 10, 64); err == nil && v > 0 && v < unlimitedCgroupV1Threshold {
+			return v, true
+		}
+		return 0, false
+	}
+	return 0, false
 }
 
 // CollectDynamic reads CPU%, 1-minute load average, and memory

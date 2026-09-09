@@ -15,10 +15,10 @@ describe('Admin users (e2e)', () => {
   let supportToken: string;
   const suffix = Date.now();
   const emails = {
-    root: `users-e2e-root-${suffix}@pxhost.local`,
-    adminA: `users-e2e-admin-a-${suffix}@pxhost.local`,
-    adminB: `users-e2e-admin-b-${suffix}@pxhost.local`,
-    support: `users-e2e-support-${suffix}@pxhost.local`,
+    root: `users-e2e-root-${suffix}@gxhost.local`,
+    adminA: `users-e2e-admin-a-${suffix}@gxhost.local`,
+    adminB: `users-e2e-admin-b-${suffix}@gxhost.local`,
+    support: `users-e2e-support-${suffix}@gxhost.local`,
   };
   const createdUserIds: string[] = [];
 
@@ -68,7 +68,7 @@ describe('Admin users (e2e)', () => {
   it('root_admin can create a client', async () => {
     const res = await authed(rootToken, '/api/admin/users', {
       method: 'POST',
-      payload: { email: `users-e2e-client-${suffix}@pxhost.local`, username: `users-e2e-client-${suffix}`, password: 'ClientPass!234567' },
+      payload: { email: `users-e2e-client-${suffix}@gxhost.local`, username: `users-e2e-client-${suffix}`, password: 'ClientPass!234567' },
     });
     expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body);
@@ -80,7 +80,7 @@ describe('Admin users (e2e)', () => {
   it('support cannot create a user (missing clients.create)', async () => {
     const res = await authed(supportToken, '/api/admin/users', {
       method: 'POST',
-      payload: { email: `users-e2e-support-create-${suffix}@pxhost.local`, username: `users-e2e-support-create-${suffix}`, password: 'ClientPass!234567' },
+      payload: { email: `users-e2e-support-create-${suffix}@gxhost.local`, username: `users-e2e-support-create-${suffix}`, password: 'ClientPass!234567' },
     });
     expect(res.statusCode).toBe(403);
   });
@@ -94,7 +94,7 @@ describe('Admin users (e2e)', () => {
     const res = await authed(adminAToken, '/api/admin/users', {
       method: 'POST',
       payload: {
-        email: `users-e2e-escalate-${suffix}@pxhost.local`,
+        email: `users-e2e-escalate-${suffix}@gxhost.local`,
         username: `users-e2e-escalate-${suffix}`,
         password: 'ClientPass!234567',
         globalRole: 'root_admin',
@@ -106,7 +106,7 @@ describe('Admin users (e2e)', () => {
   it('admin cannot promote an existing user to root_admin via PATCH', async () => {
     const create = await authed(rootToken, '/api/admin/users', {
       method: 'POST',
-      payload: { email: `users-e2e-promote-${suffix}@pxhost.local`, username: `users-e2e-promote-${suffix}`, password: 'ClientPass!234567' },
+      payload: { email: `users-e2e-promote-${suffix}@gxhost.local`, username: `users-e2e-promote-${suffix}`, password: 'ClientPass!234567' },
     });
     const target = JSON.parse(create.body);
     createdUserIds.push(target.id);
@@ -152,7 +152,7 @@ describe('Admin users (e2e)', () => {
     const login = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
-      payload: { email: `users-e2e-client-${suffix}@pxhost.local`, password: 'ClientPass!234567' },
+      payload: { email: `users-e2e-client-${suffix}@gxhost.local`, password: 'ClientPass!234567' },
     });
     const clientToken = JSON.parse(login.body).accessToken;
     const res = await authed(clientToken, '/api/admin/users');

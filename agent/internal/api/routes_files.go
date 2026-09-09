@@ -9,9 +9,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/pxhost/agent/internal/auth"
-	"github.com/pxhost/agent/internal/fsx"
-	"github.com/pxhost/agent/internal/srv"
+	"github.com/gxhost/agent/internal/auth"
+	"github.com/gxhost/agent/internal/fsx"
+	"github.com/gxhost/agent/internal/srv"
 )
 
 // maxUploadBytes bounds any write this handler set will accept absent a

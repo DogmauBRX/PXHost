@@ -14,7 +14,7 @@ import { WorkerModule } from './worker.module';
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Worker');
   const app = await NestFactory.createApplicationContext(WorkerModule);
-  logger.log('pxhost worker started — schedule-tick + schedule-dispatch processors running');
+  logger.log('gxhost worker started — schedule-tick + schedule-dispatch processors running');
 
   const shutdown = async (signal: string) => {
     logger.log(`${signal} received, shutting down worker...`);

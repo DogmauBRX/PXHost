@@ -6,8 +6,10 @@ import {
   LayoutDashboard,
   Layers,
   LifeBuoy,
+  Megaphone,
   MapPin,
   Package,
+  Receipt,
   ScrollText,
   Server,
   ServerCog,
@@ -62,6 +64,7 @@ export const ADMIN_NAV_SECTIONS: readonly NavSection[] = [
       { label: 'Templates', to: '/admin/templates', icon: Package },
       { label: 'Plans', to: '/admin/plans', icon: Layers },
       { label: 'Assinaturas', to: '/admin/subscriptions', icon: CreditCard },
+      { label: 'Pagamentos', to: '/admin/payments', icon: Receipt },
     ],
   },
   {
@@ -69,6 +72,7 @@ export const ADMIN_NAV_SECTIONS: readonly NavSection[] = [
     label: 'Sistema',
     items: [
       { label: 'Configurações', to: '/admin/settings', icon: Settings },
+      { label: 'Aviso do site', to: '/admin/announcement', icon: Megaphone },
       { label: 'Logs', to: '/admin/logs', icon: ScrollText },
       { label: 'Sistema', to: '/admin/system', icon: ShieldCheck },
     ],

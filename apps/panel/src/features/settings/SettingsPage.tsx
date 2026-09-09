@@ -11,6 +11,7 @@ import { getAccount, updateAccount, changePassword, type UpdateAccountInput } fr
 import { ApiError } from '@/shared/api/client';
 import type { ClientAccount } from '@/shared/api/types';
 import { Alert, Avatar, Button, Card, CardBody, CardHeader, CardTitle, CardDescription, Field, Input, LoadingRow, PageHeader } from '@/ui/primitives';
+import { BillingProfileFields, billingSchema, accountToBillingForm, type BillingFormValues } from '@/features/public/BillingProfileFields';
 
 function AppearanceCard() {
   const theme = useThemeStore((s) => s.theme);
@@ -197,6 +198,78 @@ function ProfileCard() {
   );
 }
 
+// Editable outside the checkout flow too (fixing a mistyped CPF shouldn't
+// require subscribing again) — same load/edit/save shape as ProfileCard,
+// same "Dados de cobrança" fields CheckoutPage.tsx collects, via the
+// shared BillingProfileFields subform.
+function BillingCard() {
+  const queryClient = useQueryClient();
+  const { data: account, isLoading } = useQuery({ queryKey: ['account', 'me'], queryFn: getAccount });
+  const [notice, setNotice] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<BillingFormValues>({
+    resolver: zodResolver(billingSchema),
+    values: account ? accountToBillingForm(account) : undefined,
+  });
+
+  const mutation = useMutation({
+    mutationFn: (input: UpdateAccountInput) => updateAccount(input),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['account', 'me'], updated);
+      setNotice('Dados de cobrança atualizados.');
+      setServerError(null);
+    },
+    onError: (err) => {
+      setNotice(null);
+      setServerError(err instanceof ApiError ? err.message : 'Não foi possível salvar os dados de cobrança.');
+    },
+  });
+
+  async function onSubmit(values: BillingFormValues) {
+    setNotice(null);
+    await mutation.mutateAsync(values);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Dados de cobrança</CardTitle>
+          <CardDescription>CPF e endereço usados na hora de assinar um plano.</CardDescription>
+        </div>
+      </CardHeader>
+      <CardBody>
+        {isLoading ? (
+          <LoadingRow />
+        ) : (
+          <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} className="flex max-w-md flex-col gap-4">
+            {notice && (
+              <Alert tone="ok" onDismiss={() => setNotice(null)}>
+                {notice}
+              </Alert>
+            )}
+            {serverError && <Alert onDismiss={() => setServerError(null)}>{serverError}</Alert>}
+
+            <BillingProfileFields register={register} errors={errors} />
+
+            <div>
+              <Button type="submit" variant="primary" disabled={isSubmitting}>
+                <Save className="h-4 w-4" aria-hidden="true" />
+                {isSubmitting ? 'Salvando…' : 'Salvar dados de cobrança'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
 const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, 'Informe sua senha atual'),
@@ -289,6 +362,7 @@ export function SettingsPage() {
       <div className="grid max-w-3xl gap-6">
         <AppearanceCard />
         <ProfileCard />
+        <BillingCard />
         <ChangePasswordCard />
       </div>
     </>

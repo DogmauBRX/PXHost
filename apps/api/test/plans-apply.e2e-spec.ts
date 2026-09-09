@@ -71,7 +71,7 @@ describe('Plans — drift + apply (e2e)', () => {
 
     const passwordHash = await argon2.hash('PlanApplyPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
     const admin = await prisma.user.create({
-      data: { email: `plan-apply-admin-${suffix}@pxhost.local`, username: `plan-apply-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
+      data: { email: `plan-apply-admin-${suffix}@gxhost.local`, username: `plan-apply-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
     });
     adminToken = JSON.parse((await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: admin.email, password: 'PlanApplyPass!234567' } })).body).accessToken;
 
@@ -97,7 +97,7 @@ describe('Plans — drift + apply (e2e)', () => {
     });
     planId = JSON.parse(planRes.body).id;
 
-    const ownerRes = await prisma.user.create({ data: { email: `plan-apply-owner-${suffix}@pxhost.local`, username: `plan-apply-owner-${suffix}`, passwordHash, isActive: true } });
+    const ownerRes = await prisma.user.create({ data: { email: `plan-apply-owner-${suffix}@gxhost.local`, username: `plan-apply-owner-${suffix}`, passwordHash, isActive: true } });
     const createRes = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId: ownerRes.id, nodeId, templateId, planId, name: 'plan-apply-e2e server' } });
     serverId = JSON.parse(createRes.body).id;
   });
@@ -111,7 +111,7 @@ describe('Plans — drift + apply (e2e)', () => {
     await prisma.location.deleteMany({ where: { id: locationId } });
     await prisma.plan.deleteMany({ where: { id: planId } });
     await prisma.user.updateMany({
-      where: { email: { in: [`plan-apply-admin-${suffix}@pxhost.local`, `plan-apply-owner-${suffix}@pxhost.local`] } },
+      where: { email: { in: [`plan-apply-admin-${suffix}@gxhost.local`, `plan-apply-owner-${suffix}@gxhost.local`] } },
       data: { deletedAt: new Date() },
     });
     await new Promise<void>((resolve) => fakeAgent.close(() => resolve()));

@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { RedisService } from '../../core/redis/redis.service';
-import { SLOT_HOLDING_SUBSCRIPTION_STATUSES } from '../capacity/capacity.service';
+import { CapacityService, SLOT_HOLDING_SUBSCRIPTION_STATUSES } from '../capacity/capacity.service';
 import { PLAN_CLIENT_SELECT } from '../authorization/server-access.service';
 
 /**
@@ -40,6 +40,7 @@ export class PublicPlansService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly capacity: CapacityService,
   ) {}
 
   /**
@@ -75,8 +76,10 @@ export class PublicPlansService {
       orderBy: [{ sortOrder: 'asc' }, { memoryMb: 'asc' }],
     });
 
-    const occupiedByPlan = await this.occupancyForPlans(plans.map((p) => p.id));
-    const result = plans.map((plan) => this.toPublicPlan(plan, this.computeAvailability(plan.maxSlots, occupiedByPlan.get(plan.id) ?? 0)));
+    const [occupiedByPlan, derivedSlotsByPlan] = await Promise.all([this.occupancyForPlans(plans.map((p) => p.id)), this.derivedSlotsForPlans(plans)]);
+    const result = plans.map((plan) =>
+      this.toPublicPlan(plan, this.computeAvailability(plan.maxSlots, occupiedByPlan.get(plan.id) ?? 0, derivedSlotsByPlan?.get(plan.id))),
+    );
 
     await this.redis.client.set(CACHE_KEY, JSON.stringify(result), 'EX', CACHE_TTL_SECONDS).catch(() => undefined);
     return result;
@@ -92,8 +95,29 @@ export class PublicPlansService {
       select: PLAN_PUBLIC_SELECT,
     });
     if (!plan) throw new NotFoundException('Plan not found');
-    const occupiedByPlan = await this.occupancyForPlans([plan.id]);
-    return this.toPublicPlan(plan, this.computeAvailability(plan.maxSlots, occupiedByPlan.get(plan.id) ?? 0));
+    const [occupiedByPlan, derivedSlotsByPlan] = await Promise.all([this.occupancyForPlans([plan.id]), this.derivedSlotsForPlans([plan])]);
+    return this.toPublicPlan(plan, this.computeAvailability(plan.maxSlots, occupiedByPlan.get(plan.id) ?? 0, derivedSlotsByPlan?.get(plan.id)));
+  }
+
+  /**
+   * Capacity plan (auto-derivation) — real node capacity's ONE entry
+   * point into the storefront, gated behind `hasAnyHealthyNode`. Returns
+   * `undefined` (not a Map) whenever no node is healthy at all: the
+   * caller's `computeAvailability` treats `undefined` as "ignore node
+   * capacity entirely," falling back to today's maxSlots-only behavior
+   * — the exact safe-fallback this service's own `computeAvailability`
+   * doc comment already documents needing (a fresh/degraded deployment
+   * must never blank the whole catalog). Runs in its own `withRLS` —
+   * `usageForNodes` (inside `CapacityService.derivedSlotsForPlans`)
+   * reads `servers`/`server_transfers`, both RLS-protected.
+   */
+  private async derivedSlotsForPlans(plans: { id: string; memoryMb: number; diskMb: number; cpuLimitPercent: number }[]): Promise<Map<string, number | null> | undefined> {
+    if (plans.length === 0) return new Map();
+    return this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
+      const healthy = await this.capacity.hasAnyHealthyNode(tx);
+      if (!healthy) return undefined;
+      return this.capacity.derivedSlotsForPlans(tx, plans);
+    });
   }
 
   /**
@@ -131,30 +155,39 @@ export class PublicPlansService {
   /**
    * Availability is computed here, ONCE, and never by the frontend (the
    * commercial plan's own rule: "não permitir que o frontend determine
-   * sozinho se existe capacidade") — but purely from `maxSlots` vs.
-   * `occupied`, the exact accounting `SubscriptionsService
-   * .createForUser` enforces under lock at subscribe time, so the
-   * number shown here and the number that actually gates a subscribe
-   * request can never disagree.
+   * sozinho se existe capacidade") — the exact accounting
+   * `SubscriptionsService.createForUser` enforces under lock at
+   * subscribe time, so the number shown here and the number that
+   * actually gates a subscribe request can never disagree in the
+   * `maxSlots` dimension; real node capacity is a genuinely separate,
+   * best-effort signal layered on top (see below).
    *
-   * An earlier version also folded in `NodeSchedulerService.selectNode`
-   * — "no eligible node right now" also read as sold out. Found live,
-   * against a fresh dev database with plans but zero nodes bootstrapped
-   * yet: EVERY plan showed "Esgotado," including ones with no slot
-   * limit at all. That conflates two different things — "this plan is
-   * commercially full" vs. "nobody has provisioned a node for it yet" —
-   * and this milestone deliberately never provisions a server at
-   * subscribe time anyway (see the commercial plan's §13: a `pending`
-   * subscription sits waiting on an admin regardless of node state).
-   * Gating the storefront on live infrastructure would misrepresent a
-   * plan as sold out when it is really just not deployed yet, and
-   * blocks a legitimate `pending` subscription for no reason tied to
-   * actual commercial stock. Node fit belongs to the (future, not-yet-
-   * built) auto-provisioning flow, not to what a visitor sees here.
+   * An earlier version folded `NodeSchedulerService.selectNode` in
+   * directly — "no eligible node right now" also read as sold out.
+   * Found live, against a fresh dev database with plans but zero nodes
+   * bootstrapped yet: EVERY plan showed "Esgotado," including ones with
+   * no slot limit at all. That conflated two different things — "this
+   * plan is commercially full" vs. "nobody has provisioned a node for
+   * it yet" — and blocked a legitimate `pending` subscription (§13: it
+   * sits waiting on an admin regardless of node state) for no reason
+   * tied to actual commercial stock.
+   *
+   * Capacity plan (auto-derivation) reintroduces node awareness, but
+   * ONLY behind `hasAnyHealthyNode` — `derivedSlots === undefined` means
+   * that gate failed (no node healthy at all, the exact scenario that
+   * broke the earlier version) and this method falls back to the
+   * historical maxSlots-only behavior untouched. When at least one node
+   * IS healthy, `derivedSlots` (`null` = unlimited on every eligible
+   * node, a real number = the actual ceiling) tightens `remaining`
+   * alongside `maxSlots` — a plan that's commercially unlimited but
+   * physically full now correctly shows sold out, and vice versa. Real
+   * enforcement stays exactly where it always was: this is a display
+   * signal, `SubscriptionsService.createForUser` is the authority.
    */
-  private computeAvailability(maxSlots: number | null, occupied: number): PlanAvailability {
-    if (maxSlots === null) return { status: 'available', remaining: null };
-    const remaining = maxSlots - occupied;
+  private computeAvailability(maxSlots: number | null, occupied: number, derivedSlots: number | null | undefined): PlanAvailability {
+    const effectiveSlots = derivedSlots === undefined ? maxSlots : maxSlots === null ? derivedSlots : derivedSlots === null ? maxSlots : Math.min(maxSlots, derivedSlots);
+    if (effectiveSlots === null) return { status: 'available', remaining: null };
+    const remaining = effectiveSlots - occupied;
     if (remaining <= 0) return { status: 'sold_out', remaining: 0 };
     return { status: remaining <= LOW_STOCK_THRESHOLD ? 'limited' : 'available', remaining };
   }

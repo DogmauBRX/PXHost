@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/pxhost/agent/internal/dockerx"
-	"github.com/pxhost/agent/internal/srv"
+	"github.com/gxhost/agent/internal/dockerx"
+	"github.com/gxhost/agent/internal/srv"
 )
 
 // performPower is the single chokepoint every power action goes through,

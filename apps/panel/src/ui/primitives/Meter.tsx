@@ -1,14 +1,19 @@
-type Tone = 'normal' | 'warning' | 'critical';
+// 'high' is capacity plan (auto-derivation) §17's 4 alert levels
+// (🟢🟡🟠🔴) — a 3rd stop between warn and critical, backed by its own
+// `--color-high` token (see index.css) rather than reusing `warn`/`fail`.
+type Tone = 'normal' | 'warning' | 'high' | 'critical';
 
 const barTone: Record<Tone, string> = {
   normal: 'bg-ok',
   warning: 'bg-warn',
+  high: 'bg-high',
   critical: 'bg-fail',
 };
 
 const labelTone: Record<Tone, string> = {
   normal: 'text-text-muted',
   warning: 'text-warn',
+  high: 'text-high',
   critical: 'text-fail',
 };
 

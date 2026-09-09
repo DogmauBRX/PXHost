@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, ServerTemplate } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AgentClient, CreateAgentServerRequest } from '../nodes/agent-client.service';
@@ -6,13 +6,18 @@ import { AuditService } from '../audit/audit.service';
 import { DatabasesService } from '../databases/databases.service';
 import { ActivityService } from '../activity/activity.service';
 import { CapacityService } from '../capacity/capacity.service';
-import { assertNodeFits, assertSlots } from '../capacity/capacity.math';
+import { assertNodeFits, assertSlots, nodeAcceptsNewServers, resolveNodeCapacity } from '../capacity/capacity.math';
+import { deriveHealthStatus } from '../nodes/nodes.service';
 import { NodeSchedulerService, SchedulerCandidate } from '../scheduler/node-scheduler.service';
 import { CreateServerDto } from './dto/server.dto';
 import { generateShortId } from './short-id';
+import { validateVariableValue } from './variable-rules';
 
 const DEFAULT_INSTALL_IMAGE = 'ghcr.io/pxhost/installers:debian';
 const DEFAULT_INSTALL_ENTRYPOINT = 'bash';
+
+/** Default page size for `ServersService.list` when the caller doesn't pass `limit` — bounds what used to be a fully unbounded query (every server in the system, admin-wide) to something a request can always serve quickly. Mirrors `ListUsersDto`'s own 100 default/200 cap, sized a bit larger since a server row is lighter than a user row. */
+const DEFAULT_LIST_LIMIT = 200;
 
 /** How many DIFFERENT nodes an automatic (no explicit `dto.nodeId`) create will try before giving up — see `ServersService.create`'s doc comment for why an explicit `nodeId` never retries at all. */
 const MAX_SCHEDULER_ATTEMPTS = 3;
@@ -29,17 +34,33 @@ export class ServersService {
     private readonly scheduler: NodeSchedulerService,
   ) {}
 
-  async list(ownerId?: string) {
+  /**
+   * `template` was previously pulled in full via `include` (multi-KB
+   * `dockerImages`/`configFiles`/`configStartup`/`configLogs` JSON blobs
+   * and a full `installScript` string per row) even though nothing in
+   * `AdminServerSummary` (the frontend type this feeds) reads it — dropped
+   * entirely here. `node`/`plan` are narrowed to just the id/name pair that
+   * type actually declares. `take` defaults to `DEFAULT_LIST_LIMIT` instead
+   * of being unbounded, since this had no pagination at all before and an
+   * admin-wide call with no `ownerId` returns literally every server row
+   * in the system.
+   */
+  async list(ownerId?: string, take = DEFAULT_LIST_LIMIT, skip = 0) {
     return this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
       tx.server.findMany({
         where: ownerId ? { ownerId } : undefined,
-        include: {
-          node: { select: { id: true, name: true, fqdn: true } },
-          template: true,
-          plan: true,
+        select: {
+          id: true,
+          shortId: true,
+          name: true,
+          status: true,
+          node: { select: { id: true, name: true } },
+          plan: { select: { id: true, name: true } },
           owner: { select: { id: true, username: true, email: true } },
         },
         orderBy: { createdAt: 'desc' },
+        take,
+        skip,
       }),
     );
   }
@@ -83,6 +104,12 @@ export class ServersService {
 
     const template = await this.prisma.serverTemplate.findFirst({ where: { id: dto.templateId, deletedAt: null } });
     if (!template) throw new NotFoundException('Template not found');
+    // `isActive` existed on the column since the template CRUD shipped but
+    // nothing ever read it — an admin toggling a template off believed
+    // (wrongly) that it stopped new servers from using it. Enforced here,
+    // once, for every creation path (admin panel and, soon, the customer
+    // checkout) rather than duplicated per-caller.
+    if (!template.isActive) throw new ConflictException('Template is not active');
 
     const planExists = await this.prisma.plan.findFirst({ where: { id: dto.planId, deletedAt: null }, select: { id: true } });
     if (!planExists) throw new NotFoundException('Plan not found');
@@ -167,10 +194,28 @@ export class ServersService {
 
       const node = await tx.node.findFirst({ where: { id: nodeId, deletedAt: null } });
       if (!node) throw new NotFoundException('Node not found');
-      if (node.maintenanceMode) throw new ConflictException('Node is in maintenance mode');
+
+      // Capacity plan (auto-derivation): resolveNodeCapacity is the ONE
+      // place that decides auto-vs-manual — every node created before
+      // this feature is 'manual', for which nodeAcceptsNewServers checks
+      // EXACTLY the maintenanceMode gate this line always had, so no
+      // existing node's create behavior changes. 'auto' additionally
+      // refuses when the telemetry behind the ceiling below can't be
+      // trusted (offline/degraded/unconfigured/stale) — see that
+      // function's own doc comment.
+      const resolved = resolveNodeCapacity(node);
+      const acceptance = nodeAcceptsNewServers({
+        capacityMode: node.capacityMode,
+        maintenanceMode: node.maintenanceMode,
+        health: deriveHealthStatus(node.lastHeartbeatAt),
+        memory: resolved.memory,
+        disk: resolved.disk,
+        telemetryStale: resolved.telemetryStale,
+      });
+      if (!acceptance.ok) throw new ConflictException(acceptance.reason);
 
       const usage = await this.capacity.usageForNode(tx, nodeId);
-      assertNodeFits(node, usage, { memoryMb: plan.memoryMb, diskMb: plan.diskMb, cpuPercent: plan.cpuLimitPercent });
+      assertNodeFits(resolved, usage, { memoryMb: plan.memoryMb, diskMb: plan.diskMb, cpuPercent: plan.cpuLimitPercent });
 
       const allocation = dto.allocationId
         ? await tx.allocation.findFirst({ where: { id: BigInt(dto.allocationId), nodeId, serverId: null } })
@@ -211,9 +256,40 @@ export class ServersService {
 
       await tx.allocation.update({ where: { id: allocation.id }, data: { serverId: server.id, isPrimary: true } });
 
+      if (dto.attachSubscriptionId) {
+        // Scoped to `userId: dto.ownerId` — attaching a server to a
+        // subscription belonging to someone ELSE would silently hand
+        // one customer's paid slot to another customer's server. The
+        // unique index on `subscriptions.server_id` is the hard
+        // backstop (a subscription already attached to a different
+        // server raises here, not silently overwrites).
+        const subscription = await tx.subscription.findFirst({ where: { id: dto.attachSubscriptionId, userId: dto.ownerId } });
+        if (!subscription) throw new NotFoundException('Subscription not found for attach');
+        await tx.subscription.update({ where: { id: subscription.id }, data: { serverId: server.id } });
+      }
+
       const templateVars = await tx.templateVariable.findMany({ where: { templateId: dto.templateId } });
       const declaredNames = templateVars.map((v) => v.envVariable);
       const requested = dto.variables ?? {};
+
+      // Mirrors ServerVariablesService.update's own enforcement exactly
+      // (variable-rules.ts's `validateVariableValue` + `isUserEditable`) —
+      // until now `requested` was written verbatim with no check at all,
+      // harmless while only an admin could reach this path but a real hole
+      // the moment customer input (checkout server config) starts flowing
+      // in here. Unknown keys are left alone (silently unused below, same
+      // as before) rather than rejected — this method also serves
+      // admin-driven creation, which may pass through incidental extra
+      // fields no template declares.
+      const byEnvVar = new Map(templateVars.map((tv) => [tv.envVariable, tv]));
+      for (const [key, value] of Object.entries(requested)) {
+        const tv = byEnvVar.get(key);
+        if (!tv) continue;
+        if (!tv.isUserEditable) throw new ForbiddenException(`Variável não editável: ${key}`);
+        const error = validateVariableValue(value, tv.rules);
+        if (error) throw new BadRequestException(`${tv.name}: ${error}`);
+      }
+
       const resolvedValues: Record<string, string> = {};
       for (const tv of templateVars) {
         const value = requested[tv.envVariable] ?? tv.defaultValue;
@@ -328,9 +404,10 @@ export class ServersService {
    * of TWO independent enforcement points, the other being the agent's
    * own `IsSuspended` flag (agent/internal/srv/suspend.go). Idempotent
    * by design: setting the SAME status again is a harmless no-op update,
-   * which is exactly what lets BillingWebhookService call this without
-   * first checking current state — a retried webhook delivery for an
-   * already-suspended server just re-writes the same row.
+   * which is exactly what lets the payments webhook and billing-cycle
+   * job call this without first checking current state — a retried
+   * webhook delivery for an already-suspended server just re-writes the
+   * same row.
    *
    * The agent push is best-effort, same posture as every other
    * dispatch-after-commit in this service: the DB row is the panel's
@@ -342,36 +419,58 @@ export class ServersService {
    * it up.
    *
    * actorId is nullable: an admin-triggered suspend has a real one, but
-   * BillingWebhookService's calls don't — no human initiated those, and
-   * `audit_logs.actor_id` is a real FK to `users`, so passing anything
-   * other than a genuine user id or null would fail at the database
-   * (found while writing BillingWebhookService: a placeholder string
-   * like `"billing-webhook"` isn't a valid uuid). The audit row itself
-   * still fully identifies a billing-driven suspension via `action`
-   * ('admin.server.suspend') and `metadata.reason` ('billing: <event
-   * type>') — a null actor reads as "the system did this," not "we lost
-   * track of who."
+   * an automated billing-driven suspend doesn't — no human initiated
+   * that, and `audit_logs.actor_id` is a real FK to `users`, so passing
+   * anything other than a genuine user id or null would fail at the
+   * database (a placeholder string like `"billing-webhook"` isn't a
+   * valid uuid). The audit row itself still fully identifies a
+   * billing-driven suspension via `action` ('admin.server.suspend') and
+   * `metadata.reason`/`source` — a null actor reads as "the system did
+   * this," not "we lost track of who."
    */
-  async suspend(id: string, reason: string, actorId: string | null): Promise<void> {
+  /**
+   * `source` ('admin' by default, 'billing' for the billing-cycle job /
+   * payments webhook) is written to `suspensionSource` — the only thing
+   * that lets `unsuspend`'s `requireSource` guard refuse to lift a
+   * suspension it didn't create. Before this column existed, `unsuspend`
+   * was unconditional: any caller (including an automated payment
+   * confirmation) could reactivate a server an admin suspended for
+   * abuse. See that guard's own doc comment.
+   */
+  async suspend(id: string, reason: string, actorId: string | null, source: 'admin' | 'billing' = 'admin'): Promise<void> {
     const server = await this.get(id);
     await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
-      tx.server.update({ where: { id }, data: { status: 'suspended', suspendedAt: new Date(), suspensionReason: reason } }),
+      tx.server.update({ where: { id }, data: { status: 'suspended', suspendedAt: new Date(), suspensionReason: reason, suspensionSource: source } }),
     );
-    await this.audit.record({ action: 'admin.server.suspend', actorId, targetType: 'server', targetId: id, metadata: { reason } });
+    await this.audit.record({ action: 'admin.server.suspend', actorId, targetType: 'server', targetId: id, metadata: { reason, source } });
     await this.agent.setSuspended(server.node.id, id, true).catch((err) => {
       void this.audit.record({ action: 'admin.server.suspend.agent_push_failed', actorId, targetType: 'server', targetId: id, metadata: { error: (err as Error).message } });
     });
   }
 
-  async unsuspend(id: string, actorId: string | null): Promise<void> {
+  /**
+   * `requireSource`: when set, refuses (returns `false`, no-op — never
+   * throws, since an automated caller iterating many servers must not
+   * have one mismatch abort the whole batch) unless the server's
+   * CURRENT `suspensionSource` matches. This is what stops a recovered
+   * payment from undoing an admin's abuse suspension: billing-cycle and
+   * the payments webhook always pass `requireSource: 'billing'`; a human
+   * admin unsuspending via the controller passes nothing and can lift
+   * any suspension, same as before this guard existed.
+   */
+  async unsuspend(id: string, actorId: string | null, options?: { requireSource?: 'admin' | 'billing' }): Promise<boolean> {
     const server = await this.get(id);
+    if (options?.requireSource && server.suspensionSource !== options.requireSource) {
+      return false;
+    }
     await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
-      tx.server.update({ where: { id }, data: { status: 'ready', suspendedAt: null, suspensionReason: null } }),
+      tx.server.update({ where: { id }, data: { status: 'ready', suspendedAt: null, suspensionReason: null, suspensionSource: null } }),
     );
     await this.audit.record({ action: 'admin.server.unsuspend', actorId, targetType: 'server', targetId: id });
     await this.agent.setSuspended(server.node.id, id, false).catch((err) => {
       void this.audit.record({ action: 'admin.server.unsuspend.agent_push_failed', actorId, targetType: 'server', targetId: id, metadata: { error: (err as Error).message } });
     });
+    return true;
   }
 
   /** Called by the agent (NodeAuthGuard) when an install run finishes. */

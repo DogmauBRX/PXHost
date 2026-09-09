@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Database } from 'lucide-react';
 import { createDatabase, deleteDatabase, listDatabases } from './databases.api';
 import { ApiError } from '@/shared/api/client';
+import { formatDateTime as formatDate } from '@/shared/format/datetime';
 import type { CreatedDatabase } from '@/shared/api/types';
 import {
   Alert,
@@ -18,10 +19,6 @@ import {
   Table,
   TableWrap,
 } from '@/ui/primitives';
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('pt-BR');
-}
 
 export function DatabasesPage({ serverId }: { serverId: string }) {
   const queryClient = useQueryClient();

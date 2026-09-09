@@ -9,28 +9,17 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './core/filters/http-exception.filter';
 
 async function bootstrap(): Promise<void> {
-  // bodyParser: false — Nest would otherwise register its OWN default
-  // application/json parser during app.init(), which collides with the
-  // custom one just below ("Content type parser 'application/json'
-  // already present", found live writing this milestone's own e2e test
-  // before it ever reached main.ts). Registering ours in Nest's place
-  // captures the exact raw request bytes onto req.rawBody alongside the
-  // normal JSON parsing — needed by BillingController (architecture doc
-  // roadmap M14), which must verify an HMAC signature against what the
-  // payment provider actually signed, not a re-serialized copy
-  // (re-serializing can silently reorder keys/whitespace and invalidate
-  // an otherwise-valid signature). Every OTHER route ignores req.rawBody
-  // entirely, so this has no effect on them beyond holding one extra
-  // Buffer per request.
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), { bodyParser: false });
-  app.getHttpAdapter().getInstance().addContentTypeParser('application/json', { parseAs: 'string' }, (req: any, body: string, done: (err: Error | null, body?: unknown) => void) => {
-    req.rawBody = Buffer.from(body, 'utf8');
-    try {
-      done(null, body.length ? JSON.parse(body) : {});
-    } catch (err) {
-      done(err as Error);
-    }
-  });
+  // trustProxy: true — deploy plan (VPS behind Caddy + Cloudflare).
+  // apps/api is never published to the host in docker-compose.prod.yml
+  // (only Caddy is), so the actual TCP peer of every request IS the
+  // reverse proxy; trusting its X-Forwarded-For/X-Forwarded-Proto is
+  // safe and is what makes `request.ip` (audit log actorIp, the
+  // password-reset flow's per-IP rate limit) reflect the real client
+  // instead of the proxy's own address. Harmless in dev/test: with no
+  // proxy in front, there's no X-Forwarded-* header to trust in the
+  // first place, so `request.ip` falls back to the raw socket peer
+  // exactly as it always has.
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter({ trustProxy: true }));
 
   const config = app.get(ConfigService);
 
@@ -70,7 +59,7 @@ async function bootstrap(): Promise<void> {
   const port = config.get<number>('PORT')!;
   await app.listen(port, '0.0.0.0');
   // eslint-disable-next-line no-console
-  console.log(`PXHost API listening on :${port}`);
+  console.log(`GXhost API listening on :${port}`);
 }
 
 bootstrap();

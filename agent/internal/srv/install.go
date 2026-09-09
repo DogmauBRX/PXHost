@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/pxhost/agent/internal/console"
-	"github.com/pxhost/agent/internal/spec"
+	"github.com/gxhost/agent/internal/console"
+	"github.com/gxhost/agent/internal/spec"
 )
 
 const defaultInstallTimeout = 15 * time.Minute
@@ -54,7 +54,7 @@ func (s *Server) Install(ctx context.Context, dc dockerFull, image, entrypoint, 
 		return fmt.Errorf("srv: building install spec: %w", err)
 	}
 
-	installerName := "pxhost-installer-" + s.UUID
+	installerName := "gxhost-installer-" + s.UUID
 	id, err := dc.CreateContainer(ctx, installerName, cfg, hostCfg, netCfg)
 	if err != nil {
 		return fmt.Errorf("srv: creating install container: %w", err)

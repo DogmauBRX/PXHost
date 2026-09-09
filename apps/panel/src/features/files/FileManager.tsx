@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, type DragEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { File as FileIcon, FileArchive, FilePlus, Folder, FolderPlus, Upload } from 'lucide-react';
 import { chmod, compress, decompress, deleteFile, listFiles, mintDownloadLink, mintUploadLink, mkdir, renameFile, writeFile } from './files.api';
-import { formatBytes, formatDate } from './format';
+import { formatBytes, formatDateTimeShort as formatDate } from '@/shared/format/datetime';
 import { getServer } from '@/features/servers/servers.api';
 import { FileEditor } from './FileEditor';
 import { ApiError } from '@/shared/api/client';

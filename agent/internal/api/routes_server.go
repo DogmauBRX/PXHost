@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/pxhost/agent/internal/spec"
+	"github.com/gxhost/agent/internal/spec"
 )
 
 func (s *Server) handleGetServer(w http.ResponseWriter, r *http.Request) {

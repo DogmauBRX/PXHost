@@ -3,11 +3,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarClock } from 'lucide-react';
 import { addTask, createSchedule, deleteSchedule, deleteTask, listSchedules, updateSchedule } from './schedules.api';
 import { ApiError } from '@/shared/api/client';
+import { formatDateTime } from '@/shared/format/datetime';
 import type { TaskAction } from '@/shared/api/types';
 import { Alert, Badge, Button, Card, CardBody, ConfirmDialog, EmptyState, Field, Input, LoadingRow, PageHeader } from '@/ui/primitives';
 
 function formatDate(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString('pt-BR') : '—';
+  return iso ? formatDateTime(iso) : '—';
 }
 
 const TASK_LABELS: Record<TaskAction, string> = { power: 'Reiniciar servidor', backup: 'Criar backup' };

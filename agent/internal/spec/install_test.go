@@ -3,7 +3,7 @@ package spec
 import "testing"
 
 func testInstallSpec() InstallSpec {
-	return InstallSpec{Image: "ghcr.io/pxhost/installers:debian", Entrypoint: "bash", ScriptHostPath: "/var/lib/pxhost/install/9c2e.../install.sh"}
+	return InstallSpec{Image: "ghcr.io/pxhost/installers:debian", Entrypoint: "bash", ScriptHostPath: "/var/lib/gxhost/install/9c2e.../install.sh"}
 }
 
 func TestBuildInstallContainerSpec_ArgvIsConstantTwoElements(t *testing.T) {
@@ -127,10 +127,10 @@ func TestBuildInstallContainerSpec_RejectsMissingInstallFields(t *testing.T) {
 func TestBuildInstallContainerSpec_LabelsIdentifyItAsAnInstaller(t *testing.T) {
 	cfg, _, _, err := BuildInstallContainerSpec(testServer(), testNode(), testInstallSpec())
 	mustOK(t, err)
-	if cfg.Labels["pxhost.role"] != "installer" {
-		t.Fatalf("expected pxhost.role=installer label, got %q", cfg.Labels["pxhost.role"])
+	if cfg.Labels["gxhost.role"] != "installer" {
+		t.Fatalf("expected gxhost.role=installer label, got %q", cfg.Labels["gxhost.role"])
 	}
-	if cfg.Labels["pxhost.managed"] != "true" {
-		t.Fatal("expected pxhost.managed=true so boot reconciliation and cleanup can find installer containers too")
+	if cfg.Labels["gxhost.managed"] != "true" {
+		t.Fatal("expected gxhost.managed=true so boot reconciliation and cleanup can find installer containers too")
 	}
 }

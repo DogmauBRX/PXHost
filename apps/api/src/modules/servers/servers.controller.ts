@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ServersService } from './servers.service';
 import { CreateServerDto, SuspendServerDto } from './dto/server.dto';
+import { ListServersDto } from './dto/list-servers.dto';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { AdminPermissionGuard } from '../admin/guards/admin-permission.guard';
 import { RequireAdminPermission } from '../admin/decorators/require-admin-permission.decorator';
@@ -14,8 +15,8 @@ export class ServersController {
 
   @Get()
   @RequireAdminPermission('servers.view')
-  list(@Query('ownerId') ownerId?: string) {
-    return this.servers.list(ownerId);
+  list(@Query() query: ListServersDto) {
+    return this.servers.list(query.ownerId, query.limit, query.offset);
   }
 
   @Get(':id')

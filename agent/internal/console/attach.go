@@ -87,6 +87,3 @@ func (p *Pump) Write(b []byte) (int, error) {
 func (p *Pump) Close() error {
 	return p.conn.Conn.Close()
 }
-
-// Done is closed once the underlying stream ends (container stopped/crashed).
-func (p *Pump) Done() <-chan struct{} { return p.done }

@@ -71,9 +71,9 @@ func BuildInstallContainerSpec(srv Server, node Node, install InstallSpec) (*con
 		AttachStderr: true,
 		Healthcheck:  &container.HealthConfig{Test: []string{"NONE"}},
 		Labels: map[string]string{
-			"pxhost.managed":     "true",
-			"pxhost.server.uuid": srv.UUID,
-			"pxhost.role":        "installer",
+			"gxhost.managed":     "true",
+			"gxhost.server.uuid": srv.UUID,
+			"gxhost.role":        "installer",
 		},
 	}
 

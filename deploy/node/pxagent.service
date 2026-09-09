@@ -1,0 +1,31 @@
+# Deploy plan (VPS + Cloudflare + WireGuard) — systemd unit for the agent
+# on a physical node (R620/Dual Xeon). Install as
+# /etc/systemd/system/pxagent.service, then:
+#   systemctl daemon-reload
+#   systemctl enable --now pxagent
+# See ../../docs/DEPLOY.md for the full node setup sequence (WireGuard,
+# node.json, Caddy, firewall) this unit assumes is already in place.
+
+[Unit]
+Description=GXhost Node Agent
+After=network-online.target docker.service wg-quick@wg0.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=gxhost
+Group=gxhost
+WorkingDirectory=/etc/gxhost-agent
+ExecStart=/usr/local/bin/pxagent serve --node /etc/gxhost-agent/node.json
+Restart=always
+RestartSec=5
+# Docker socket access — gxhost must be a member of the `docker` group
+# (same trust boundary as any other daemon that drives Docker directly;
+# see agent/README.md's threat model for why this is inherent to the
+# agent's job, not something a systemd sandbox directive can narrow).
+SupplementaryGroups=docker
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

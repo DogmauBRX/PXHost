@@ -1,0 +1,12 @@
+# Internal, plain-HTTP file server for the built panel — this container
+# is never reachable from outside the VPS's docker network; the ROOT
+# Caddyfile is the one terminating public TLS and proxying to it. The
+# `try_files` fallback is what keeps a hard refresh on a client-side
+# route (e.g. /admin/nodes) from 404ing — TanStack Router owns every
+# path except the actual static assets.
+:80 {
+	root * /srv
+	encode gzip
+	try_files {path} /index.html
+	file_server
+}

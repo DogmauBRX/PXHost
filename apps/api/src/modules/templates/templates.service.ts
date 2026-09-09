@@ -5,11 +5,21 @@ import {
   CreateTemplateGroupDto,
   TemplateVariableDto,
   UpdateServerTemplateDto,
+  UpdateTemplateVariableDto,
 } from './dto/template.dto';
+import { PublicTemplatesService } from '../public/public-templates.service';
 
 @Injectable()
 export class TemplatesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Same reasoning as PlansService -> PublicPlansService: the public
+    // checkout catalog is 60s-cached (public-templates.service.ts), so any
+    // admin write that could change what a customer sees — publishing,
+    // unpublishing, deactivating, or editing a customer-facing variable —
+    // invalidates it rather than making customers wait out the TTL.
+    private readonly publicTemplates: PublicTemplatesService,
+  ) {}
 
   // ---- groups ("nests") ----
 
@@ -54,7 +64,7 @@ export class TemplatesService {
 
     validateDeclaredVariables(dto.variables ?? []);
 
-    return this.prisma.serverTemplate.create({
+    const created = await this.prisma.serverTemplate.create({
       data: {
         groupId: dto.groupId,
         name: dto.name,
@@ -67,20 +77,27 @@ export class TemplatesService {
         installEntrypoint: dto.installEntrypoint ?? 'bash',
         installScript: dto.installScript,
         softwareKind: dto.softwareKind,
+        isPublic: dto.isPublic ?? false,
+        sortOrder: dto.sortOrder ?? 0,
+        iconUrl: dto.iconUrl,
         variables: dto.variables
           ? { create: dto.variables.map((v, i) => toVariableCreateInput(v, i)) }
           : undefined,
       },
       include: { variables: true },
     });
+    await this.publicTemplates.invalidateCache();
+    return created;
   }
 
   async updateTemplate(id: string, dto: UpdateServerTemplateDto) {
     await this.getTemplate(id);
-    return this.prisma.serverTemplate.update({
+    const updated = await this.prisma.serverTemplate.update({
       where: { id },
       data: { ...dto, dockerImages: dto.dockerImages as object | undefined },
     });
+    await this.publicTemplates.invalidateCache();
+    return updated;
   }
 
   async removeTemplate(id: string) {
@@ -88,19 +105,51 @@ export class TemplatesService {
     const serverCount = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.server.count({ where: { templateId: id } }));
     if (serverCount > 0) throw new ConflictException('Template is in use by existing servers');
     await this.prisma.serverTemplate.update({ where: { id }, data: { deletedAt: new Date() } });
+    await this.publicTemplates.invalidateCache();
   }
 
   async addVariable(templateId: string, dto: TemplateVariableDto) {
     await this.getTemplate(templateId);
     validateDeclaredVariables([dto]);
     const count = await this.prisma.templateVariable.count({ where: { templateId } });
-    return this.prisma.templateVariable.create({ data: { templateId, ...toVariableCreateInput(dto, count) } });
+    const created = await this.prisma.templateVariable.create({ data: { templateId, ...toVariableCreateInput(dto, count) } });
+    await this.publicTemplates.invalidateCache();
+    return created;
   }
 
   async removeVariable(templateId: string, variableId: bigint) {
     const variable = await this.prisma.templateVariable.findFirst({ where: { id: variableId, templateId } });
     if (!variable) throw new NotFoundException('Variable not found');
     await this.prisma.templateVariable.delete({ where: { id: variableId } });
+    await this.publicTemplates.invalidateCache();
+  }
+
+  /**
+   * Add/remove already existed; this fills the gap that made `rules` a
+   * write-once field in practice (the panel's variable form only ever
+   * created rows with the service default `'nullable|string'`, with no way
+   * to tighten them afterward). `envVariable` is deliberately not
+   * editable here — it's the join key the agent's env allowlist and every
+   * existing `ServerVariable` row are keyed on; changing it is a
+   * remove+add, not an update.
+   */
+  async updateVariable(templateId: string, variableId: bigint, dto: UpdateTemplateVariableDto) {
+    const variable = await this.prisma.templateVariable.findFirst({ where: { id: variableId, templateId } });
+    if (!variable) throw new NotFoundException('Variable not found');
+    const updated = await this.prisma.templateVariable.update({
+      where: { id: variableId },
+      data: {
+        name: dto.name,
+        description: dto.description,
+        defaultValue: dto.defaultValue,
+        rules: dto.rules,
+        isUserViewable: dto.isUserViewable,
+        isUserEditable: dto.isUserEditable,
+        sortOrder: dto.sortOrder,
+      },
+    });
+    await this.publicTemplates.invalidateCache();
+    return updated;
   }
 }
 

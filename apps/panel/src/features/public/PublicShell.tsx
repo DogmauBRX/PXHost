@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { Link } from '@tanstack/react-router';
+import { Link, useLocation } from '@tanstack/react-router';
 import { Menu, Moon, Sun, X } from 'lucide-react';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { useThemeStore } from '@/shared/theme/theme.store';
 import { Button } from '@/ui/primitives';
 import { Logo } from '@/ui/brand/Logo';
 import { Wordmark } from '@/ui/brand/Wordmark';
+import { AnnouncementBanner } from '@/ui/layout/AnnouncementBanner';
 
 /**
  * The layout for every public, unauthenticated-facing page (`/`,
@@ -30,21 +31,26 @@ export function PublicShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const dashboardTo = isAdmin ? '/admin' : '/client';
+  // Swaps to "Início" → "/" whenever the visitor is already somewhere under
+  // /plans (the catalog itself or a plan detail page) — pointing a "Ver
+  // planos" button at the page already on screen isn't a useful link.
+  const onPlans = useLocation({ select: (l) => l.pathname }).startsWith('/plans');
+  const catalogNavTo = onPlans ? '/' : '/plans';
+  const catalogNavLabel = onPlans ? 'Início' : 'Ver planos';
 
   return (
     <div className="min-h-screen bg-bg">
       <header className="sticky top-0 z-30 border-b border-border bg-surface/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <Link to="/" className="flex items-center gap-2.5">
-            <Logo size={30} />
-            <Wordmark className="text-xl" />
-          </Link>
-
-          <nav className="hidden items-center gap-6 md:flex">
-            <Link to="/plans" className="text-sm font-medium text-text-muted transition-colors hover:text-text" activeProps={{ className: 'text-text' }}>
-              Planos
+          <div className="flex items-center gap-4">
+            <Link to="/" className="flex items-center gap-3">
+              <Logo size={40} />
+              <Wordmark className="text-2xl" />
             </Link>
-          </nav>
+            <Link to={catalogNavTo} className="hidden md:block">
+              <Button variant="secondary">{catalogNavLabel}</Button>
+            </Link>
+          </div>
 
           <div className="hidden items-center gap-3 md:flex">
             <button
@@ -85,8 +91,8 @@ export function PublicShell({ children }: { children: ReactNode }) {
         {mobileOpen && (
           <div className="border-t border-border bg-surface px-4 py-4 md:hidden">
             <nav className="flex flex-col gap-1">
-              <Link to="/plans" onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-text hover:bg-surface-2">
-                Planos
+              <Link to={catalogNavTo} onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-text hover:bg-surface-2">
+                {catalogNavLabel}
               </Link>
               {accessToken ? (
                 <Link to={dashboardTo} onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-text hover:bg-surface-2">
@@ -117,6 +123,8 @@ export function PublicShell({ children }: { children: ReactNode }) {
         )}
       </header>
 
+      <AnnouncementBanner />
+
       <main>{children}</main>
 
       <footer className="border-t border-border">
@@ -125,7 +133,9 @@ export function PublicShell({ children }: { children: ReactNode }) {
             <Logo size={22} />
             <Wordmark className="text-base" />
           </div>
-          <p className="text-xs text-text-faint">© {new Date().getFullYear()} PXHost. Todos os direitos reservados.</p>
+          <p className="text-xs text-text-faint">© {new Date().getFullYear()} GXhost. Todos os direitos reservados.</p>
+          <p className="max-w-md text-xs text-text-faint">"Minecraft" é uma marca registrada de Mojang Synergies AB.</p>
+          <p className="max-w-md text-xs text-text-faint">A GXhost não é afiliada, endossada ou patrocinada pela Mojang ou pela Microsoft.</p>
         </div>
       </footer>
     </div>

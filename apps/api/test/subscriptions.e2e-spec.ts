@@ -39,21 +39,49 @@ describe('Subscriptions (e2e)', () => {
 
     const passwordHash = await argon2.hash('SubsPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
     await prisma.user.create({
-      data: { email: `subs-admin-${suffix}@pxhost.local`, username: `subs-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
+      data: { email: `subs-admin-${suffix}@gxhost.local`, username: `subs-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
     });
+    // The customer used through most of this suite carries a complete
+    // billing profile up front — the BILLING_PROFILE_REQUIRED gate itself
+    // is exercised separately below, against a user with none, so it
+    // doesn't need re-proving on every other test in this file.
     const customer = await prisma.user.create({
-      data: { email: `subs-customer-${suffix}@pxhost.local`, username: `subs-customer-${suffix}`, passwordHash, isActive: true },
+      data: {
+        email: `subs-customer-${suffix}@gxhost.local`,
+        username: `subs-customer-${suffix}`,
+        passwordHash,
+        isActive: true,
+        cpf: '52998224725',
+        billingPostalCode: '01310100',
+        billingAddressLine: 'Av. Paulista',
+        billingAddressNumber: '1000',
+        billingNeighborhood: 'Bela Vista',
+        billingCity: 'São Paulo',
+        billingState: 'SP',
+      },
     });
     customerId = customer.id;
     await prisma.user.create({
-      data: { email: `subs-intruder-${suffix}@pxhost.local`, username: `subs-intruder-${suffix}`, passwordHash, isActive: true },
+      data: {
+        email: `subs-intruder-${suffix}@gxhost.local`,
+        username: `subs-intruder-${suffix}`,
+        passwordHash,
+        isActive: true,
+        cpf: '11144477735',
+        billingPostalCode: '01310100',
+        billingAddressLine: 'Av. Paulista',
+        billingAddressNumber: '1000',
+        billingNeighborhood: 'Bela Vista',
+        billingCity: 'São Paulo',
+        billingState: 'SP',
+      },
     });
 
-    const adminLogin = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: `subs-admin-${suffix}@pxhost.local`, password: 'SubsPass!234567' } });
+    const adminLogin = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: `subs-admin-${suffix}@gxhost.local`, password: 'SubsPass!234567' } });
     adminToken = JSON.parse(adminLogin.body).accessToken;
-    const customerLogin = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: `subs-customer-${suffix}@pxhost.local`, password: 'SubsPass!234567' } });
+    const customerLogin = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: `subs-customer-${suffix}@gxhost.local`, password: 'SubsPass!234567' } });
     customerToken = JSON.parse(customerLogin.body).accessToken;
-    const intruderLogin = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: `subs-intruder-${suffix}@pxhost.local`, password: 'SubsPass!234567' } });
+    const intruderLogin = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: `subs-intruder-${suffix}@gxhost.local`, password: 'SubsPass!234567' } });
     intruderToken = JSON.parse(intruderLogin.body).accessToken;
 
     const plan = await prisma.plan.create({
@@ -96,6 +124,21 @@ describe('Subscriptions (e2e)', () => {
   // this Jest harness (the exact same known gap client-servers.e2e-spec
   // .ts's power-action test already documents) — not asserted here for
   // that reason.
+
+  it('refuses to subscribe when the customer has no billing profile on file', async () => {
+    const passwordHash = await argon2.hash('SubsPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
+    const noBilling = await prisma.user.create({
+      data: { email: `subs-nobilling-${suffix}@gxhost.local`, username: `subs-nobilling-${suffix}`, passwordHash, isActive: true },
+    });
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: noBilling.email, password: 'SubsPass!234567' } });
+    const token = JSON.parse(login.body).accessToken;
+
+    const res = await authed(token, '/api/client/subscriptions', { method: 'POST', payload: { planId } });
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toContain('BILLING_PROFILE_REQUIRED');
+
+    await prisma.user.updateMany({ where: { id: noBilling.id }, data: { deletedAt: new Date() } });
+  });
 
   it('creates a pending subscription with price/period snapshotted from the plan, not the request', async () => {
     const res = await authed(customerToken, '/api/client/subscriptions', { method: 'POST', payload: { planId } });

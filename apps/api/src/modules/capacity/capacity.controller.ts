@@ -40,6 +40,12 @@ export class CapacityController {
     return this.report.planUsage();
   }
 
+  @Get('nodes/:id/plans')
+  @RequireAdminPermission('capacity.view')
+  nodePlans(@Param('id') id: string) {
+    return this.report.nodePlans(id);
+  }
+
   @Post('simulate')
   @RequireAdminPermission('capacity.view')
   simulate(@Body() dto: SimulateCapacityDto) {

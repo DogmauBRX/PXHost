@@ -69,6 +69,15 @@ type HeartbeatRequest struct {
 	// than zeroing them.
 	ReportedMemoryTotalMb     int64  `json:"reportedMemoryTotalMb,omitempty"`
 	ReportedCPUCount          int    `json:"reportedCpuCount,omitempty"`
+	// The node's OWN cgroup memory limit (v2 memory.max / v1
+	// memory.limit_in_bytes) — see hostinfo.StaticInfo's
+	// MemoryLimitBytes doc comment for why this is distinct from
+	// ReportedMemoryTotalMb (the Docker daemon's host-wide MemTotal,
+	// which leaks the Proxmox HOST's full RAM into an LXC guest without
+	// lxcfs). Capacity plan (auto-derivation): the panel prefers this
+	// field over ReportedMemoryTotalMb when deriving a node's sellable
+	// memory in automatic mode. Same omitempty/best-effort contract.
+	ReportedMemoryLimitMb int64 `json:"reportedMemoryLimitMb,omitempty"`
 	ReportedDiskTotalMb       int64  `json:"reportedDiskTotalMb,omitempty"`
 	ReportedDiskFreeMb        int64  `json:"reportedDiskFreeMb,omitempty"`
 	ReportedOS                string `json:"reportedOs,omitempty"`

@@ -1,4 +1,4 @@
-import { IsEmail, IsString, Length } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Length } from 'class-validator';
 
 /**
  * Public self-signup (commercial site, behind `ALLOW_PUBLIC_REGISTRATION`
@@ -24,4 +24,10 @@ export class RegisterDto {
   @IsString()
   @Length(8, 255)
   confirmPassword!: string;
+
+  // Cloudflare Turnstile widget token — see LoginDto's own comment for
+  // why this stays optional in the DTO regardless of server-side config.
+  @IsOptional()
+  @IsString()
+  captchaToken?: string;
 }

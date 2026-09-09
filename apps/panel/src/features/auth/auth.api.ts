@@ -1,8 +1,8 @@
 import { apiFetch } from '@/shared/api/client';
 import type { LoginResponse } from '@/shared/api/types';
 
-export function login(email: string, password: string) {
-  return apiFetch<LoginResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+export function login(email: string, password: string, captchaToken?: string) {
+  return apiFetch<LoginResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password, captchaToken }) });
 }
 
 // Commercial site — public self-signup. Returns the exact same shape as
@@ -13,7 +13,7 @@ export function login(email: string, password: string) {
 // comment) — RegisterForm treats that the same as any other server
 // error, since a visitor has no way to act on "this feature is
 // disabled" differently than any other failure.
-export function register(input: { name: string; email: string; password: string; confirmPassword: string }) {
+export function register(input: { name: string; email: string; password: string; confirmPassword: string; captchaToken?: string }) {
   return apiFetch<LoginResponse>('/api/auth/register', { method: 'POST', body: JSON.stringify(input) });
 }
 
@@ -21,8 +21,8 @@ export function logout() {
   return apiFetch<void>('/api/auth/logout', { method: 'POST', body: JSON.stringify({}) });
 }
 
-export function forgotPassword(email: string) {
-  return apiFetch<{ message: string }>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+export function forgotPassword(email: string, captchaToken?: string) {
+  return apiFetch<{ message: string }>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email, captchaToken }) });
 }
 
 export function resetPassword(token: string, newPassword: string, confirmPassword: string) {

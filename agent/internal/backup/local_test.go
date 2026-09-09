@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pxhost/agent/internal/fsx"
+	"github.com/gxhost/agent/internal/fsx"
 )
 
 func newTestServerJail(t *testing.T) *fsx.Jail {

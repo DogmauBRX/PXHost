@@ -18,6 +18,7 @@ import {
   CreateTemplateGroupDto,
   TemplateVariableDto,
   UpdateServerTemplateDto,
+  UpdateTemplateVariableDto,
 } from './dto/template.dto';
 import { AdminGuard } from '../admin/guards/admin.guard';
 
@@ -65,6 +66,11 @@ export class TemplatesController {
   @Post('eggs/:id/variables')
   addVariable(@Param('id') id: string, @Body() dto: TemplateVariableDto) {
     return this.templates.addVariable(id, dto);
+  }
+
+  @Patch('eggs/:id/variables/:variableId')
+  updateVariable(@Param('id') id: string, @Param('variableId') variableId: string, @Body() dto: UpdateTemplateVariableDto) {
+    return this.templates.updateVariable(id, parseBigIntParam(variableId), dto);
   }
 
   @Delete('eggs/:id/variables/:variableId')

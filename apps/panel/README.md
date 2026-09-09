@@ -1,4 +1,4 @@
-# PXHost Panel (Web)
+# GXhost Panel (Web)
 
 Vite + React + TS. See [../../docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) section 5
 for the full design.

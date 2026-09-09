@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/pxhost/agent/internal/auth"
-	"github.com/pxhost/agent/internal/panel"
-	"github.com/pxhost/agent/internal/srv"
+	"github.com/gxhost/agent/internal/auth"
+	"github.com/gxhost/agent/internal/panel"
+	"github.com/gxhost/agent/internal/srv"
 )
 
 // handleTransferExport is the source node's half of a node-to-node

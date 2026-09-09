@@ -45,7 +45,7 @@ type Limits struct {
 }
 
 // Allocation is one (ip, port) pair assigned to the server. Primary is
-// published as-is: PXHost always maps host port == container port because
+// published as-is: GXhost always maps host port == container port because
 // game protocols embed the port in server-list/query responses.
 type Allocation struct {
 	IP        string
@@ -75,12 +75,12 @@ type MountAllowlistEntry struct {
 // network name, uid range, and security profile locations. This is
 // deliberately not the full agent config — only what building a spec touches.
 type Node struct {
-	DataDir      string // e.g. /var/lib/pxhost/servers — <DataDir>/<uuid> is bind-mounted
-	InstallDir   string // e.g. /var/lib/pxhost/install — <InstallDir>/<uuid>/install.sh is bind-mounted read-only for the install container
-	BackupDir    string // e.g. /var/lib/pxhost/backups — <BackupDir>/<uuid>/*.tar.gz; deliberately OUTSIDE DataDir so a compromised container can never delete or inflate its own backups (architecture doc 4.5)
-	TransferDir  string // e.g. /var/lib/pxhost/transfers — node-to-node transfer staging (roadmap M13), same LocalProvider shape as BackupDir but a separate root so a transfer's temp archive never appears in a customer's own backup list
-	NetworkName  string // e.g. "pxhost0"
-	CgroupParent string // e.g. "pxhost.slice"
+	DataDir      string // e.g. /var/lib/gxhost/servers — <DataDir>/<uuid> is bind-mounted
+	InstallDir   string // e.g. /var/lib/gxhost/install — <InstallDir>/<uuid>/install.sh is bind-mounted read-only for the install container
+	BackupDir    string // e.g. /var/lib/gxhost/backups — <BackupDir>/<uuid>/*.tar.gz; deliberately OUTSIDE DataDir so a compromised container can never delete or inflate its own backups (architecture doc 4.5)
+	TransferDir  string // e.g. /var/lib/gxhost/transfers — node-to-node transfer staging (roadmap M13), same LocalProvider shape as BackupDir but a separate root so a transfer's temp archive never appears in a customer's own backup list
+	NetworkName  string // e.g. "gxhost0"
+	CgroupParent string // e.g. "gxhost.slice"
 
 	UIDRangeMin int
 	UIDRangeMax int

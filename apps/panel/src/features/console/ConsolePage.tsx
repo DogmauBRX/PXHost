@@ -4,7 +4,7 @@ import type { Terminal as XTerm } from '@xterm/xterm';
 import { Clock, RefreshCw } from 'lucide-react';
 import { getServer, getServerDiskUsage } from '@/features/servers/servers.api';
 import { useServerSocket } from '@/shared/realtime/useServerSocket';
-import { formatBytes } from '@/features/files/format';
+import { formatBytes } from '@/shared/format/datetime';
 import { Terminal } from './Terminal';
 import { PowerControls } from './PowerControls';
 import { ResourceAdvisory } from '@/features/client/ResourceAdvisory';

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/pxhost/agent/internal/dockerx"
+	"github.com/gxhost/agent/internal/dockerx"
 )
 
 func main() {

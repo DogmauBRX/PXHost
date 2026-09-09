@@ -1,0 +1,24 @@
+# Deploy plan — the VPS's edge reverse proxy. TLS (Let's Encrypt HTTP-01,
+# automatic) for the two domains Cloudflare proxies (orange-clouded):
+# gxhost.com.br (the panel's static build) and api.gxhost.com.br (the
+# NestJS API). Both are same-site under the registrable domain
+# gxhost.com.br, which is what lets the panel's cookie-based silent
+# refresh (auth.controller.ts's httpOnly refresh cookie, SameSite=Lax)
+# keep working across the two origins.
+#
+# Node hostnames (node01/node02.gxhost.com.br) are DELIBERATELY NOT
+# here — they're DNS-only in Cloudflare and each node terminates its OWN
+# TLS locally (see agent/README.md's deploy notes), because the browser
+# talks to them directly for console/file/backup traffic
+# (agent-client.service.ts's wsUrl/fileTransferUrl, "never proxied
+# through this API") and Cloudflare's free-plan 100MB request-body cap
+# would break large uploads/backup downloads if they were routed through
+# here too.
+
+gxhost.com.br {
+	reverse_proxy panel:80
+}
+
+api.gxhost.com.br {
+	reverse_proxy api:3000
+}

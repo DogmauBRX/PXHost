@@ -139,17 +139,225 @@ export function nodeFitReasons(node: NodeCapacityInputs, usage: NodeUsage, reque
   return reasons;
 }
 
+export type CapacityStatus = 'normal' | 'warning' | 'high' | 'critical';
+
+/** Per-node-configurable alert levels (`nodes.capacity_warn_pct` etc, defaults 70/85/95 — see schema.prisma) — the 4 levels the capacity dashboard's visual indicators use. */
+export interface CapacityThresholds {
+  warnPct: number;
+  highPct: number;
+  criticalPct: number;
+}
+
+/** Matches every existing node row's column defaults — the value every caller that hasn't fetched a specific node's thresholds should fall back to. */
+export const DEFAULT_CAPACITY_THRESHOLDS: CapacityThresholds = { warnPct: 70, highPct: 85, criticalPct: 95 };
+
 /**
  * Display-only usage categorization for the capacity dashboard's visual
- * indicators (normal/atenção/crítico) — thresholds are a UI heuristic,
- * NOT a stored/configurable column (nothing in the approved plan scoped
- * per-node configurable thresholds; this can grow admin-configurable
- * inputs later without changing any stored data, since it's derived at
- * read time exactly like `deriveHealthStatus`). `usedPct` is
- * used/ceiling, already clamped by the caller if ceiling is unlimited.
+ * indicators — thresholds are per-node configurable columns now (not a
+ * hardcoded heuristic), but still purely derived at read time, never
+ * stored, exactly like `deriveHealthStatus`. `usedPct` is used/ceiling,
+ * already clamped by the caller if ceiling is unlimited.
  */
-export function capacityStatus(usedPct: number): 'normal' | 'warning' | 'critical' {
-  if (usedPct >= 95) return 'critical';
-  if (usedPct >= 80) return 'warning';
+export function capacityStatus(usedPct: number, thresholds: CapacityThresholds = DEFAULT_CAPACITY_THRESHOLDS): CapacityStatus {
+  if (usedPct >= thresholds.criticalPct) return 'critical';
+  if (usedPct >= thresholds.highPct) return 'high';
+  if (usedPct >= thresholds.warnPct) return 'warning';
   return 'normal';
+}
+
+// ─────────────────────── Automatic capacity derivation ───────────────────────
+
+/** `Node.capacityMode` — 'manual' (default, every existing row) keeps the DECLARED columns as the ceiling; 'auto' derives them from agent telemetry. See `resolveNodeCapacity`'s own doc comment. */
+export type CapacityMode = 'manual' | 'auto';
+
+/** 'unconfigured' is distinct from both — 'auto' mode with no telemetry ever received for this dimension. Never falls back to "unlimited" (see `resolveNodeCapacity`'s doc comment on why that would be dangerous). */
+export type CapacityProvenance = 'auto' | 'manual' | 'unconfigured';
+
+/** One dimension's resolution detail — what the dashboard/node-edit UI needs to show the §25 chain (detected → margin → effective → reserved → available), never used by `ceilingFor` itself (that still only ever sees plain numbers). */
+export interface ResolvedDimension {
+  /** Raw agent telemetry, for display — null if never reported (or mode is 'manual', where it's simply not consulted). */
+  detected: number | null;
+  /** The admin-declared column — the manual override value, always present (defaults to 0 like the column itself). */
+  declared: number;
+  /** What actually becomes `total` in `ceilingFor` — `declared` in manual mode, `detected` in auto mode (when present). */
+  effectiveTotal: number;
+  /** The safety-margin percent actually applied (0 outside auto mode). */
+  safetyMarginPct: number;
+  /** The existing admin reserve column, unchanged — always one part of `reserved`. */
+  adminReserve: number;
+  /** What actually becomes `reserved` in `ceilingFor` — `adminReserve` alone in manual mode; `round(detected * safetyMarginPct / 100) + adminReserve` in auto mode. */
+  reserved: number;
+  provenance: CapacityProvenance;
+}
+
+/** How stale agent telemetry may be before `nodeAcceptsNewServers` stops trusting it as an auto-mode ceiling — generous relative to the ~15s heartbeat cadence, so one or two missed ticks (network blip) never blocks a sale. */
+export const TELEMETRY_STALE_MS = 5 * 60_000;
+
+/** The subset of a `Node` row `resolveNodeCapacity` needs — declared capacity columns, the new auto-mode columns, and the three reported-telemetry fields that (only in auto mode) cross from "informational" into "enforced." */
+export interface NodeCapacityConfig extends NodeCapacityInputs {
+  capacityMode: string;
+  memorySafetyMarginPct: number;
+  diskSafetyMarginPct: number;
+  cpuSafetyMarginPct: number;
+  reportedMemoryLimitMb: number | null;
+  reportedMemoryTotalMb: number | null;
+  reportedDiskTotalMb: number | null;
+  reportedCpuCount: number | null;
+  reportedAt: Date | null;
+}
+
+function resolveDimension(mode: CapacityMode, declaredTotal: number, declaredReserved: number, safetyMarginPct: number, detected: number | null): ResolvedDimension {
+  if (mode !== 'auto') {
+    // Manual — byte-for-byte today's behavior: the declared columns ARE
+    // the ceiling inputs, telemetry is never consulted.
+    return { detected, declared: declaredTotal, effectiveTotal: declaredTotal, safetyMarginPct: 0, adminReserve: declaredReserved, reserved: declaredReserved, provenance: 'manual' };
+  }
+  if (detected == null) {
+    // Auto mode, no telemetry for this dimension yet. Falls back to the
+    // declared column as `effectiveTotal` so `ceilingFor` never sees a
+    // bogus number — but `provenance: 'unconfigured'` is what
+    // `nodeAcceptsNewServers` refuses to sell against (see its own doc
+    // comment): this is display/bookkeeping, never a green light.
+    return { detected, declared: declaredTotal, effectiveTotal: declaredTotal, safetyMarginPct, adminReserve: declaredReserved, reserved: declaredReserved, provenance: 'unconfigured' };
+  }
+  const marginAmount = Math.round((detected * safetyMarginPct) / 100);
+  return {
+    detected,
+    declared: declaredTotal,
+    effectiveTotal: detected,
+    safetyMarginPct,
+    adminReserve: declaredReserved,
+    reserved: marginAmount + declaredReserved,
+    provenance: 'auto',
+  };
+}
+
+/**
+ * The single place that decides auto vs. manual (capacity plan §25's
+ * chain: detected → safety margin → effective → already-reserved →
+ * available) and translates a `Node` row into the exact same
+ * `NodeCapacityInputs` shape `ceilingFor`/`assertNodeFits`/
+ * `nodeFitReasons`/`snapshotDimension`/the scheduler already consume —
+ * none of those functions change. Every one of their real call sites
+ * (`ServersService`, `TransfersService`, `PlansService`,
+ * `NodeSchedulerService`, `CapacityReportService`) should call this
+ * FIRST and pass its return value in, instead of the raw Prisma row.
+ *
+ * The safety margin is folded directly into `reserved` (see
+ * `resolveDimension`) — a deliberate choice: it means `ceilingFor` and
+ * everything built on it need no changes at all to support margins,
+ * admin reserves, AND stack cleanly (margin + admin reserve, never one
+ * replacing the other).
+ *
+ * CPU is resolved the same way as memory/disk, using the same
+ * `vCPU = cpuLimitPercent / 100` conversion `deriveTelemetryDivergence`
+ * already uses elsewhere — `reportedCpuCount` (whole cores) × 100.
+ * Memory prefers `reportedMemoryLimitMb` (the node's own cgroup limit)
+ * over `reportedMemoryTotalMb` (the Docker daemon's host-wide MemTotal,
+ * which leaks the Proxmox HOST's full RAM into an LXC guest without
+ * lxcfs) — falling back to the latter only when the former was never
+ * reported (older agent, or genuinely unlimited cgroup).
+ */
+export function resolveNodeCapacity(node: NodeCapacityConfig): NodeCapacityInputs & {
+  memory: ResolvedDimension;
+  disk: ResolvedDimension;
+  cpu: ResolvedDimension;
+  telemetryStale: boolean;
+} {
+  const mode: CapacityMode = node.capacityMode === 'auto' ? 'auto' : 'manual';
+
+  const memory = resolveDimension(mode, node.memoryTotalMb, node.memoryReservedMb, node.memorySafetyMarginPct, node.reportedMemoryLimitMb ?? node.reportedMemoryTotalMb);
+  const disk = resolveDimension(mode, node.diskTotalMb, node.diskReservedMb, node.diskSafetyMarginPct, node.reportedDiskTotalMb);
+  const cpu = resolveDimension(mode, node.cpuTotalPercent, node.cpuReservedPercent, node.cpuSafetyMarginPct, node.reportedCpuCount != null ? node.reportedCpuCount * 100 : null);
+
+  const telemetryStale = mode === 'auto' && (node.reportedAt == null || Date.now() - node.reportedAt.getTime() > TELEMETRY_STALE_MS);
+
+  return {
+    memoryTotalMb: memory.effectiveTotal,
+    memoryReservedMb: memory.reserved,
+    memoryOverallocatePct: node.memoryOverallocatePct,
+    diskTotalMb: disk.effectiveTotal,
+    diskReservedMb: disk.reserved,
+    diskOverallocatePct: node.diskOverallocatePct,
+    cpuTotalPercent: cpu.effectiveTotal,
+    cpuReservedPercent: cpu.reserved,
+    cpuOverallocatePct: node.cpuOverallocatePct,
+    memory,
+    disk,
+    cpu,
+    telemetryStale,
+  };
+}
+
+/** The subset `nodeAcceptsNewServers` needs beyond what `resolveNodeCapacity` already resolved. `health` is `deriveHealthStatus`'s output — computed by the caller (nodes.service.ts), never re-derived here, so `capacity.math.ts` stays free of any import beyond itself. */
+export interface NodeAcceptanceInputs {
+  capacityMode: string;
+  maintenanceMode: boolean;
+  health: string;
+  memory: ResolvedDimension;
+  disk: ResolvedDimension;
+  telemetryStale: boolean;
+}
+
+/**
+ * Whether this node may be offered to a NEW create/subscribe/schedule —
+ * never gates anything about servers already running on it. Capacity
+ * plan §18/§22's "conservative by default": manual mode keeps EXACTLY
+ * today's single gate (`maintenanceMode` — see `ServersService
+ * .createOnNode`'s own check, unchanged), so no node anyone hasn't
+ * explicitly opted into auto mode can be newly refused by this feature.
+ * Auto mode additionally refuses whenever the telemetry backing the
+ * ceiling can't be trusted: offline/degraded health, a dimension that
+ * has never reported (`'unconfigured'`), or telemetry older than
+ * `TELEMETRY_STALE_MS` — "no telemetry, no sale" rather than falling
+ * back to treating an unconfigured total as unlimited.
+ */
+export function nodeAcceptsNewServers(node: NodeAcceptanceInputs): { ok: boolean; reason?: string } {
+  if (node.maintenanceMode) return { ok: false, reason: 'Node is in maintenance mode' };
+  if (node.capacityMode !== 'auto') return { ok: true };
+  if (node.health === 'offline' || node.health === 'degraded') {
+    return { ok: false, reason: `Node is ${node.health} — automatic capacity requires a recent heartbeat` };
+  }
+  if (node.memory.provenance === 'unconfigured' || node.disk.provenance === 'unconfigured') {
+    return { ok: false, reason: 'Node is in automatic capacity mode but has not reported hardware telemetry yet' };
+  }
+  if (node.telemetryStale) {
+    return { ok: false, reason: 'Node capacity telemetry is stale' };
+  }
+  return { ok: true };
+}
+
+export interface PlanSlotsResult {
+  /** null = unlimited — every dimension the plan actually consumes is either unlimited or accounting-off. */
+  slots: number | null;
+  limiting: 'memory' | 'disk' | 'cpu' | null;
+}
+
+/**
+ * How many more servers of this plan fit on this node right now —
+ * capacity plan §6/§11, always the MINIMUM across dimensions (§6's own
+ * worked examples), reporting which one is limiting (§16). A dimension
+ * the plan doesn't actually consume (`requested <= 0`) or that has no
+ * ceiling (unlimited, or CPU accounting off) is never the limiting
+ * factor. A plan bigger than the node's remaining headroom on some
+ * dimension correctly floors to `0` for that dimension, not negative.
+ */
+export function slotsForPlanOnNode(node: NodeCapacityInputs, usage: NodeUsage, request: ResourceRequest): PlanSlotsResult {
+  const dims: { label: 'memory' | 'disk' | 'cpu'; total: number; reserved: number; overallocate: number; used: number; requested: number }[] = [
+    { label: 'memory', total: node.memoryTotalMb, reserved: node.memoryReservedMb, overallocate: node.memoryOverallocatePct, used: usage.memoryMb, requested: request.memoryMb },
+    { label: 'disk', total: node.diskTotalMb, reserved: node.diskReservedMb, overallocate: node.diskOverallocatePct, used: usage.diskMb, requested: request.diskMb },
+    { label: 'cpu', total: node.cpuTotalPercent, reserved: node.cpuReservedPercent, overallocate: node.cpuOverallocatePct, used: usage.cpuPercent, requested: request.cpuPercent },
+  ];
+
+  let best: { label: 'memory' | 'disk' | 'cpu'; slots: number } | null = null;
+  for (const d of dims) {
+    if (d.requested <= 0) continue;
+    const ceiling = ceilingFor(d.total, d.reserved, d.overallocate);
+    if (ceiling === null) continue;
+    const remaining = Math.max(ceiling - d.used, 0);
+    const slots = Math.floor(remaining / d.requested);
+    if (best === null || slots < best.slots) best = { label: d.label, slots };
+  }
+
+  return best === null ? { slots: null, limiting: null } : { slots: best.slots, limiting: best.label };
 }

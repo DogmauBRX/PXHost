@@ -62,14 +62,14 @@ describe('Databases (e2e)', () => {
 
     const passwordHash = await argon2.hash('DbsPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
     const admin = await prisma.user.create({
-      data: { email: `dbs-admin-${suffix}@pxhost.local`, username: `dbs-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
+      data: { email: `dbs-admin-${suffix}@gxhost.local`, username: `dbs-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
     });
     const owner = await prisma.user.create({
-      data: { email: `dbs-owner-${suffix}@pxhost.local`, username: `dbs-owner-${suffix}`, passwordHash, isActive: true },
+      data: { email: `dbs-owner-${suffix}@gxhost.local`, username: `dbs-owner-${suffix}`, passwordHash, isActive: true },
     });
     ownerId = owner.id;
     const intruder = await prisma.user.create({
-      data: { email: `dbs-intruder-${suffix}@pxhost.local`, username: `dbs-intruder-${suffix}`, passwordHash, isActive: true },
+      data: { email: `dbs-intruder-${suffix}@gxhost.local`, username: `dbs-intruder-${suffix}`, passwordHash, isActive: true },
     });
 
     adminToken = JSON.parse((await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: admin.email, password: 'DbsPass!234567' } })).body).accessToken;
@@ -129,7 +129,7 @@ describe('Databases (e2e)', () => {
     await prisma.node.deleteMany({ where: { id: nodeId } });
     await prisma.location.deleteMany({ where: { id: locationId } });
     await prisma.user.updateMany({
-      where: { email: { in: [`dbs-admin-${suffix}@pxhost.local`, `dbs-owner-${suffix}@pxhost.local`, `dbs-intruder-${suffix}@pxhost.local`] } },
+      where: { email: { in: [`dbs-admin-${suffix}@gxhost.local`, `dbs-owner-${suffix}@gxhost.local`, `dbs-intruder-${suffix}@gxhost.local`] } },
       data: { deletedAt: new Date() },
     });
     await app.close();

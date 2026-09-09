@@ -175,6 +175,7 @@ export class NodeBootstrapService {
   async heartbeat(nodeId: string, dto: HeartbeatDto): Promise<{ status: string }> {
     const hasReportedFields =
       dto.reportedMemoryTotalMb !== undefined ||
+      dto.reportedMemoryLimitMb !== undefined ||
       dto.reportedCpuCount !== undefined ||
       dto.reportedDiskTotalMb !== undefined ||
       dto.reportedDiskFreeMb !== undefined ||
@@ -191,6 +192,19 @@ export class NodeBootstrapService {
       dto.reportedVirtualizationSystem !== undefined ||
       dto.reportedVirtualizationRole !== undefined;
 
+    // Capacity plan (auto-derivation) §21 case 11: only the THREE fields
+    // resolveNodeCapacity actually feeds into a ceiling (memory
+    // limit/total, disk total, cpu count) are worth auditing when they
+    // change — every other reported_* field (CPU model string, load
+    // average, ...) changing tick to tick is normal noise, not a
+    // capacity-relevant event. Fetched before the write so `before` is
+    // genuinely the PRIOR value, not the one this same call is about to
+    // set.
+    const before = await this.prisma.node.findFirst({
+      where: { id: nodeId },
+      select: { reportedMemoryLimitMb: true, reportedMemoryTotalMb: true, reportedDiskTotalMb: true, reportedCpuCount: true },
+    });
+
     const node = await this.prisma.node.update({
       where: { id: nodeId },
       data: {
@@ -200,6 +214,7 @@ export class NodeBootstrapService {
         dockerVersion: dto.dockerVersion,
         agentUptimeSeconds: dto.uptimeSeconds,
         reportedMemoryTotalMb: dto.reportedMemoryTotalMb,
+        reportedMemoryLimitMb: dto.reportedMemoryLimitMb,
         reportedCpuCount: dto.reportedCpuCount,
         reportedDiskTotalMb: dto.reportedDiskTotalMb,
         reportedDiskFreeMb: dto.reportedDiskFreeMb,
@@ -218,6 +233,29 @@ export class NodeBootstrapService {
         ...(hasReportedFields ? { reportedAt: new Date() } : {}),
       },
     });
+
+    if (
+      before &&
+      (before.reportedMemoryLimitMb !== node.reportedMemoryLimitMb ||
+        before.reportedMemoryTotalMb !== node.reportedMemoryTotalMb ||
+        before.reportedDiskTotalMb !== node.reportedDiskTotalMb ||
+        before.reportedCpuCount !== node.reportedCpuCount)
+    ) {
+      // No actorId — this is the agent's own heartbeat, not an admin
+      // action (same posture as every other agent-originated write in
+      // this file: bootstrap's audit entries are actor-attributed
+      // because an ADMIN triggered them, this one has no human behind
+      // it). Fires at most once per genuine hardware change, not every
+      // tick — the comparison above is against the row's PRIOR value.
+      await this.audit.record({
+        action: 'node.telemetry.changed',
+        targetType: 'node',
+        targetId: nodeId,
+        beforeState: { reportedMemoryLimitMb: before.reportedMemoryLimitMb, reportedMemoryTotalMb: before.reportedMemoryTotalMb, reportedDiskTotalMb: before.reportedDiskTotalMb, reportedCpuCount: before.reportedCpuCount },
+        afterState: { reportedMemoryLimitMb: node.reportedMemoryLimitMb, reportedMemoryTotalMb: node.reportedMemoryTotalMb, reportedDiskTotalMb: node.reportedDiskTotalMb, reportedCpuCount: node.reportedCpuCount },
+      });
+    }
+
     return { status: deriveHealthStatus(node.lastHeartbeatAt) };
   }
 }

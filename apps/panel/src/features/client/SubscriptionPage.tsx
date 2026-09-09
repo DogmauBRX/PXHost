@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { CalendarClock, Layers } from 'lucide-react';
 import { listMySubscriptions, cancelSubscription } from './subscriptions.api';
-import type { Subscription, SubscriptionStatus } from '@/shared/api/types';
+import { listMyOrders } from '@/shared/api/orders.api';
+import type { Order, Subscription, SubscriptionStatus } from '@/shared/api/types';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, CardTitle, ConfirmDialog, EmptyState, LoadingRow, PageHeader } from '@/ui/primitives';
 import { formatBillingPeriod, formatPrice } from '@/shared/format/plan';
+import { formatDateOnly } from '@/shared/format/datetime';
 import { ApiError } from '@/shared/api/client';
 
 const STATUS_LABEL: Record<SubscriptionStatus, string> = {
@@ -25,9 +27,16 @@ const STATUS_TONE: Record<SubscriptionStatus, 'ok' | 'warn' | 'fail' | 'neutral'
   expired: 'neutral',
 };
 const CANCELABLE_STATUSES: SubscriptionStatus[] = ['pending', 'active', 'past_due', 'suspended'];
+// Terminal states never come back to life — a customer who cancels a
+// plan and buys another ends up with one of these piling up per
+// purchase, with nothing left to act on. Never shown here (never
+// deleted either — cancelled/expired rows stay in the database as
+// billing history, same "financial history is never deleted" doctrine
+// `orders`/`payments` already follow — this is a display filter only).
+const TERMINAL_STATUSES: SubscriptionStatus[] = ['cancelled', 'expired'];
 
 function formatDate(value: string | null): string | null {
-  return value ? new Date(value).toLocaleDateString('pt-BR') : null;
+  return value ? formatDateOnly(value) : null;
 }
 
 /**
@@ -42,6 +51,19 @@ export function SubscriptionPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
 
   const { data: subscriptions, isLoading, isError, refetch } = useQuery({ queryKey: ['my-subscriptions'], queryFn: listMySubscriptions });
+  const current = useMemo(() => (subscriptions ?? []).filter((sub) => !TERMINAL_STATUSES.includes(sub.status)), [subscriptions]);
+  // Only fetched to find, for a `pending` subscription, the order the
+  // customer would need to get back to (the Pix QR code, or a card
+  // still authorizing) — `CheckoutPage` never persists that outside its
+  // own component state, so once the customer navigates away there is
+  // no other way back to it than looking the order back up here.
+  const { data: orders } = useQuery({ queryKey: ['my-orders'], queryFn: listMyOrders });
+  const latestOrderBySubscription = new Map<string, Order>();
+  for (const order of orders ?? []) {
+    if (!order.subscriptionId) continue;
+    const current = latestOrderBySubscription.get(order.subscriptionId);
+    if (!current || order.createdAt > current.createdAt) latestOrderBySubscription.set(order.subscriptionId, order);
+  }
 
   const cancelMutation = useMutation({
     mutationFn: (id: string) => cancelSubscription(id),
@@ -75,53 +97,29 @@ export function SubscriptionPage() {
             </Link>
           }
         />
+      ) : current.length === 0 ? (
+        <EmptyState
+          icon={CalendarClock}
+          title="Nenhuma assinatura ativa no momento"
+          description="Escolha um plano para continuar."
+          action={
+            <Link to="/plans">
+              <Button variant="primary">Ver planos</Button>
+            </Link>
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {subscriptions.map((sub) => (
-            <Card key={sub.id}>
-              <CardHeader>
-                <div>
-                  <CardTitle>{sub.plan.name}</CardTitle>
-                  <p className="mt-1 text-2xl font-semibold text-text">
-                    {formatPrice(sub.priceCents, sub.currency)}
-                    <span className="text-sm font-normal text-text-faint"> /{formatBillingPeriod(sub.billingPeriod)}</span>
-                  </p>
-                </div>
-                <Badge tone={STATUS_TONE[sub.status]}>{STATUS_LABEL[sub.status]}</Badge>
-              </CardHeader>
-              <CardBody className="space-y-3">
-                <div className="space-y-1 text-sm text-text-muted">
-                  {formatDate(sub.startedAt) && (
-                    <p>
-                      Início: <span className="text-text">{formatDate(sub.startedAt)}</span>
-                    </p>
-                  )}
-                  {sub.status === 'active' && formatDate(sub.currentPeriodEndsAt) && (
-                    <p>
-                      Próxima cobrança: <span className="text-text">{formatDate(sub.currentPeriodEndsAt)}</span>
-                    </p>
-                  )}
-                  {sub.status === 'pending' && <p>Aguardando confirmação do pagamento.</p>}
-                  {sub.status === 'cancelled' && formatDate(sub.cancelledAt) && (
-                    <p>
-                      Cancelado em: <span className="text-text">{formatDate(sub.cancelledAt)}</span>
-                    </p>
-                  )}
-                </div>
-
-                {CANCELABLE_STATUSES.includes(sub.status) && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setCancelError(null);
-                      setCancelTarget(sub);
-                    }}
-                  >
-                    Cancelar assinatura
-                  </Button>
-                )}
-              </CardBody>
-            </Card>
+          {current.map((sub) => (
+            <SubscriptionCard
+              key={sub.id}
+              sub={sub}
+              orderId={latestOrderBySubscription.get(sub.id)?.id}
+              onCancel={() => {
+                setCancelError(null);
+                setCancelTarget(sub);
+              }}
+            />
           ))}
         </div>
       )}
@@ -151,5 +149,50 @@ export function SubscriptionPage() {
         </div>
       )}
     </>
+  );
+}
+
+function SubscriptionCard({ sub, orderId, onCancel }: { sub: Subscription; orderId?: string; onCancel: () => void }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>{sub.plan.name}</CardTitle>
+          <p className="mt-1 text-2xl font-semibold text-text">
+            {formatPrice(sub.priceCents, sub.currency)}
+            <span className="text-sm font-normal text-text-faint"> /{formatBillingPeriod(sub.billingPeriod)}</span>
+          </p>
+        </div>
+        <Badge tone={STATUS_TONE[sub.status]}>{STATUS_LABEL[sub.status]}</Badge>
+      </CardHeader>
+      <CardBody className="space-y-3">
+        <div className="space-y-1 text-sm text-text-muted">
+          {formatDate(sub.startedAt) && (
+            <p>
+              Início: <span className="text-text">{formatDate(sub.startedAt)}</span>
+            </p>
+          )}
+          {sub.status === 'active' && formatDate(sub.currentPeriodEndsAt) && (
+            <p>
+              Próxima cobrança: <span className="text-text">{formatDate(sub.currentPeriodEndsAt)}</span>
+            </p>
+          )}
+          {sub.status === 'pending' && <p>Aguardando confirmação do pagamento.</p>}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {sub.status === 'pending' && orderId && (
+            <Link to="/client/orders/$orderId" params={{ orderId }}>
+              <Button variant="primary">Continuar pagamento</Button>
+            </Link>
+          )}
+          {CANCELABLE_STATUSES.includes(sub.status) && (
+            <Button variant="secondary" onClick={onCancel}>
+              Cancelar assinatura
+            </Button>
+          )}
+        </div>
+      </CardBody>
+    </Card>
   );
 }

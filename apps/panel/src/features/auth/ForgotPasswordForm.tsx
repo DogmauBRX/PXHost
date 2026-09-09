@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { forgotPassword } from './auth.api';
+import { Turnstile, TURNSTILE_SITE_KEY } from './Turnstile';
 import { ApiError } from '@/shared/api/client';
 import { Alert, Button, Field, Input } from '@/ui/primitives';
 
@@ -20,6 +21,7 @@ export function ForgotPasswordForm() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState('');
 
   const {
     register,
@@ -30,7 +32,7 @@ export function ForgotPasswordForm() {
   async function onSubmit(values: FormValues) {
     setServerError(null);
     try {
-      const res = await forgotPassword(values.email);
+      const res = await forgotPassword(values.email, captchaToken || undefined);
       setSent(true);
       setMessage(res.message);
     } catch (err) {
@@ -52,9 +54,16 @@ export function ForgotPasswordForm() {
         <Input id="email" type="email" autoComplete="email" invalid={!!errors.email} {...register('email')} />
       </Field>
 
+      <Turnstile onVerify={setCaptchaToken} />
+
       {serverError && <Alert>{serverError}</Alert>}
 
-      <Button type="submit" variant="primary" disabled={isSubmitting} className="mt-1 w-full">
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={isSubmitting || (!!TURNSTILE_SITE_KEY && !captchaToken)}
+        className="mt-1 w-full"
+      >
         {isSubmitting ? 'Enviando…' : 'Enviar instruções'}
       </Button>
     </form>

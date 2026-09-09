@@ -21,6 +21,10 @@ async function main() {
       </QueryClientProvider>
     </StrictMode>,
   );
+  // Turns on the body's decorative wallpaper (index.css) — kept off
+  // until there's actually content on screen for it to sit behind, so
+  // the bootstrapAuth() wait above never shows it floating on its own.
+  document.documentElement.dataset.appReady = 'true';
 }
 
 void main();

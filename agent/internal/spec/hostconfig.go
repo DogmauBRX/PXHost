@@ -10,7 +10,7 @@ import (
 	"github.com/docker/go-connections/nat"
 )
 
-// BuildContainerSpec is the pure function every PXHost container is built
+// BuildContainerSpec is the pure function every GXhost container is built
 // from. It is deliberately side-effect-free: no Docker calls, no
 // filesystem access beyond what the caller already resolved into Node/
 // Server. That purity is what lets every isolation invariant below be
@@ -170,10 +170,10 @@ func validateServer(srv Server, node Node) error {
 
 func buildLabels(srv Server, node Node) map[string]string {
 	return map[string]string{
-		"pxhost.managed":      "true",
-		"pxhost.server.uuid":  srv.UUID,
-		"pxhost.server.uid":   fmt.Sprintf("%d", srv.UID),
-		"pxhost.spec.version": specVersion,
+		"gxhost.managed":      "true",
+		"gxhost.server.uuid":  srv.UUID,
+		"gxhost.server.uid":   fmt.Sprintf("%d", srv.UID),
+		"gxhost.spec.version": specVersion,
 	}
 }
 

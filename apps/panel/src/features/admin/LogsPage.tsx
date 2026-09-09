@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ScrollText } from 'lucide-react';
 import { listAuditLogs } from './admin.api';
+import { formatDateTimeMedium as formatDate } from '@/shared/format/datetime';
 import {
   Alert,
   Button,
@@ -32,10 +33,6 @@ const ACTION_FILTERS = [
   { value: 'database.', label: 'Bancos de dados' },
   { value: 'billing.', label: 'Cobrança' },
 ] as const;
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
-}
 
 export function LogsPage() {
   const [action, setAction] = useState('');

@@ -5,7 +5,7 @@ import type { PublicPlan } from '@/shared/api/types';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { Badge, Button, Card, CardBody } from '@/ui/primitives';
 import { CircuitPattern } from '@/ui/brand/CircuitPattern';
-import { discountPercent, formatBillingPeriod, formatMemory, formatPrice, formatRange } from '@/shared/format/plan';
+import { discountPercent, formatBillingPeriod, formatMemory, formatPrice, formatRange, formatVcpu } from '@/shared/format/plan';
 
 const AVAILABILITY_LABEL: Record<PublicPlan['availability']['status'], string> = {
   available: 'Disponível',
@@ -33,8 +33,6 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
   const pctOff = discountPercent(plan.priceCents, plan.compareAtPriceCents);
 
   const players = formatRange(plan.recommendedPlayersMin, plan.recommendedPlayersMax);
-  const mods = formatRange(plan.recommendedModsMin, plan.recommendedModsMax);
-  const plugins = formatRange(plan.recommendedPluginsMin, plan.recommendedPluginsMax);
 
   const ctaLabel = soldOut ? 'Esgotado' : 'Assinar plano';
   const cta = soldOut ? (
@@ -96,13 +94,10 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
 
         <ul className="flex flex-1 flex-col gap-2 text-sm text-text">
           <SpecRow>{formatMemory(plan.memoryMb)} de RAM</SpecRow>
-          <SpecRow>{plan.cpuLimitPercent}% de CPU</SpecRow>
+          <SpecRow>{formatVcpu(plan.cpuLimitPercent)}</SpecRow>
           <SpecRow>{formatMemory(plan.diskMb)} de armazenamento</SpecRow>
-          <SpecRow>{plan.maxServers != null ? `Até ${plan.maxServers} servidor(es)` : '1 servidor'}</SpecRow>
           {plan.maxBackups > 0 && <SpecRow>Até {plan.maxBackups} backups</SpecRow>}
           {players && <SpecRow>Recomendado para {players} jogadores</SpecRow>}
-          {mods && <SpecRow>Suporta {mods} mods</SpecRow>}
-          {plugins && <SpecRow>Suporta {plugins} plugins</SpecRow>}
         </ul>
 
         <div className="mt-auto">{cta}</div>

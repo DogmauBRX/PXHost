@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { AnnouncementBanner } from './AnnouncementBanner';
 import { ADMIN_NAV_SECTIONS, CLIENT_NAV_SECTIONS } from './nav.config';
 
 /**
@@ -37,6 +38,7 @@ export function AppShell({ children, area }: { children: ReactNode; area: 'admin
       <Sidebar sections={sections} panelLabel={panelLabel} settingsTo={settingsTo} />
       <div className="lg:pl-64">
         <Topbar />
+        <AnnouncementBanner />
         <main className="mx-auto w-full max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
     </div>
