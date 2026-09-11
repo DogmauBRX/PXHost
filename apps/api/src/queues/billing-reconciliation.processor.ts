@@ -10,15 +10,17 @@ import { PAYMENT_PROVIDER, type PaymentProvider } from '../modules/payments/paym
 const RUN_EVERY_MS = 24 * 60 * 60 * 1000; // daily
 
 /**
- * The safety net for Asaas's own documented failure mode: a webhook
- * endpoint returning non-2xx 15 times in a row gets its ENTIRE
- * notification queue interrupted — new events keep generating but stop
- * being delivered until someone notices and manually resumes it in
- * Asaas's dashboard. Nothing in this platform's own code can detect
- * that from the inside (silence looks identical to "nothing happened"),
- * so this job independently asks Asaas's own API, once a day, whether
- * this platform's copy of every active/past_due subscription still
- * agrees with theirs.
+ * The safety net for a silently broken webhook. A missed notification
+ * is invisible from the inside — silence looks identical to "nothing
+ * happened" — so this job independently asks Mercado Pago's own API,
+ * once a day, whether this platform's copy of every active/past_due
+ * card subscription still agrees with theirs.
+ *
+ * Only card subscriptions are checked, because only they exist at
+ * Mercado Pago as a preapproval. A pix subscription has no
+ * provider-side object at all (Mercado Pago has no recurring pix): its
+ * equivalent safety net is `BillingCycleProcessor`, which is the thing
+ * generating each cycle's charge in the first place.
  *
  * Deliberately NEVER corrects a divergence automatically — logs a
  * structured warning and an audit entry (`billing.reconciliation.
@@ -72,11 +74,13 @@ export class BillingReconciliationProcessor implements OnModuleInit, OnModuleDes
     for (const sub of subscriptions) {
       try {
         const remote = await this.provider.getSubscription(sub.externalSubscriptionId!);
-        const remoteSuggestsActive = remote.status === 'ACTIVE';
+        // Mercado Pago's preapproval vocabulary: `authorized` is the one
+        // state in which it will keep charging the card.
+        const remoteSuggestsActive = remote.status === 'authorized';
         const localIsActive = sub.status === 'active';
         if (remoteSuggestsActive !== localIsActive) {
           divergences++;
-          this.logger.warn(`reconciliation divergence: subscription ${sub.id} local=${sub.status} asaas=${remote.status}`);
+          this.logger.warn(`reconciliation divergence: subscription ${sub.id} local=${sub.status} mercadopago=${remote.status}`);
           await this.audit.record({
             action: 'billing.reconciliation.divergence',
             targetType: 'subscription',

@@ -11,13 +11,13 @@ import type { AuthenticatedUser } from '../auth/guards/jwt-auth.guard';
 /**
  * Admin visibility and control over every customer's order/payment
  * (payments plan step 8) — the surface that didn't exist at all before
- * the Asaas migration (confirmed by audit: zero admin-facing orders
+ * the payments integration (confirmed by audit: zero admin-facing orders
  * route anywhere in this codebase). Same shape
  * `AdminSubscriptionsController` already established: `AdminGuard` +
  * `AdminPermissionGuard`, one `RequireAdminPermission` per route.
  *
  * Deliberately NO "mark as paid" route — only a real payment
- * (`PaymentsWebhookService`, driven by Asaas's own webhook) ever moves
+ * (`PaymentsWebhookService`, driven by Mercado Pago's own webhook) ever moves
  * an order to `paid`. The two mutations here (`retry-provisioning`,
  * `refund`) both act on money/infrastructure that already exists,
  * never fabricate a payment.

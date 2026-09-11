@@ -36,6 +36,17 @@ class PlanCommercialFields {
   @IsIn(['monthly', 'quarterly', 'semiannual', 'annual'])
   billingPeriod?: string;
 
+  // Checkout redesign (WHMCS-style) — the only link between billing-cycle
+  // variations of the same product (Plan.planFamily's own doc comment in
+  // schema.prisma). Two plans with the SAME planFamily and DIFFERENT
+  // billingPeriod render as one product with a cycle switcher on the
+  // public checkout; undefined leaves the existing value untouched, same
+  // convention as every other optional field here.
+  @IsOptional()
+  @IsString()
+  @Length(1, 100)
+  planFamily?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

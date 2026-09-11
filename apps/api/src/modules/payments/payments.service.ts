@@ -45,19 +45,18 @@ export class PaymentsService {
         orderId,
         status: payment.status,
         statusDetail: payment.statusDetail,
-        // A real Asaas payment always carries a value — null here would
-        // mean the provider response itself is malformed, not a normal
-        // case; 0 is a safe, honest fallback (never treated as a match
-        // against a real order.amountCents).
+        // A real payment always carries a value — null here would mean
+        // the provider response itself is malformed, not a normal case;
+        // 0 is a safe, honest fallback (never treated as a match against
+        // a real order.amountCents).
         amountCents: payment.amountCents ?? 0,
         paidAmountCents: payment.paidAmountCents,
         currency: payment.currency ?? 'BRL',
+        // Mercado Pago splits these: `payment_method_id` is the specific
+        // instrument ('pix', 'visa', ...) and `payment_type_id` its
+        // family ('bank_transfer', 'credit_card', ...). Both are stored.
         paymentMethodId: payment.paymentMethodId,
-        // No `paymentTypeId` equivalent since the Asaas migration —
-        // Asaas has one `billingType` field, not MP's separate method-
-        // vs-type split. Column kept (legacy Mercado Pago rows still
-        // populate it), just never written by new rows.
-        paymentTypeId: null,
+        paymentTypeId: payment.paymentTypeId,
         installments: payment.installments,
         approvedAt: payment.approvedAt,
         raw: payment.raw as Prisma.InputJsonValue,

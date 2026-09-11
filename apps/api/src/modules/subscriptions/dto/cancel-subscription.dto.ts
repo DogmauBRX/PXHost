@@ -7,7 +7,7 @@ export class CancelSubscriptionDto {
   reason?: string;
 
   /**
-   * Asaas migration (payments plan §19): when true, the subscription
+   * Payments plan §19: when true, the subscription
    * (and its server) keeps running until `currentPeriodEndsAt` —
    * billing-cycle finishes the cancellation once that date passes. The
    * provider-side subscription is cancelled immediately either way (no

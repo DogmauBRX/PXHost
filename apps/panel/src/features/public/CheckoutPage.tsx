@@ -7,7 +7,6 @@ import { Link } from '@tanstack/react-router';
 import { Lock, Mail, MapPin, ShieldCheck, User, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getPublicPlan } from './public.api';
-import { listPublicTemplates } from './templates.api';
 import { createCheckoutOrder, getOrder } from '@/shared/api/orders.api';
 import { OrderStatusView } from '@/shared/orders/OrderStatusView';
 import { register as registerAccount } from '@/features/auth/auth.api';
@@ -16,10 +15,20 @@ import { getAccount, updateAccount } from '@/features/settings/account.api';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { Seo } from './Seo';
 import { ApiError } from '@/shared/api/client';
-import { Alert, Button, Card, CardBody, CardHeader, CardTitle, EmptyState, Field, Input, Select, Skeleton } from '@/ui/primitives';
-import { formatBillingPeriod, formatPrice } from '@/shared/format/plan';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, CardTitle, EmptyState, Field, Input, Skeleton } from '@/ui/primitives';
+import { formatBillingPeriod, formatMemory, formatPrice, formatRange, formatVcpu } from '@/shared/format/plan';
 import { BillingProfileFields, billingSchema, accountToBillingForm, isBillingProfileComplete, type BillingFormValues } from './BillingProfileFields';
-import type { Order, PublicTemplate } from '@/shared/api/types';
+import type { Order, PublicPlan } from '@/shared/api/types';
+
+// Nominal cycle names for the "① Plano e cobrança" switcher — distinct
+// from `formatBillingPeriod`'s "/mês" suffix form, same closed
+// vocabulary as `plans_billing_period_check` on the API side.
+const CYCLE_NAMES: Record<string, string> = {
+  monthly: 'Mensal',
+  quarterly: 'Trimestral',
+  semiannual: 'Semestral',
+  annual: 'Anual',
+};
 
 const accountSchema = z
   .object({
@@ -61,16 +70,21 @@ function SectionHeading({ icon: Icon, children }: { icon: LucideIcon; children: 
  * visitor browses the catalog with no account at all, and only enters
  * credentials right here, at the exact moment they commit to a plan.
  * Once account + billing profile are in place, the SAME page shows the
- * "configurar servidor + forma de pagamento" step: the customer picks a
- * template, names the server, and chooses Pix or Cartão.
+ * "forma de pagamento" step — that's the checkout's entire remaining
+ * job. Software/version/server name are deliberately NOT collected here
+ * (post-purchase setup flow): every paid order provisions a bare,
+ * 'setup_pending' server, and the customer configures it afterward in
+ * the panel (features/servers/ServerSetupPage.tsx) — see
+ * CreateCheckoutDto's own doc comment for why.
  *
- * Asaas migration ("checkout hospedado" decision): Pix stays entirely
- * in-page (a QR shown right here, no redirect); card redirects to
- * Asaas's OWN hosted checkout page (`order.checkoutUrl`) to enter card
- * details — this platform's JS never sees a card number/CVV/expiry, and
- * never tokenizes anything itself. Both methods otherwise go through
- * the exact same `createCheckoutOrder` call — `paymentMethod` alone
- * tells the backend which kind of Asaas subscription to create.
+ * Mercado Pago, one flow per method: Pix stays entirely in-page (the QR
+ * comes back from the backend with the order, no redirect); card
+ * redirects to Mercado Pago's OWN hosted page (`order.checkoutUrl`,
+ * their `init_point`) to authorize the recurring charge — this
+ * platform's JS never sees a card number/CVV/expiry, and never
+ * tokenizes anything itself. Both methods otherwise go through the
+ * exact same `createCheckoutOrder` call; `paymentMethod` alone tells
+ * the backend which Mercado Pago product to use.
  *
  * The plan itself is always fetched fresh from the server (never
  * carried through router state from the plans grid) — price/limits
@@ -97,11 +111,15 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
   // (e.g. profile edited in another tab in between).
   const [forceBillingForm, setForceBillingForm] = useState(false);
 
-  const [templateId, setTemplateId] = useState('');
-  const [serverName, setServerName] = useState('');
-  const [variables, setVariables] = useState<Record<string, string>>({});
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card'>('pix');
   const [submittingCheckout, setSubmittingCheckout] = useState(false);
+  // Checkout redesign (WHMCS-style) — which billing-cycle SIBLING of the
+  // route's plan is actually selected. Switching cycles never navigates
+  // (a typed server name must survive it), so this lives here, not in
+  // the URL. '' means "not decided yet" (still loading, or the route's
+  // planSlug just changed) — the effect below picks a default the moment
+  // `plan` is available.
+  const [selectedPlanId, setSelectedPlanId] = useState('');
 
   const {
     register: registerField,
@@ -123,32 +141,33 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
     enabled: !!accessToken,
   });
 
-  const { data: templates, isLoading: templatesLoading } = useQuery({
-    queryKey: ['public-templates'],
-    queryFn: listPublicTemplates,
-  });
+  // Checkout redesign — every public cycle of the route's plan family
+  // (itself included), backend-computed and backend-ordered
+  // (PublicPlansService.getBySlug). No family/siblings still means an
+  // array of one: the switcher always has something to render.
+  const familyCycles: PublicPlan[] = plan?.familyCycles ?? (plan ? [plan] : []);
+  const selectedPlan = familyCycles.find((p) => p.id === selectedPlanId) ?? plan;
+  // Gates on the WHOLE family, not just the route's own slug — a visitor
+  // landing on a sold-out quarterly cycle must still be able to switch to
+  // an available monthly sibling instead of hitting a dead end.
+  const allCyclesSoldOut = familyCycles.length > 0 && familyCycles.every((p) => p.availability.status === 'sold_out');
 
-  const selectedTemplate = templates?.find((t) => t.id === templateId) ?? null;
-
-  // Auto-selects the first template once the catalog loads — most
-  // deployments publish just one or a handful, and the customer can
-  // still change it; there's no reason to force an extra click when
-  // there's an obvious default.
+  // planSlug changing (a fresh `/checkout/:slug` navigation) invalidates
+  // any previously chosen cycle — it belongs to the OLD family.
   useEffect(() => {
-    if (!templateId && templates && templates.length > 0) {
-      setTemplateId(templates[0].id);
-    }
-  }, [templates, templateId]);
+    setSelectedPlanId('');
+  }, [planSlug]);
 
+  // Defaults to the route's own plan, unless IT is sold out and a
+  // sibling cycle isn't — never auto-select a cycle the customer
+  // couldn't actually check out with.
   useEffect(() => {
-    if (selectedTemplate) {
-      setVariables((prev) => {
-        const next: Record<string, string> = {};
-        for (const opt of selectedTemplate.options) next[opt.envVariable] = prev[opt.envVariable] ?? opt.defaultValue;
-        return next;
-      });
-    }
-  }, [selectedTemplate]);
+    if (!plan || selectedPlanId) return;
+    const preferred = familyCycles.find((p) => p.id === plan.id) ?? familyCycles[0];
+    const fallback = familyCycles.find((p) => p.availability.status !== 'sold_out');
+    setSelectedPlanId((preferred?.availability.status !== 'sold_out' ? preferred : fallback ?? preferred)?.id ?? plan.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan, selectedPlanId]);
 
   // Once an order exists, poll it — the ORDER's own status is the only
   // truth (never the fact that this page rendered a QR code or a
@@ -218,27 +237,20 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
     }
   }
 
-  function validateConfigure(): string | null {
-    if (!templateId) return 'Escolha um software para o servidor.';
-    if (!serverName.trim()) return 'Escolha um nome para o servidor.';
-    return null;
-  }
-
   // Pix and card go through the exact same call — the only difference
   // is which button the customer clicked. A card checkout comes back
-  // with `checkoutUrl` (Asaas's own hosted page) instead of a QR code;
+  // with `checkoutUrl` (Mercado Pago's own hosted page) instead of a QR code;
   // `OrderStatusView` is what actually branches on that.
   async function submitCheckout() {
     if (!plan) return;
-    const problem = validateConfigure();
-    if (problem) {
-      setSubmitError(problem);
-      return;
-    }
     setSubmitError(null);
     setSubmittingCheckout(true);
     try {
-      const created = await createCheckoutOrder({ planId: plan.id, templateId, serverName: serverName.trim(), variables, paymentMethod });
+      // The SELECTED cycle's id, never the route's — this is the one
+      // place a bug here would turn into wrong billing (a customer
+      // switches to Trimestral in section ①, the order must be created
+      // against THAT plan, not `basico`'s own id from the URL).
+      const created = await createCheckoutOrder({ planId: (selectedPlan ?? plan).id, paymentMethod });
       setOrder(created);
     } catch (err) {
       if (err instanceof ApiError && err.message.includes('BILLING_PROFILE_REQUIRED')) {
@@ -304,40 +316,77 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
               DOM nesting, which is exactly what lets these be two
               genuinely separate blocks instead of one card split in two
               visually. */}
-          <Card className="lg:sticky lg:top-20 lg:order-2">
-            <CardHeader>
-              <CardTitle className="text-xl">Plano {plan.name}</CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-4">
-              {/* "Detalhes do pagamento" — a highlighted total bar rather than
-                  plain text, so the price that's about to be charged reads as
-                  the one number on this page that matters most. */}
-              <div className="flex items-center justify-between rounded-lg bg-ok-tint px-4 py-3">
-                <span className="flex items-center gap-2 text-sm font-medium text-text">
-                  <Wallet className="h-4 w-4" aria-hidden="true" />
-                  Total {formatBillingPeriod(plan.billingPeriod) === 'mês' ? 'mensal' : `a cada ${formatBillingPeriod(plan.billingPeriod)}`}
-                </span>
-                <span className="text-xl font-bold text-ok">{formatPrice(plan.priceCents, plan.currency)}</span>
-              </div>
+          <div className="space-y-4 lg:sticky lg:top-20 lg:order-2">
+            {readyToConfigure && selectedPlan && !allCyclesSoldOut && (
+              // Read-only plan specs, moved out of Block 2's numbered
+              // sequence and into their own card here — right above the
+              // order summary, so the customer sees what they're getting
+              // right next to what they're paying, instead of scrolling
+              // back up through the longer configuration form for it.
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recursos do plano</CardTitle>
+                </CardHeader>
+                <CardBody>
+                  <PlanSpecCards plan={selectedPlan} />
+                </CardBody>
+              </Card>
+            )}
 
-              {plan.availability.status === 'sold_out' ? (
-                <Alert tone="warn">Esse plano está esgotado no momento. Escolha outro plano na página de planos.</Alert>
-              ) : accountLoading ? null : needsBillingForm || !accessToken ? (
+            <Card>
+              {readyToConfigure && selectedPlan && !allCyclesSoldOut ? (
+                // Once the customer reaches "configurar servidor", this card
+                // stops being a plain total bar and becomes the itemized
+                // resumo (checkout redesign) — everything chosen in Block 2
+                // reflected line by line, with the submit button at its own
+                // footer (moved from ConfigureStep, same handler/state).
+                <CardBody>
+                  <OrderSummary
+                    plan={selectedPlan}
+                    paymentMethod={paymentMethod}
+                    submitError={submitError}
+                    submitting={submittingCheckout}
+                    onSubmit={() => void submitCheckout()}
+                  />
+                </CardBody>
+              ) : (
                 <>
-                  {submitError && <Alert>{submitError}</Alert>}
-                  <Button
-                    type="submit"
-                    form="checkout-data-form"
-                    variant="primary"
-                    disabled={needsBillingForm ? billingSubmitting : isSubmitting || (!!TURNSTILE_SITE_KEY && !captchaToken)}
-                    className="w-full"
-                  >
-                    {needsBillingForm ? (billingSubmitting ? 'Salvando…' : 'Continuar') : isSubmitting ? 'Criando conta…' : 'Continuar'}
-                  </Button>
+                  <CardHeader>
+                    <CardTitle className="text-xl">Plano {plan.name}</CardTitle>
+                  </CardHeader>
+                  <CardBody className="space-y-4">
+                    {/* "Detalhes do pagamento" — a highlighted total bar rather than
+                        plain text, so the price that's about to be charged reads as
+                        the one number on this page that matters most. */}
+                    <div className="flex items-center justify-between rounded-lg bg-ok-tint px-4 py-3">
+                      <span className="flex items-center gap-2 text-sm font-medium text-text">
+                        <Wallet className="h-4 w-4" aria-hidden="true" />
+                        Total {formatBillingPeriod(plan.billingPeriod) === 'mês' ? 'mensal' : `a cada ${formatBillingPeriod(plan.billingPeriod)}`}
+                      </span>
+                      <span className="text-xl font-bold text-ok">{formatPrice(plan.priceCents, plan.currency)}</span>
+                    </div>
+
+                    {allCyclesSoldOut ? (
+                      <Alert tone="warn">Esse plano está esgotado no momento. Escolha outro plano na página de planos.</Alert>
+                    ) : accountLoading ? null : needsBillingForm || !accessToken ? (
+                      <>
+                        {submitError && <Alert>{submitError}</Alert>}
+                        <Button
+                          type="submit"
+                          form="checkout-data-form"
+                          variant="primary"
+                          disabled={needsBillingForm ? billingSubmitting : isSubmitting || (!!TURNSTILE_SITE_KEY && !captchaToken)}
+                          className="w-full"
+                        >
+                          {needsBillingForm ? (billingSubmitting ? 'Salvando…' : 'Continuar') : isSubmitting ? 'Criando conta…' : 'Continuar'}
+                        </Button>
+                      </>
+                    ) : null}
+                  </CardBody>
                 </>
-              ) : null}
-            </CardBody>
-          </Card>
+              )}
+            </Card>
+          </div>
 
           {/* Block 2 — the data this step needs, in its own card, on the left. */}
           <div className="lg:order-1">
@@ -348,7 +397,7 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
                 <Skeleton className="h-10 w-full" />
               </CardBody>
             </Card>
-          ) : plan.availability.status === 'sold_out' ? null : accessToken ? (
+          ) : allCyclesSoldOut ? null : accessToken ? (
             needsBillingForm ? (
               <Card>
                 <CardHeader>
@@ -364,25 +413,18 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
             ) : readyToConfigure ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Configurar servidor e pagamento</CardTitle>
+                  <CardTitle>Plano e pagamento</CardTitle>
                 </CardHeader>
                 <CardBody>
-                  <ConfigureStep
-                    templates={templates}
-                    templatesLoading={templatesLoading}
-                    templateId={templateId}
-                    onTemplateChange={setTemplateId}
-                    selectedTemplate={selectedTemplate}
-                    serverName={serverName}
-                    onServerNameChange={setServerName}
-                    variables={variables}
-                    onVariableChange={(key, value) => setVariables((prev) => ({ ...prev, [key]: value }))}
-                    paymentMethod={paymentMethod}
-                    onPaymentMethodChange={setPaymentMethod}
-                    submitError={submitError}
-                    submitting={submittingCheckout}
-                    onSubmit={() => void submitCheckout()}
-                  />
+                  {selectedPlan && (
+                    <ConfigureStep
+                      familyCycles={familyCycles}
+                      selectedPlanId={selectedPlanId}
+                      onPlanChange={setSelectedPlanId}
+                      paymentMethod={paymentMethod}
+                      onPaymentMethodChange={setPaymentMethod}
+                    />
+                  )}
                 </CardBody>
               </Card>
             ) : null
@@ -435,101 +477,104 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
   );
 }
 
+/** A numbered section header — same visual language as `SectionHeading` above (icon + border-top divider), but with the mockup's circled step number instead of an icon, since `ConfigureStep`'s three blocks are meant to read as an ordered sequence. */
+function NumberedSection({ step, children }: { step: number; children: string }) {
+  return (
+    <div className="mt-2 flex items-center gap-2 border-t border-border pt-4 first:mt-0 first:border-t-0 first:pt-0">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-tint text-xs font-bold text-accent-strong">{step}</span>
+      <h2 className="text-sm font-semibold text-text">{children}</h2>
+    </div>
+  );
+}
+
+/** One billing-cycle card in "① Plano e cobrança". Disabled + badged when THAT cycle is sold out — never removed from the grid, so the customer always sees every cycle this product is sold in. */
+function CycleOption({ plan, selected, onSelect }: { plan: PublicPlan; selected: boolean; onSelect: () => void }) {
+  const soldOut = plan.availability.status === 'sold_out';
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={soldOut}
+      className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+        selected ? 'border-accent-strong bg-accent-tint text-accent-strong' : 'border-border text-text-muted hover:text-text'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium">{CYCLE_NAMES[plan.billingPeriod] ?? plan.billingPeriod}</span>
+        {soldOut && <Badge tone="fail">Esgotado</Badge>}
+      </div>
+      <p className="mt-0.5 text-xs">
+        {formatPrice(plan.priceCents, plan.currency)} /{formatBillingPeriod(plan.billingPeriod)}
+      </p>
+    </button>
+  );
+}
+
+/** Read-only spec cards for "③ Recursos do plano" — every field this plan actually publishes; never renders a row for a null recommendation (Plan's own "no fake 0-0" rule, see `formatRange`). */
+function PlanSpecCards({ plan }: { plan: PublicPlan }) {
+  const players = formatRange(plan.recommendedPlayersMin, plan.recommendedPlayersMax);
+  const mods = formatRange(plan.recommendedModsMin, plan.recommendedModsMax);
+  const plugins = formatRange(plan.recommendedPluginsMin, plan.recommendedPluginsMax);
+
+  const specs: { label: string; value: string }[] = [
+    { label: 'Memória RAM', value: formatMemory(plan.memoryMb) },
+    { label: 'Armazenamento', value: formatMemory(plan.diskMb) },
+    { label: 'CPU', value: formatVcpu(plan.cpuLimitPercent) },
+  ];
+  if (plan.maxBackups > 0) specs.push({ label: 'Backups', value: `até ${plan.maxBackups}` });
+  if (plan.maxDatabases > 0) specs.push({ label: 'Bancos de dados', value: `até ${plan.maxDatabases}` });
+  if (players) specs.push({ label: 'Jogadores recomendados', value: players });
+  if (mods) specs.push({ label: 'Mods recomendados', value: mods });
+  if (plugins) specs.push({ label: 'Plugins recomendados', value: plugins });
+
+  return (
+    // Fixed at 2 columns regardless of viewport — this renders inside the
+    // ~360px sidebar card now (moved there from the wide main column), so
+    // `sm:grid-cols-3` (a VIEWPORT breakpoint, not a container one) used
+    // to force 3 columns into that narrow card and crush labels like
+    // "Jogadores recomendados" into a 2-3 word wrap that read as text
+    // spilling out of the box.
+    <div className="grid grid-cols-2 gap-3">
+      {specs.map((s) => (
+        <div key={s.label} className="rounded-lg bg-ok-tint px-3 py-2">
+          <p className="text-xs leading-snug text-text-muted">{s.label}</p>
+          <p className="text-sm font-semibold text-text">{s.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
- * The last step: server config + payment method. Both Pix and Cartão
- * submit through the SAME button/handler — a card checkout doesn't
- * collect anything here at all; it just creates the order and the next
- * screen (`OrderStatusView`) sends the customer to Asaas's own hosted
- * checkout page to actually enter card details.
+ * The last step: billing cycle + payment method. Software/version/
+ * server name are no longer collected at checkout at all (post-purchase
+ * setup flow — see CheckoutPage's own doc comment); this component's
+ * only remaining job is the two things that actually ARE purchase
+ * decisions. The actual submit button lives in the sidebar
+ * (`OrderSummary`, CheckoutPage's Block 1) — this component only
+ * collects input.
  */
 function ConfigureStep({
-  templates,
-  templatesLoading,
-  templateId,
-  onTemplateChange,
-  selectedTemplate,
-  serverName,
-  onServerNameChange,
-  variables,
-  onVariableChange,
+  familyCycles,
+  selectedPlanId,
+  onPlanChange,
   paymentMethod,
   onPaymentMethodChange,
-  submitError,
-  submitting,
-  onSubmit,
 }: {
-  templates: PublicTemplate[] | undefined;
-  templatesLoading: boolean;
-  templateId: string;
-  onTemplateChange: (id: string) => void;
-  selectedTemplate: PublicTemplate | null;
-  serverName: string;
-  onServerNameChange: (v: string) => void;
-  variables: Record<string, string>;
-  onVariableChange: (key: string, value: string) => void;
+  familyCycles: PublicPlan[];
+  selectedPlanId: string;
+  onPlanChange: (id: string) => void;
   paymentMethod: 'pix' | 'card';
   onPaymentMethodChange: (m: 'pix' | 'card') => void;
-  submitError: string | null;
-  submitting: boolean;
-  onSubmit: () => void;
 }) {
   return (
-    <div className="space-y-4 border-t border-border pt-4">
-      <p className="text-sm font-medium text-text">Configure seu servidor</p>
-
-      {templatesLoading ? (
-        <Skeleton className="h-10 w-full" />
-      ) : (
-        <Field label="Software" htmlFor="checkout-template">
-          <Select id="checkout-template" value={templateId} onChange={(e) => onTemplateChange(e.target.value)}>
-            {(templates ?? []).map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.group.name} — {t.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      )}
-
-      <Field label="Nome do servidor" htmlFor="checkout-server-name">
-        <Input id="checkout-server-name" value={serverName} onChange={(e) => onServerNameChange(e.target.value)} placeholder="Meu servidor" />
-      </Field>
-
-      {selectedTemplate?.options.map((opt) => (
-        <Field key={opt.envVariable} label={opt.name} htmlFor={`checkout-var-${opt.envVariable}`} hint={opt.description ?? undefined}>
-          {opt.kind === 'choice' ? (
-            <Select
-              id={`checkout-var-${opt.envVariable}`}
-              value={variables[opt.envVariable] ?? ''}
-              onChange={(e) => onVariableChange(opt.envVariable, e.target.value)}
-            >
-              {(opt.choices ?? []).map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
-          ) : opt.kind === 'boolean' ? (
-            <Select
-              id={`checkout-var-${opt.envVariable}`}
-              value={variables[opt.envVariable] ?? ''}
-              onChange={(e) => onVariableChange(opt.envVariable, e.target.value)}
-            >
-              <option value="true">Sim</option>
-              <option value="false">Não</option>
-            </Select>
-          ) : (
-            <Input
-              id={`checkout-var-${opt.envVariable}`}
-              type={opt.kind === 'integer' ? 'number' : 'text'}
-              min={opt.min}
-              max={opt.max}
-              value={variables[opt.envVariable] ?? ''}
-              onChange={(e) => onVariableChange(opt.envVariable, e.target.value)}
-            />
-          )}
-        </Field>
-      ))}
+    <div className="space-y-4">
+      <NumberedSection step={1}>Plano e cobrança</NumberedSection>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {familyCycles.map((p) => (
+          <CycleOption key={p.id} plan={p} selected={p.id === selectedPlanId} onSelect={() => onPlanChange(p.id)} />
+        ))}
+      </div>
 
       <div className="border-t border-border pt-4">
         <p className="mb-2 text-sm font-medium text-text">Forma de pagamento</p>
@@ -555,9 +600,54 @@ function ConfigureStep({
         </div>
         <p className="mt-2 text-xs text-text-faint">
           {paymentMethod === 'card'
-            ? 'No cartão, a renovação é automática a cada período — o Asaas cobra sozinho, sem precisar escolher de novo. Os dados do cartão são inseridos na página segura do Asaas, nunca aqui.'
-            : 'No Pix, você recebe um novo QR Code para pagar a cada período.'}
+            ? 'No cartão, a renovação é automática a cada período — o Mercado Pago cobra sozinho, sem precisar fazer nada. Os dados do cartão são inseridos na página segura do Mercado Pago, nunca aqui.'
+            : 'No Pix não existe cobrança automática: a cada período geramos um novo QR Code e avisamos você para pagar.'}
         </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The sidebar's itemized "RESUMO DO PEDIDO" (checkout redesign) —
+ * CheckoutPage's Block 1 once `readyToConfigure`. Everything here is
+ * derived from state `ConfigureStep` already owns (no new API call);
+ * the submit button is the SAME handler `ConfigureStep`'s old Pix/
+ * Cartão button used to call, just relocated to this card's footer.
+ */
+function OrderSummary({
+  plan,
+  paymentMethod,
+  submitError,
+  submitting,
+  onSubmit,
+}: {
+  plan: PublicPlan;
+  paymentMethod: 'pix' | 'card';
+  submitError: string | null;
+  submitting: boolean;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs font-semibold tracking-wide text-text-faint uppercase">Resumo do pedido</p>
+        <p className="mt-1 text-sm font-medium text-text">Plano {plan.name}</p>
+      </div>
+
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-text-muted">Subtotal</span>
+        <span className="font-medium text-text">{formatPrice(plan.priceCents, plan.currency)}</span>
+      </div>
+
+      <div className="flex items-center justify-between border-t border-border pt-3 text-sm">
+        <span className="text-text-muted">por {formatBillingPeriod(plan.billingPeriod)}</span>
+        <span className="font-semibold text-text">{formatPrice(plan.priceCents, plan.currency)}</span>
+      </div>
+
+      <div className="flex items-center justify-between rounded-lg bg-ok-tint px-4 py-3">
+        <span className="text-sm font-medium text-text">Pagamento hoje</span>
+        <span className="text-xl font-bold text-ok">{formatPrice(plan.priceCents, plan.currency)}</span>
       </div>
 
       {submitError && <Alert>{submitError}</Alert>}

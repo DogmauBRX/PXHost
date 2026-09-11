@@ -180,7 +180,7 @@ export class AuthService {
   /**
    * Commercial site — public self-signup. Refuses at USE time when the
    * feature isn't opted into (`ALLOW_PUBLIC_REGISTRATION`, default
-   * false), the same posture `AsaasProvider.parseWebhook`
+   * false), the same posture `MercadoPagoProvider.parseWebhook`
    * already established for an optional feature rather than gating it
    * only at the controller: a 404 here means "this deployment never
    * turned registration on," not "the route doesn't exist," and either

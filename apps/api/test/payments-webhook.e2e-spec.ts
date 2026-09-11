@@ -7,115 +7,24 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/core/prisma/prisma.service';
 import { RedisService } from '../src/core/redis/redis.service';
 import { PaymentsWebhookService } from '../src/modules/payments/payments-webhook.service';
-import {
-  PAYMENT_PROVIDER,
-  type CreateSubscriptionInput,
-  type EnsureCustomerInput,
-  type GatewayPayment,
-  type GatewaySubscription,
-  type InternalPaymentEvent,
-  type ParsedWebhook,
-  type PaymentProvider,
-  type WebhookRequestInput,
-} from '../src/modules/payments/payment-provider.interface';
+import { PAYMENT_PROVIDER, type GatewayPayment, type ParsedWebhook } from '../src/modules/payments/payment-provider.interface';
+import { FakePaymentProvider } from './fake-payment-provider';
 
 /**
- * Same fake-provider convention `checkout.e2e-spec.ts` established, plus
- * `getPayment`/`getSubscription` standing in for Asaas's own re-fetch
- * endpoints — `PaymentsWebhookService.process` always re-fetches before
- * acting (the webhook body is never trusted), so each test seeds these
- * maps with the exact `GatewayPayment`/`GatewaySubscription` the "real"
- * API would have returned.
- *
- * `parseWebhook` here is intentionally NOT the real static-token check
- * (that's `AsaasProvider.parseWebhook`'s own responsibility) — gated on
- * a fake header, exactly precise enough to exercise
- * `PaymentsWebhookController`'s OWN responsibility (verify, dedupe,
- * enqueue, respond 2xx) in isolation from `PaymentsWebhookService`'s.
+ * A pix-shaped charge: it belongs to no preapproval, so `externalReference`
+ * (the id THIS platform generated for the order) is the only thing that
+ * links it back — exactly how a real Mercado Pago pix payment behaves.
  */
-class FakePaymentProvider implements PaymentProvider {
-  readonly name = 'asaas';
-  subscriptions = new Map<string, GatewaySubscription>();
-  payments = new Map<string, GatewayPayment>();
-
-  async ensureCustomer(input: EnsureCustomerInput): Promise<{ externalCustomerId: string }> {
-    return { externalCustomerId: `cus-${input.userId}` };
-  }
-
-  async createSubscription(input: CreateSubscriptionInput): Promise<GatewaySubscription> {
-    const id = `fake-sub-${input.externalReference}`;
-    const subscription: GatewaySubscription = { id, status: 'ACTIVE', externalReference: input.externalReference, nextDueDate: input.firstDueDate, raw: {} };
-    this.subscriptions.set(id, subscription);
-    const paymentId = `fake-pay-${input.externalReference}`;
-    this.payments.set(paymentId, {
-      id: paymentId,
-      status: 'PENDING',
-      statusDetail: null,
-      subscriptionExternalId: id,
-      amountCents: input.amountCents,
-      paidAmountCents: null,
-      currency: input.currency,
-      paymentMethodId: 'PIX',
-      installments: null,
-      approvedAt: null,
-      invoiceUrl: null,
-      raw: {},
-    });
-    return subscription;
-  }
-
-  async getSubscription(externalId: string): Promise<GatewaySubscription> {
-    const sub = this.subscriptions.get(externalId);
-    if (!sub) throw new Error(`test setup error: no fake subscription ${externalId}`);
-    return sub;
-  }
-
-  async cancelSubscription(): Promise<never> {
-    throw new Error('not exercised by this spec');
-  }
-
-  async listSubscriptionPayments(externalId: string): Promise<GatewayPayment[]> {
-    return [...this.payments.values()].filter((p) => p.subscriptionExternalId === externalId);
-  }
-
-  async getPayment(externalId: string): Promise<GatewayPayment> {
-    const payment = this.payments.get(externalId);
-    if (!payment) throw new Error(`test setup error: no fake payment registered for id ${externalId}`);
-    return payment;
-  }
-
-  async getPixQrCode(paymentId: string) {
-    return { qrCode: `fake-qr-${paymentId}`, qrCodeBase64: 'ZmFrZS1xci1wbmc=', expiresAt: null };
-  }
-
-  async refund(): Promise<never> {
-    throw new Error('not exercised by this spec');
-  }
-
-  parseWebhook(req: WebhookRequestInput): ParsedWebhook {
-    if (req.headers['x-fake-token'] !== 'valid') {
-      throw new UnauthorizedException('Invalid webhook token');
-    }
-    const body = (req.body ?? {}) as { id?: unknown; event?: unknown; payment?: { id?: unknown }; subscription?: { id?: unknown } };
-    return {
-      notificationId: body.id != null ? String(body.id) : '',
-      rawEvent: body.event != null ? String(body.event) : '',
-      internalEvent: 'Ignored',
-      paymentExternalId: body.payment?.id != null ? String(body.payment.id) : null,
-      subscriptionExternalId: body.subscription?.id != null ? String(body.subscription.id) : null,
-    };
-  }
-}
-
-function fakePayment(overrides: Partial<GatewayPayment> & { id: string; subscriptionExternalId: string; amountCents: number; status: string }): GatewayPayment {
+function fakePayment(overrides: Partial<GatewayPayment> & { id: string; externalReference: string; amountCents: number; status: string }): GatewayPayment {
   return {
     statusDetail: null,
+    subscriptionExternalId: null,
     paidAmountCents: null,
     currency: 'BRL',
-    paymentMethodId: 'PIX',
+    paymentMethodId: 'pix',
+    paymentTypeId: 'bank_transfer',
     installments: null,
     approvedAt: null,
-    invoiceUrl: null,
     raw: {},
     ...overrides,
   };
@@ -156,31 +65,75 @@ describe('Payments webhook processing (e2e)', () => {
     return `evt-${suffix}-${eventCounter}`;
   }
 
-  function parsedPaymentEvent(internalEvent: InternalPaymentEvent, paymentExternalId: string, notificationId = nextNotificationId()): ParsedWebhook {
-    return { notificationId, rawEvent: internalEvent, internalEvent, paymentExternalId, subscriptionExternalId: null };
+  /**
+   * Drives a notification the way Mercado Pago actually does it: put the
+   * CHARGE into the status that produces the outcome, then notify about
+   * the resource id. The notification itself carries no outcome — the
+   * service re-fetches and classifies, exactly as in production.
+   */
+  function paymentNotification(status: string, paymentExternalId: string, notificationId = nextNotificationId()): ParsedWebhook {
+    fakeProvider.setPaymentStatus(paymentExternalId, status);
+    return { notificationId, rawEvent: 'payment.updated', resourceKind: 'payment', resourceId: paymentExternalId };
   }
 
-  function parsedSubscriptionEvent(internalEvent: InternalPaymentEvent, subscriptionExternalId: string, notificationId = nextNotificationId()): ParsedWebhook {
-    return { notificationId, rawEvent: internalEvent, internalEvent, paymentExternalId: null, subscriptionExternalId };
+  /** Same, for a notification about a charge Mercado Pago generated itself for a card subscription. */
+  function recurringChargeNotification(paymentExternalId: string, notificationId = nextNotificationId()): ParsedWebhook {
+    return { notificationId, rawEvent: 'payment.updated', resourceKind: 'authorized_payment', resourceId: paymentExternalId };
+  }
+
+  function preapprovalNotification(status: string, subscriptionExternalId: string, notificationId = nextNotificationId()): ParsedWebhook {
+    fakeProvider.setSubscriptionStatus(subscriptionExternalId, status);
+    return { notificationId, rawEvent: 'subscription_preapproval', resourceKind: 'preapproval', resourceId: subscriptionExternalId };
   }
 
   /** Every processed webhook writes a `payment_webhook_events` row for dedupe bookkeeping (`markEvent`) — tests call this directly since `process()` itself doesn't insert that row (the CONTROLLER does, before enqueuing; see the controller's own describe block below). Inserted here to let `process()`'s own idempotency-relevant behavior (re-marking `processed`/`failed`) be observed. */
   async function seedWebhookEventRow(notificationId: string): Promise<void> {
-    await prisma.paymentWebhookEvent.create({ data: { id: notificationId, provider: 'asaas', type: 'test', raw: {} } });
+    await prisma.paymentWebhookEvent.create({ data: { id: notificationId, provider: 'mercadopago', type: 'test', raw: {} } });
   }
 
-  async function createOrder(): Promise<{ orderId: string; subscriptionId: string; amountCents: number; paymentExternalId: string; subscriptionExternalId: string }> {
+  async function createOrder(): Promise<{ orderId: string; subscriptionId: string; amountCents: number; paymentExternalId: string; externalReference: string }> {
     const res = await app.inject({
       method: 'POST',
       url: '/api/client/checkout',
       headers: { authorization: `Bearer ${customerToken}` },
-      payload: { planId, templateId, serverName: `srv-${Math.random().toString(36).slice(2)}`, paymentMethod: 'pix' },
+      payload: { planId, paymentMethod: 'pix' },
     });
     expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body);
-    const subscriptionExternalId = `fake-sub-${body.externalReference}`;
+    // A pix checkout created this charge at (the fake) Mercado Pago
+    // already — it belongs to no preapproval, and `externalReference` is
+    // the only thing linking it back to the order.
     const paymentExternalId = `fake-pay-${body.externalReference}`;
-    return { orderId: body.id, subscriptionId: body.subscriptionId, amountCents: body.amountCents, paymentExternalId, subscriptionExternalId };
+    return {
+      orderId: body.id,
+      subscriptionId: body.subscriptionId,
+      amountCents: body.amountCents,
+      paymentExternalId,
+      externalReference: body.externalReference as string,
+    };
+  }
+
+  /**
+   * A CARD checkout, which is the only flow where Mercado Pago itself
+   * generates charges on a schedule (a preapproval). Pix has no such
+   * thing — its renewals are created by this platform's own billing
+   * job, each with its own order and `external_reference`.
+   */
+  async function createCardOrder(): Promise<{ orderId: string; subscriptionId: string; amountCents: number; preapprovalId: string }> {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/client/checkout',
+      headers: { authorization: `Bearer ${customerToken}` },
+      payload: { planId, paymentMethod: 'card' },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    return {
+      orderId: body.id,
+      subscriptionId: body.subscriptionId,
+      amountCents: body.amountCents,
+      preapprovalId: `fake-preapproval-${body.externalReference}`,
+    };
   }
 
   beforeAll(async () => {
@@ -258,12 +211,12 @@ describe('Payments webhook processing (e2e)', () => {
   });
 
   it('a confirmed payment activates the order and the subscription', async () => {
-    const { orderId, subscriptionId, amountCents, paymentExternalId, subscriptionExternalId } = await createOrder();
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId, amountCents, status: 'CONFIRMED', paidAmountCents: amountCents, approvedAt: new Date() }));
+    const { orderId, subscriptionId, amountCents, paymentExternalId, externalReference } = await createOrder();
+    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, externalReference, amountCents, status: 'approved', paidAmountCents: amountCents, approvedAt: new Date() }));
 
     const notificationId = nextNotificationId();
     await seedWebhookEventRow(notificationId);
-    await webhookService.process(parsedPaymentEvent('PaymentConfirmed', paymentExternalId, notificationId));
+    await webhookService.process(paymentNotification('approved', paymentExternalId, notificationId));
 
     const order = await asAdmin((tx) => tx.order.findUnique({ where: { id: orderId } }));
     expect(order?.status).toBe('paid');
@@ -275,7 +228,7 @@ describe('Payments webhook processing (e2e)', () => {
     expect(subscription?.currentPeriodEndsAt).not.toBeNull();
 
     const payment = await prisma.payment.findUnique({ where: { id: paymentExternalId } });
-    expect(payment?.status).toBe('CONFIRMED');
+    expect(payment?.status).toBe('approved');
     expect(payment?.orderId).toBe(orderId);
 
     const event = await prisma.paymentWebhookEvent.findUnique({ where: { id: notificationId } });
@@ -283,12 +236,12 @@ describe('Payments webhook processing (e2e)', () => {
   });
 
   it('redelivering the exact same notification is an idempotent no-op', async () => {
-    const { orderId, subscriptionId, amountCents, paymentExternalId, subscriptionExternalId } = await createOrder();
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId, amountCents, status: 'CONFIRMED' }));
+    const { orderId, subscriptionId, amountCents, paymentExternalId, externalReference } = await createOrder();
+    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, externalReference, amountCents, status: 'approved' }));
 
     const notificationId = nextNotificationId();
     await seedWebhookEventRow(notificationId);
-    const parsed = parsedPaymentEvent('PaymentConfirmed', paymentExternalId, notificationId);
+    const parsed = paymentNotification('approved', paymentExternalId, notificationId);
     await webhookService.process(parsed);
     await webhookService.process(parsed); // exact same notification — a retried BullMQ job, or a redelivery
 
@@ -300,19 +253,19 @@ describe('Payments webhook processing (e2e)', () => {
   });
 
   it('a SECOND, different notification about an already-paid order is also a no-op (order-status guard, not just notification-id dedup)', async () => {
-    const { orderId, subscriptionId, amountCents, paymentExternalId, subscriptionExternalId } = await createOrder();
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId, amountCents, status: 'CONFIRMED' }));
+    const { orderId, subscriptionId, amountCents, paymentExternalId, externalReference } = await createOrder();
+    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, externalReference, amountCents, status: 'approved' }));
 
     const first = nextNotificationId();
     await seedWebhookEventRow(first);
-    await webhookService.process(parsedPaymentEvent('PaymentConfirmed', paymentExternalId, first));
+    await webhookService.process(paymentNotification('approved', paymentExternalId, first));
 
     // A DIFFERENT notification id about the SAME underlying payment —
-    // Asaas's own at-least-once delivery can produce this (e.g.
+    // Mercado Pago's own at-least-once delivery can produce this (e.g.
     // PAYMENT_CREATED then PAYMENT_CONFIRMED for one payment id).
     const second = nextNotificationId();
     await seedWebhookEventRow(second);
-    await webhookService.process(parsedPaymentEvent('PaymentConfirmed', paymentExternalId, second));
+    await webhookService.process(paymentNotification('approved', paymentExternalId, second));
 
     const events = await asAdmin((tx) => tx.subscriptionEvent.findMany({ where: { subscriptionId } }));
     expect(events.filter((e: any) => e.toStatus === 'active')).toHaveLength(1);
@@ -322,11 +275,11 @@ describe('Payments webhook processing (e2e)', () => {
 
   it('a payment whose subscription this platform has no record of is acknowledged with no effect', async () => {
     const paymentExternalId = `fake-pay-orphan-${suffix}`;
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId: 'fake-sub-does-not-exist', amountCents: 1000, status: 'CONFIRMED' }));
+    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, externalReference: 'ref-does-not-exist', amountCents: 1000, status: 'approved' }));
 
     const notificationId = nextNotificationId();
     await seedWebhookEventRow(notificationId);
-    await webhookService.process(parsedPaymentEvent('PaymentConfirmed', paymentExternalId, notificationId));
+    await webhookService.process(paymentNotification('approved', paymentExternalId, notificationId));
 
     const event = await prisma.paymentWebhookEvent.findUnique({ where: { id: notificationId } });
     expect(event?.status).toBe('processed'); // acknowledged (an audit entry is recorded), never retried forever
@@ -335,18 +288,20 @@ describe('Payments webhook processing (e2e)', () => {
   it('an "Ignored" internal event is a pure no-op', async () => {
     const notificationId = nextNotificationId();
     await seedWebhookEventRow(notificationId);
-    await webhookService.process({ notificationId, rawEvent: 'PAYMENT_CHECKOUT_VIEWED', internalEvent: 'Ignored', paymentExternalId: null, subscriptionExternalId: null });
+    // A topic this platform doesn't subscribe to (`resourceKind: null`)
+    // — acknowledged and recorded, nothing acted on.
+    await webhookService.process({ notificationId, rawEvent: 'subscription_preapproval_plan', resourceKind: null, resourceId: null });
     const event = await prisma.paymentWebhookEvent.findUnique({ where: { id: notificationId } });
     expect(event?.status).toBe('processed');
   });
 
   it('an amount mismatch never activates the order', async () => {
-    const { orderId, subscriptionId, amountCents, paymentExternalId, subscriptionExternalId } = await createOrder();
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId, amountCents: amountCents - 100, status: 'CONFIRMED' }));
+    const { orderId, subscriptionId, amountCents, paymentExternalId, externalReference } = await createOrder();
+    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, externalReference, amountCents: amountCents - 100, status: 'approved' }));
 
     const notificationId = nextNotificationId();
     await seedWebhookEventRow(notificationId);
-    await webhookService.process(parsedPaymentEvent('PaymentConfirmed', paymentExternalId, notificationId));
+    await webhookService.process(paymentNotification('approved', paymentExternalId, notificationId));
 
     const order = await asAdmin((tx) => tx.order.findUnique({ where: { id: orderId } }));
     expect(order?.status).toBe('pending');
@@ -355,21 +310,21 @@ describe('Payments webhook processing (e2e)', () => {
   });
 
   it('a payment stuck PENDING never activates the order; the later CONFIRMED notification does', async () => {
-    const { orderId, subscriptionId, amountCents, paymentExternalId, subscriptionExternalId } = await createOrder();
+    const { orderId, subscriptionId, amountCents, paymentExternalId, externalReference } = await createOrder();
     // PENDING isn't in the payment-shaped event set at all — no
-    // PaymentPending case reaches processPaymentEvent; simulate via the
-    // 'PaymentPending' internal event directly (maps from
-    // PAYMENT_AWAITING_RISK_ANALYSIS/PAYMENT_UPDATED/etc.).
+    // A charge sitting in `pending` (or `in_process`) is not an outcome
+    // — Mercado Pago notifies on creation too, and that must never
+    // activate anything.
     const holdNotification = nextNotificationId();
     await seedWebhookEventRow(holdNotification);
-    await webhookService.process({ notificationId: holdNotification, rawEvent: 'PAYMENT_UPDATED', internalEvent: 'PaymentPending', paymentExternalId, subscriptionExternalId: null });
+    await webhookService.process(paymentNotification('pending', paymentExternalId, holdNotification));
     let order = await asAdmin((tx) => tx.order.findUnique({ where: { id: orderId } }));
     expect(order?.status).toBe('pending');
 
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId, amountCents, status: 'CONFIRMED' }));
+    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, externalReference, amountCents, status: 'approved' }));
     const confirmNotification = nextNotificationId();
     await seedWebhookEventRow(confirmNotification);
-    await webhookService.process(parsedPaymentEvent('PaymentConfirmed', paymentExternalId, confirmNotification));
+    await webhookService.process(paymentNotification('approved', paymentExternalId, confirmNotification));
 
     order = await asAdmin((tx) => tx.order.findUnique({ where: { id: orderId } }));
     expect(order?.status).toBe('paid');
@@ -378,12 +333,12 @@ describe('Payments webhook processing (e2e)', () => {
   });
 
   it('a failed payment marks the order failed but leaves the subscription pending', async () => {
-    const { orderId, subscriptionId, amountCents, paymentExternalId, subscriptionExternalId } = await createOrder();
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId, amountCents, status: 'REPROVED_BY_RISK_ANALYSIS' }));
+    const { orderId, subscriptionId, amountCents, paymentExternalId, externalReference } = await createOrder();
+    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, externalReference, amountCents, status: 'rejected' }));
 
     const notificationId = nextNotificationId();
     await seedWebhookEventRow(notificationId);
-    await webhookService.process(parsedPaymentEvent('PaymentFailed', paymentExternalId, notificationId));
+    await webhookService.process(paymentNotification('rejected', paymentExternalId, notificationId));
 
     const order = await asAdmin((tx) => tx.order.findUnique({ where: { id: orderId } }));
     expect(order?.status).toBe('failed');
@@ -391,36 +346,37 @@ describe('Payments webhook processing (e2e)', () => {
     expect(subscription?.status).toBe('pending'); // never active — a failed payment must never activate anything
   });
 
-  it('a renewal charge going overdue moves the subscription to past_due WITHOUT suspending it — billing-cycle owns suspension, not the webhook', async () => {
-    const { subscriptionId, amountCents, paymentExternalId, subscriptionExternalId } = await createOrder();
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId, amountCents, status: 'CONFIRMED' }));
-    await webhookService.process(parsedPaymentEvent('PaymentConfirmed', paymentExternalId, nextNotificationId()));
+  it('a rejected RENEWAL charge moves the subscription to past_due WITHOUT suspending it — billing-cycle owns suspension, not the webhook', async () => {
+    const { subscriptionId, amountCents, preapprovalId } = await createCardOrder();
+    const firstCharge = fakeProvider.addRecurringCharge(preapprovalId, `fake-pay-card-first-${suffix}`, 'approved', amountCents);
+    await webhookService.process(recurringChargeNotification(firstCharge.id, nextNotificationId()));
 
-    // A real Asaas payment never reverts CONFIRMED -> OVERDUE — what
-    // actually goes overdue is a DIFFERENT, later charge the subscription
-    // scheduler generated on its own (a brand new payment id, same
-    // subscription).
-    const renewalPaymentId = `fake-pay-renewal-overdue-${subscriptionExternalId}`;
-    fakeProvider.payments.set(renewalPaymentId, fakePayment({ id: renewalPaymentId, subscriptionExternalId, amountCents, status: 'OVERDUE' }));
+    // A payment never reverts approved -> rejected. What actually goes
+    // delinquent is a DIFFERENT, later charge for the NEXT cycle, which
+    // Mercado Pago generated on its own from the preapproval — and
+    // because it is a RENEWAL, a rejection means past_due rather than a
+    // merely failed order.
+    const renewalPaymentId = `fake-pay-renewal-overdue-${suffix}`;
+    fakeProvider.addRecurringCharge(preapprovalId, renewalPaymentId, 'rejected', amountCents);
     const notificationId = nextNotificationId();
     await seedWebhookEventRow(notificationId);
-    await webhookService.process(parsedPaymentEvent('PaymentOverdue', renewalPaymentId, notificationId));
+    await webhookService.process(recurringChargeNotification(renewalPaymentId, notificationId));
 
     const subscription = await asAdmin((tx) => tx.subscription.findUnique({ where: { id: subscriptionId } }));
     expect(subscription?.status).toBe('past_due');
   });
 
   it('a refunded payment on an already-paid order suspends the active subscription', async () => {
-    const { orderId, subscriptionId, amountCents, paymentExternalId, subscriptionExternalId } = await createOrder();
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId, amountCents, status: 'CONFIRMED' }));
-    await webhookService.process(parsedPaymentEvent('PaymentConfirmed', paymentExternalId, nextNotificationId()));
+    const { orderId, subscriptionId, amountCents, paymentExternalId, externalReference } = await createOrder();
+    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, externalReference, amountCents, status: 'approved' }));
+    await webhookService.process(paymentNotification('approved', paymentExternalId, nextNotificationId()));
     let subscription = await asAdmin((tx) => tx.subscription.findUnique({ where: { id: subscriptionId } }));
     expect(subscription?.status).toBe('active');
 
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId, amountCents, status: 'REFUNDED' }));
+    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, externalReference, amountCents, status: 'refunded' }));
     const notificationId = nextNotificationId();
     await seedWebhookEventRow(notificationId);
-    await webhookService.process(parsedPaymentEvent('PaymentRefunded', paymentExternalId, notificationId));
+    await webhookService.process(paymentNotification('refunded', paymentExternalId, notificationId));
 
     const order = await asAdmin((tx) => tx.order.findUnique({ where: { id: orderId } }));
     expect(order?.status).toBe('refunded');
@@ -428,21 +384,22 @@ describe('Payments webhook processing (e2e)', () => {
     expect(subscription?.status).toBe('suspended');
   });
 
-  it("a renewal charge Asaas generates on its own creates a NEW plan_renewal order and extends the subscription's period", async () => {
-    const { subscriptionId, amountCents, paymentExternalId, subscriptionExternalId } = await createOrder();
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId, amountCents, status: 'CONFIRMED' }));
-    await webhookService.process(parsedPaymentEvent('PaymentConfirmed', paymentExternalId, nextNotificationId()));
+  it("a recurring charge Mercado Pago generates on its own creates a NEW plan_renewal order and extends the subscription's period", async () => {
+    const { subscriptionId, amountCents, preapprovalId } = await createCardOrder();
+    const firstCharge = fakeProvider.addRecurringCharge(preapprovalId, `fake-pay-card-initial-${suffix}`, 'approved', amountCents);
+    await webhookService.process(recurringChargeNotification(firstCharge.id, nextNotificationId()));
 
     const beforeRenewal: any = await asAdmin((tx) => tx.subscription.findUnique({ where: { id: subscriptionId } }));
     expect(beforeRenewal.status).toBe('active');
 
-    // A brand new payment id — Asaas's scheduler generated this on its
-    // own, with no `Order` behind it yet at all.
+    // A brand new payment id — Mercado Pago's preapproval scheduler
+    // generated this on its own, referencing only the preapproval and no
+    // `Order` at all.
     const renewalPaymentId = `fake-pay-renewal-${suffix}`;
-    fakeProvider.payments.set(renewalPaymentId, fakePayment({ id: renewalPaymentId, subscriptionExternalId, amountCents, status: 'CONFIRMED', approvedAt: new Date() }));
+    fakeProvider.addRecurringCharge(preapprovalId, renewalPaymentId, 'approved', amountCents);
     const notificationId = nextNotificationId();
     await seedWebhookEventRow(notificationId);
-    await webhookService.process(parsedPaymentEvent('PaymentConfirmed', renewalPaymentId, notificationId));
+    await webhookService.process(recurringChargeNotification(renewalPaymentId, notificationId));
 
     const renewalOrder: any = await asAdmin((tx) => tx.order.findFirst({ where: { subscriptionId, kind: 'plan_renewal' } }));
     expect(renewalOrder).not.toBeNull();
@@ -457,17 +414,67 @@ describe('Payments webhook processing (e2e)', () => {
     expect(renewalPayment?.orderId).toBe(renewalOrder.id);
   });
 
-  it('a subscription-canceled notification cancels the subscription', async () => {
-    const { subscriptionId, amountCents, paymentExternalId, subscriptionExternalId } = await createOrder();
-    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, subscriptionExternalId, amountCents, status: 'CONFIRMED' }));
-    await webhookService.process(parsedPaymentEvent('PaymentConfirmed', paymentExternalId, nextNotificationId()));
+  it('a preapproval cancelled at Mercado Pago cancels the subscription', async () => {
+    const { subscriptionId, amountCents, preapprovalId } = await createCardOrder();
+    const charge = fakeProvider.addRecurringCharge(preapprovalId, `fake-pay-card-cancel-${suffix}`, 'approved', amountCents);
+    await webhookService.process(recurringChargeNotification(charge.id, nextNotificationId()));
 
     const notificationId = nextNotificationId();
     await seedWebhookEventRow(notificationId);
-    await webhookService.process(parsedSubscriptionEvent('SubscriptionCanceled', subscriptionExternalId, notificationId));
+    await webhookService.process(preapprovalNotification('cancelled', preapprovalId, notificationId));
 
     const subscription = await asAdmin((tx) => tx.subscription.findUnique({ where: { id: subscriptionId } }));
     expect(subscription?.status).toBe('cancelled');
+  });
+
+  it('an AUTHORIZED preapproval is not a payment — it never marks the order paid, activates the subscription, or provisions anything', async () => {
+    const { orderId, subscriptionId, preapprovalId } = await createCardOrder();
+
+    const notificationId = nextNotificationId();
+    await seedWebhookEventRow(notificationId);
+    await webhookService.process(preapprovalNotification('authorized', preapprovalId, notificationId));
+
+    // The customer authorized FUTURE charges. No money has moved.
+    const order = await asAdmin((tx) => tx.order.findUnique({ where: { id: orderId } }));
+    expect(order?.status).toBe('pending');
+    expect(order?.paidAt).toBeNull();
+    expect(order?.provisioningStatus).toBe('pending'); // still waiting — never provisioned off an authorization
+
+    const subscription = await asAdmin((tx) => tx.subscription.findUnique({ where: { id: subscriptionId } }));
+    expect(subscription?.status).toBe('pending');
+
+    const payments = await asAdmin((tx) => tx.payment.findMany({ where: { orderId } }));
+    expect(payments).toHaveLength(0);
+
+    const event = await prisma.paymentWebhookEvent.findUnique({ where: { id: notificationId } });
+    expect(event?.status).toBe('processed'); // acknowledged, just not acted on as a payment
+  });
+
+  it('the SAME recurring charge delivered twice extends the period only once', async () => {
+    const { subscriptionId, amountCents, preapprovalId } = await createCardOrder();
+    const first = fakeProvider.addRecurringCharge(preapprovalId, `fake-pay-dedupe-first-${suffix}`, 'approved', amountCents);
+    await webhookService.process(recurringChargeNotification(first.id, nextNotificationId()));
+
+    const renewalId = `fake-pay-dedupe-renewal-${suffix}`;
+    fakeProvider.addRecurringCharge(preapprovalId, renewalId, 'approved', amountCents);
+
+    const firstDelivery = nextNotificationId();
+    await seedWebhookEventRow(firstDelivery);
+    await webhookService.process(recurringChargeNotification(renewalId, firstDelivery));
+    const afterFirst: any = await asAdmin((tx) => tx.subscription.findUnique({ where: { id: subscriptionId } }));
+
+    // Mercado Pago redelivers the same charge under a new notification
+    // id — the PAYMENT id is what makes this idempotent, not the
+    // notification id.
+    const secondDelivery = nextNotificationId();
+    await seedWebhookEventRow(secondDelivery);
+    await webhookService.process(recurringChargeNotification(renewalId, secondDelivery));
+
+    const afterSecond: any = await asAdmin((tx) => tx.subscription.findUnique({ where: { id: subscriptionId } }));
+    expect(new Date(afterSecond.currentPeriodEndsAt).getTime()).toBe(new Date(afterFirst.currentPeriodEndsAt).getTime());
+
+    const renewalOrders = await asAdmin((tx) => tx.order.findMany({ where: { subscriptionId, kind: 'plan_renewal' } }));
+    expect(renewalOrders).toHaveLength(1);
   });
 });
 
@@ -488,7 +495,7 @@ describe('Payments webhook controller (e2e)', () => {
   function webhookPost(body: unknown, token: string | null = 'valid') {
     return app.inject({
       method: 'POST',
-      url: '/api/webhooks/asaas',
+      url: '/api/webhooks/mercadopago',
       headers: token !== null ? { 'x-fake-token': token } : {},
       payload: body as Record<string, unknown>,
     });
@@ -512,7 +519,7 @@ describe('Payments webhook controller (e2e)', () => {
 
   it('rejects a webhook with an invalid token, and records nothing', async () => {
     const notificationId = `evt-badtoken-${suffix}`;
-    const res = await webhookPost({ id: notificationId, event: 'PAYMENT_CONFIRMED', payment: { id: 'pay-x' } }, 'wrong-token');
+    const res = await webhookPost({ id: notificationId, type: 'payment', action: 'payment.updated', data: { id: 'pay-x' } }, 'wrong-token');
     expect(res.statusCode).toBe(401);
 
     const event = await prisma.paymentWebhookEvent.findUnique({ where: { id: notificationId } });
@@ -521,20 +528,20 @@ describe('Payments webhook controller (e2e)', () => {
 
   it('a valid webhook is recorded and enqueued, responding 200 without processing it synchronously', async () => {
     const notificationId = `evt-valid-${suffix}`;
-    const res = await webhookPost({ id: notificationId, event: 'PAYMENT_CONFIRMED', payment: { id: 'pay-x' } });
+    const res = await webhookPost({ id: notificationId, type: 'payment', action: 'payment.updated', data: { id: 'pay-x' } });
     expect(res.statusCode).toBe(200);
 
     const event = await prisma.paymentWebhookEvent.findUnique({ where: { id: notificationId } });
     expect(event).not.toBeNull();
-    expect(event?.provider).toBe('asaas');
+    expect(event?.provider).toBe('mercadopago');
     expect(event?.status).toBe('received'); // never 'processed' here — no worker is running in this test process
   });
 
   it('a redelivered notification (same id) is still 200, without a second event row', async () => {
     const notificationId = `evt-redeliver-${suffix}`;
-    const first = await webhookPost({ id: notificationId, event: 'PAYMENT_CONFIRMED', payment: { id: 'pay-y' } });
+    const first = await webhookPost({ id: notificationId, type: 'payment', action: 'payment.updated', data: { id: 'pay-y' } });
     expect(first.statusCode).toBe(200);
-    const second = await webhookPost({ id: notificationId, event: 'PAYMENT_CONFIRMED', payment: { id: 'pay-y' } });
+    const second = await webhookPost({ id: notificationId, type: 'payment', action: 'payment.updated', data: { id: 'pay-y' } });
     expect(second.statusCode).toBe(200);
 
     const count = await prisma.paymentWebhookEvent.count({ where: { id: notificationId } });

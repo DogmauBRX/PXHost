@@ -1,7 +1,5 @@
 import {
-  BadRequestException,
   ConflictException,
-  ForbiddenException,
   HttpException,
   HttpStatus,
   Inject,
@@ -17,8 +15,7 @@ import { RedisService } from '../../core/redis/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { type SubscriptionBillingPeriod } from '../subscriptions/subscription-status';
-import { validateVariableValue } from '../servers/variable-rules';
-import { PAYMENT_PROVIDER, type PaymentProvider } from './payment-provider.interface';
+import { PAYMENT_PROVIDER, type PayerInput, type PaymentProvider } from './payment-provider.interface';
 import { PaymentsService } from './payments.service';
 import { ProvisioningQueueService } from './provisioning-queue.service';
 import { CreateCheckoutDto } from './dto/create-checkout.dto';
@@ -111,32 +108,28 @@ export class OrdersService {
   }
 
   /**
-   * `Order.externalReference` — kept as the checkout's own idempotency
-   * anchor even though the Asaas migration moved the webhook's PRIMARY
-   * lookup key to `Subscription.externalSubscriptionId`/`Payment.
-   * subscriptionExternalId` (see `PaymentsWebhookService`'s own doc
-   * comment). Still server-generated, never accepted from the client,
-   * still 192 bits — never plausibly guessable or reused.
+   * `Order.externalReference` — sent to Mercado Pago as the charge's own
+   * `external_reference` and echoed back on every notification about it.
+   * For a Pix charge it is the ONLY key the webhook matches a payment
+   * back by (a standalone Pix payment belongs to no preapproval), which
+   * is exactly why it is server-generated, never accepted from the
+   * client, and 192 bits — never plausibly guessable or reused.
    */
   private generateExternalReference(): string {
     return `ord_${randomBytes(24).toString('base64url')}`;
   }
 
   /**
-   * Creates (or reuses) this user's customer record at the payment
-   * provider — `PaymentCustomer` is the persistence, keyed `(provider,
-   * userId)`, so a customer is only ever created at Asaas once. A race
-   * between two concurrent checkouts for a user with no row yet is
-   * resolved by falling back to a re-read on a unique-constraint
-   * conflict, rather than creating two Asaas customers for one user.
+   * The payer, as every Mercado Pago call here wants it. There is no
+   * `ensureCustomer` step anymore: Mercado Pago requires no customer
+   * resource for either flow this platform uses — a Pix charge
+   * identifies the payer inline (`payer.email` + CPF) and a preapproval
+   * by `payer_email` alone. The `payment_customers` table stays in place
+   * holding the previous provider's ids (financial history is never
+   * deleted because the provider changed), simply unused from here on.
    */
-  private async ensureCustomer(profile: BillingProfile): Promise<string> {
-    const existing = await this.prisma.paymentCustomer.findFirst({
-      where: { provider: this.provider.name, userId: profile.userId },
-    });
-    if (existing) return existing.externalCustomerId;
-
-    const created = await this.provider.ensureCustomer({
+  private toPayerInput(profile: BillingProfile): PayerInput {
+    return {
       userId: profile.userId,
       email: profile.email,
       firstName: profile.firstName,
@@ -150,25 +143,18 @@ export class OrdersService {
         city: profile.city,
         state: profile.state,
       },
-    });
+    };
+  }
 
-    try {
-      await this.prisma.paymentCustomer.create({
-        data: { userId: profile.userId, provider: this.provider.name, externalCustomerId: created.externalCustomerId },
-      });
-    } catch (err) {
-      if (isUniqueConstraintError(err)) {
-        // Lost the race — another request created this user's
-        // PaymentCustomer row first. Their externalCustomerId is
-        // authoritative; the one Asaas just returned us is an orphaned
-        // duplicate customer at Asaas, harmless but unused.
-        const winner = await this.prisma.paymentCustomer.findFirst({ where: { provider: this.provider.name, userId: profile.userId } });
-        if (winner) return winner.externalCustomerId;
-      }
-      throw err;
-    }
-
-    return created.externalCustomerId;
+  /**
+   * Where Mercado Pago sends the customer back after they authorize a
+   * card subscription (`back_url`). UX ONLY — landing here proves
+   * nothing about the money, and the page it lands on polls the order's
+   * real status, which only a webhook can move to `paid`.
+   */
+  private checkoutReturnUrl(orderId: string): string {
+    const base = this.config.get<string>('PUBLIC_SITE_URL') ?? this.config.get<string>('PANEL_URL') ?? '';
+    return `${base.replace(/\/$/, '')}/client/orders/${orderId}`;
   }
 
   private async loadBillingProfile(tx: Prisma.TransactionClient, userId: string): Promise<BillingProfile> {
@@ -210,11 +196,9 @@ export class OrdersService {
    * a `pending` Subscription AND a `pending` Order in ONE transaction
    * (see `SubscriptionsService.createPendingSubscription`'s own doc
    * comment for why that has to be one transaction, not two), THEN —
-   * once that's safely committed — creates the Asaas customer (if
-   * needed) and the recurring subscription itself. Asaas's own
-   * scheduler generates every future charge from here on; this platform
-   * never calls a separate "renew" endpoint again (the Mercado-Pago-era
-   * `renewForUser` is gone — see this module's git history).
+   * once that's safely committed — starts the charge at Mercado Pago
+   * (`startProviderSubscription` below, which branches by payment
+   * method).
    *
    * Idempotency (payments plan §24): if this user already has a
    * `pending` Subscription with a `pending`, unexpired Order on the SAME
@@ -239,24 +223,16 @@ export class OrdersService {
       });
       if (duplicate) return { order: duplicate, reused: true as const };
 
-      const template = await tx.serverTemplate.findFirst({
-        where: { id: dto.templateId, deletedAt: null },
-        include: { group: true, variables: true },
-      });
-      if (!template) throw new NotFoundException('Template not found');
-      if (!template.isActive || !template.isPublic) {
-        throw new ConflictException('Template is not available for checkout');
-      }
-
-      const config = validateCheckoutVariables(template.variables, dto.variables ?? {});
-
       const subscription = await this.subscriptions.createPendingSubscription(tx, userId, plan);
       await tx.subscription.update({ where: { id: subscription.id }, data: { paymentMethod: dto.paymentMethod } });
 
+      // No template/serverName/variables to snapshot anymore — the
+      // customer hasn't chosen software yet (post-purchase setup flow,
+      // see CreateCheckoutDto's own doc comment). Only `plan` is ever
+      // read at provision time now (ProvisioningService.provisionOrder's
+      // 'setup_pending' branch); the legacy fields stay optional on
+      // OrderConfigSnapshot for orders placed before this change.
       const snapshot: OrderConfigSnapshot = {
-        serverName: dto.serverName,
-        template: { id: template.id, name: template.name, groupId: template.groupId, groupName: template.group.name },
-        variables: config,
         plan: { id: plan.id, name: plan.name, memoryMb: plan.memoryMb, diskMb: plan.diskMb, cpuLimitPercent: plan.cpuLimitPercent },
       };
 
@@ -292,7 +268,7 @@ export class OrdersService {
       actorId: userId,
       targetType: 'order',
       targetId: order.id,
-      metadata: { planId: dto.planId, templateId: dto.templateId, subscriptionId, amountCents: order.amountCents, paymentMethod: dto.paymentMethod },
+      metadata: { planId: dto.planId, subscriptionId, amountCents: order.amountCents, paymentMethod: dto.paymentMethod },
     });
 
     return this.startProviderSubscription(order.id, subscriptionId, {
@@ -307,20 +283,31 @@ export class OrdersService {
   }
 
   /**
-   * Creates the recurring subscription at Asaas and captures whatever
-   * the customer needs to complete the FIRST charge (a Pix QR shown
-   * in-page, or the `invoiceUrl` for a card charge — Asaas's own hosted
-   * checkout, per the "checkout hospedado" decision: card data never
-   * touches this platform at all). Deliberately NOT inside the
-   * transaction that created the order/subscription: an outbound HTTP
-   * call must never hold `lockPlan`'s advisory lock (the exact reason
-   * `ServersService.createOnNode` keeps agent dispatch out of ITS
-   * transaction too).
+   * Starts the charge at Mercado Pago. The two payment methods take
+   * genuinely different Mercado Pago products, because Mercado Pago has
+   * no single one that covers both:
    *
-   * `Subscription.autoRenew` is set only once the webhook confirms the
-   * first payment (see `PaymentsWebhookService`'s own doc comment) — the
-   * synchronous response here is trusted enough to FAIL the order on a
-   * provider error, never to activate anything itself.
+   *  - **Pix** → `POST /v1/payments`, ONE charge for ONE cycle, with the
+   *    QR returned inline and rendered in-page. Mercado Pago has no
+   *    recurring Pix product at all, so the subscription stays
+   *    `autoRenew: false` and `BillingCycleProcessor` generates each
+   *    next cycle's charge. There is no provider-side subscription
+   *    object, which is why `externalSubscriptionId` stays null for pix
+   *    — a Pix payment is matched back to its order by
+   *    `externalReference` instead (see `PaymentsWebhookService`).
+   *  - **Card** → `POST /preapproval`, a real recurring subscription
+   *    Mercado Pago schedules and charges itself. The customer
+   *    authorizes it on Mercado Pago's own hosted page (`init_point`),
+   *    so no card number, CVV or expiry ever reaches this platform.
+   *
+   * Deliberately NOT inside the transaction that created the order/
+   * subscription: an outbound HTTP call must never hold `lockPlan`'s
+   * advisory lock (the exact reason `ServersService.createOnNode` keeps
+   * agent dispatch out of ITS transaction too).
+   *
+   * Nothing here activates anything. The synchronous response is trusted
+   * enough to FAIL the order on a provider error, never to mark it paid
+   * — that stays exclusively the webhook's job.
    */
   private async startProviderSubscription(
     orderId: string,
@@ -337,39 +324,40 @@ export class OrdersService {
   ) {
     try {
       const profile = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => this.loadBillingProfile(tx, input.userId));
-      const externalCustomerId = await this.ensureCustomer(profile);
-
-      const gatewaySubscription = await this.provider.createSubscription({
-        externalCustomerId,
-        externalReference: input.externalReference,
-        description: input.description,
-        amountCents: input.amountCents,
-        currency: input.currency,
-        paymentMethod: input.paymentMethod,
-        billingPeriod: input.billingPeriod,
-        firstDueDate: new Date(),
-      });
-
-      await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
-        tx.subscription.update({ where: { id: subscriptionId }, data: { externalSubscriptionId: gatewaySubscription.id } }),
-      );
-
-      const charges = await this.provider.listSubscriptionPayments(gatewaySubscription.id);
-      const firstCharge = charges[0];
-      if (!firstCharge) {
-        throw new Error('Asaas subscription created with no initial charge');
-      }
-      await this.payments.recordFromGateway(orderId, firstCharge);
+      const payer = this.toPayerInput(profile);
 
       if (input.paymentMethod === 'pix') {
-        const qr = await this.provider.getPixQrCode(firstCharge.id);
+        const ttlMinutes = this.config.get<number>('CHECKOUT_ORDER_TTL_MINUTES') ?? 1440;
+        const charge = await this.provider.createPixCharge({
+          payer,
+          amountCents: input.amountCents,
+          currency: input.currency,
+          description: input.description,
+          externalReference: input.externalReference,
+          // Derived from the order, so a retried checkout request can
+          // never produce a second charge at Mercado Pago.
+          idempotencyKey: `order-${orderId}`,
+          expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
+        });
+        await this.payments.recordFromGateway(orderId, charge);
         await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
-          tx.order.update({ where: { id: orderId }, data: { pixQrCode: qr.qrCode, pixQrCodeBase64: qr.qrCodeBase64 } }),
+          tx.order.update({ where: { id: orderId }, data: { pixQrCode: charge.qrCode, pixQrCodeBase64: charge.qrCodeBase64 } }),
         );
       } else {
-        await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
-          tx.order.update({ where: { id: orderId }, data: { checkoutUrl: firstCharge.invoiceUrl } }),
-        );
+        const preapproval = await this.provider.createCardSubscription({
+          payer,
+          amountCents: input.amountCents,
+          currency: input.currency,
+          description: input.description,
+          externalReference: input.externalReference,
+          idempotencyKey: `order-${orderId}`,
+          billingPeriod: input.billingPeriod,
+          backUrl: this.checkoutReturnUrl(orderId),
+        });
+        await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
+          await tx.subscription.update({ where: { id: subscriptionId }, data: { externalSubscriptionId: preapproval.id } });
+          await tx.order.update({ where: { id: orderId }, data: { checkoutUrl: preapproval.initPoint, externalPreferenceId: preapproval.id } });
+        });
       }
     } catch (err) {
       // Never leave the Order (and the Subscription it holds a slot
@@ -385,10 +373,111 @@ export class OrdersService {
   }
 
   /**
-   * Cancels at the provider FIRST — Asaas stops generating any further
-   * charge for this subscription the moment this call succeeds,
-   * regardless of `atPeriodEnd` below. That flag only changes what
-   * happens to THIS platform's own `Subscription`/server:
+   * Generates the NEXT cycle's Pix charge for a subscription, called by
+   * `BillingCycleProcessor` as a period is about to turn over.
+   *
+   * This exists because Mercado Pago has no recurring Pix product at
+   * all: `/preapproval` is card-only. So for pix this platform is the
+   * scheduler — each cycle is its own `plan_renewal` order and its own
+   * `POST /v1/payments`, and an unpaid one simply expires (which is
+   * what moves the subscription to `past_due`, feeding the existing
+   * grace-period and suspension logic untouched).
+   *
+   * Idempotent in two independent layers, because a daily job WILL run
+   * twice eventually: it refuses to create a second charge while an
+   * unexpired pending renewal order exists, and the charge itself
+   * carries an `X-Idempotency-Key` derived from the order id, so even a
+   * retry that got past the first check cannot produce two charges at
+   * Mercado Pago.
+   *
+   * Returns the created order's id, or `null` when there was already a
+   * live renewal order (the common case on the second run of a day).
+   */
+  async createPixRenewalCharge(subscriptionId: string): Promise<string | null> {
+    const prepared = await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
+      const subscription = await tx.subscription.findFirst({ where: { id: subscriptionId } });
+      if (!subscription || subscription.paymentMethod !== 'pix') return null;
+
+      const existing = await tx.order.findFirst({
+        where: { subscriptionId, kind: 'plan_renewal', status: 'pending', expiresAt: { gt: new Date() } },
+      });
+      if (existing) return null;
+
+      // The Pix stays payable through the whole grace window — a charge
+      // generated days before the period ends must not expire before
+      // the customer is even late.
+      const graceDays = this.config.get<number>('BILLING_GRACE_DAYS') ?? 3;
+      const periodEnd = subscription.currentPeriodEndsAt ?? new Date();
+      const expiresAt = clampToMercadoPagoMaxExpiry(new Date(periodEnd.getTime() + graceDays * 24 * 60 * 60 * 1000));
+
+      const order = await tx.order.create({
+        data: {
+          externalReference: this.generateExternalReference(),
+          userId: subscription.userId,
+          planId: subscription.planId,
+          subscriptionId: subscription.id,
+          kind: 'plan_renewal',
+          // The price SNAPSHOTTED on the subscription, never the plan's
+          // current price — a plan repricing never silently changes what
+          // an existing customer is charged.
+          amountCents: subscription.priceCents,
+          currency: subscription.currency,
+          status: 'pending',
+          paymentMethod: 'pix',
+          provisioningStatus: 'not_required', // the server already exists; a renewal only extends the period
+          expiresAt,
+          config: {} as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      const profile = await this.loadBillingProfile(tx, subscription.userId);
+      const plan = await tx.plan.findFirst({ where: { id: subscription.planId }, select: { name: true } });
+      return { order, profile, planName: plan?.name ?? 'Assinatura', expiresAt };
+    });
+
+    if (!prepared) return null;
+    const { order, profile, planName, expiresAt } = prepared;
+
+    try {
+      const charge = await this.provider.createPixCharge({
+        payer: this.toPayerInput(profile),
+        amountCents: order.amountCents,
+        currency: order.currency,
+        description: planName,
+        externalReference: order.externalReference,
+        idempotencyKey: `order-${order.id}`,
+        expiresAt,
+      });
+      await this.payments.recordFromGateway(order.id, charge);
+      await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+        tx.order.update({ where: { id: order.id }, data: { pixQrCode: charge.qrCode, pixQrCodeBase64: charge.qrCodeBase64 } }),
+      );
+      await this.audit.record({
+        action: 'payment.renewal.created',
+        targetType: 'order',
+        targetId: order.id,
+        metadata: { subscriptionId, amountCents: order.amountCents, paymentId: charge.id },
+      });
+      return order.id;
+    } catch (err) {
+      // Fail the ORDER, never the subscription — the customer is not
+      // late yet, and the next daily run will try again with a fresh
+      // order. Leaving it `pending` instead would block that retry via
+      // the duplicate guard above.
+      await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.order.update({ where: { id: order.id }, data: { status: 'failed' } }));
+      this.logger.error(`pix renewal charge failed for subscription ${subscriptionId}: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Cancels at the provider FIRST — Mercado Pago stops charging the
+   * card the moment the preapproval is cancelled, regardless of
+   * `atPeriodEnd` below. (A pix subscription has no preapproval to
+   * cancel at all: nothing is scheduled at Mercado Pago, so cancelling
+   * simply means this platform stops generating the next cycle's
+   * charge.) That flag only changes what happens to THIS platform's own
+   * `Subscription`/server:
    *  - immediate (default): `Subscription` moves to `cancelled` now
    *    (`SubscriptionsService.cancelForUser` — the customer's only
    *    self-service transition).
@@ -406,11 +495,11 @@ export class OrdersService {
       try {
         await this.provider.cancelSubscription(subscription.externalSubscriptionId);
       } catch (err) {
-        // Never silently swallowed — if Asaas is unreachable, the
+        // Never silently swallowed — if Mercado Pago is unreachable, the
         // customer's cancel request still fails loudly rather than
         // leaving them believing they stopped a subscription that's
         // still actively billing.
-        this.logger.error(`failed to cancel subscription ${subscription.id} at Asaas: ${err instanceof Error ? err.message : String(err)}`);
+        this.logger.error(`failed to cancel subscription ${subscription.id} at Mercado Pago: ${err instanceof Error ? err.message : String(err)}`);
         throw err;
       }
     }
@@ -504,10 +593,11 @@ export class OrdersService {
    * Triggers the refund AT the provider — never marks the order/payment
    * `refunded` itself. That state change happens exclusively through
    * the SAME `PaymentRefunded` webhook path a customer-initiated or
-   * Asaas-side refund already goes through (`PaymentsWebhookService`'s
-   * own doc comment) — a second, admin-only code path setting
-   * `status: 'refunded'` directly would let this endpoint's belief
-   * about the refund's outcome diverge from what Asaas actually did.
+   * dashboard-side refund already goes through
+   * (`PaymentsWebhookService`'s own doc comment) — a second, admin-only
+   * code path setting `status: 'refunded'` directly would let this
+   * endpoint's belief about the refund's outcome diverge from what
+   * Mercado Pago actually did.
    */
   async refundAsAdmin(orderId: string, reason: string, actorId: string) {
     const order = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
@@ -534,10 +624,6 @@ export class OrdersService {
   }
 }
 
-function isUniqueConstraintError(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && 'code' in err && (err as { code?: string }).code === 'P2002';
-}
-
 /**
  * Validates checkout-submitted variable values against the SAME
  * `variable-rules.ts` validator `ServerVariablesService.update` already
@@ -549,23 +635,19 @@ function isUniqueConstraintError(err: unknown): boolean {
  * defaults filled in) — this is what `ProvisioningService` passes
  * straight to `ServersService.create`.
  */
-function validateCheckoutVariables(
-  templateVars: { envVariable: string; name: string; defaultValue: string; rules: string; isUserViewable: boolean; isUserEditable: boolean }[],
-  requested: Record<string, string>,
-): Record<string, string> {
-  const byEnvVar = new Map(templateVars.map((tv) => [tv.envVariable, tv]));
+// validateCheckoutVariables moved to
+// ../servers/variable-resolution.ts (resolveDeclaredVariables) —
+// checkout no longer collects a template/variables at all (see
+// CreateCheckoutDto's doc comment); ServerSetupService.complete is its
+// only caller now.
 
-  for (const [key, value] of Object.entries(requested)) {
-    const tv = byEnvVar.get(key);
-    if (!tv) throw new BadRequestException(`Variável desconhecida: ${key}`);
-    if (!tv.isUserViewable || !tv.isUserEditable) throw new ForbiddenException(`Variável não configurável: ${key}`);
-    const error = validateVariableValue(value, tv.rules);
-    if (error) throw new BadRequestException(`${tv.name}: ${error}`);
-  }
-
-  const resolved: Record<string, string> = {};
-  for (const tv of templateVars) {
-    resolved[tv.envVariable] = requested[tv.envVariable] ?? tv.defaultValue;
-  }
-  return resolved;
+/**
+ * Mercado Pago refuses a `date_of_expiration` more than 30 days out.
+ * A long billing period plus a grace window can exceed that, so the
+ * charge is clamped: the Pix expires earlier than the grace window
+ * ends, and the next daily run simply issues a fresh one.
+ */
+function clampToMercadoPagoMaxExpiry(requested: Date): Date {
+  const max = new Date(Date.now() + 29 * 24 * 60 * 60 * 1000);
+  return requested > max ? max : requested;
 }

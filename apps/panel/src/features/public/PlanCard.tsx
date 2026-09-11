@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Check, Sparkles } from 'lucide-react';
+import { Check, Cpu, Rocket, Server, Sparkles } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { PublicPlan } from '@/shared/api/types';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { Badge, Button, Card, CardBody } from '@/ui/primitives';
@@ -17,6 +18,18 @@ const AVAILABILITY_TONE: Record<PublicPlan['availability']['status'], 'ok' | 'wa
   limited: 'warn',
   sold_out: 'fail',
 };
+
+// A quick visual "which tier is this" cue on the hero band, ranked purely
+// by RAM — there's no separate tier field on Plan, and every plan here
+// already competes on resources, so it's the one number that reliably
+// orders "entry" -> "mid" -> "top" regardless of what an admin names or
+// prices a plan. Thresholds picked against this deployment's real plans
+// (4/6/12 GB) with headroom on both sides, not tied to any specific slug.
+function tierIcon(memoryMb: number): LucideIcon {
+  if (memoryMb < 5120) return Cpu;
+  if (memoryMb < 10240) return Server;
+  return Rocket;
+}
 
 /**
  * One plan card — the atom of both the public grid (`PublicPlansPage`)
@@ -56,8 +69,10 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
   return (
     <Card className={`flex flex-col overflow-hidden ${highlight ? 'border-accent shadow-md ring-1 ring-accent/30' : ''}`}>
       {/* Decorative brand-gradient band, same CircuitPattern motif the
-          sidebar header uses (sidebar-brand__circuit) — purely visual,
-          carries no plan data, so it's identical across every card. */}
+          sidebar header uses (sidebar-brand__circuit). The tier glyph is
+          the one thing here that isn't purely decorative — it's a quick
+          "which of these is bigger" read at a glance, before a visitor
+          even reaches the specs list below. */}
       <div className="plan-card-hero relative flex h-24 shrink-0 items-start justify-between p-3">
         <CircuitPattern className="plan-card-hero__circuit" />
         <div className="relative">
@@ -71,6 +86,7 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
         <div className="relative">
           <Badge tone={AVAILABILITY_TONE[plan.availability.status]}>{AVAILABILITY_LABEL[plan.availability.status]}</Badge>
         </div>
+        <TierGlyph memoryMb={plan.memoryMb} />
       </div>
 
       <CardBody className="flex flex-1 flex-col gap-5">
@@ -103,6 +119,16 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
         <div className="mt-auto">{cta}</div>
       </CardBody>
     </Card>
+  );
+}
+
+/** The hero band's tier glyph — a frosted-glass circle so a light icon stays legible straight on the gradient, no drop shadow needed. Sits bottom-left, clear of the badges pinned to the two top corners. */
+function TierGlyph({ memoryMb }: { memoryMb: number }) {
+  const Icon = tierIcon(memoryMb);
+  return (
+    <div className="absolute bottom-3 left-3 flex h-11 w-11 items-center justify-center rounded-full bg-white/15 ring-1 ring-inset ring-white/25 backdrop-blur-sm">
+      <Icon className="h-5 w-5 text-white" aria-hidden="true" strokeWidth={2} />
+    </div>
   );
 }
 

@@ -9,12 +9,33 @@ import { CapacityService } from '../capacity/capacity.service';
 import { assertNodeFits, assertSlots, nodeAcceptsNewServers, resolveNodeCapacity } from '../capacity/capacity.math';
 import { deriveHealthStatus } from '../nodes/nodes.service';
 import { NodeSchedulerService, SchedulerCandidate } from '../scheduler/node-scheduler.service';
-import { CreateServerDto } from './dto/server.dto';
+import { CreateServerDto, CreateSetupPendingServerInput } from './dto/server.dto';
 import { generateShortId } from './short-id';
 import { validateVariableValue } from './variable-rules';
 
-const DEFAULT_INSTALL_IMAGE = 'ghcr.io/pxhost/installers:debian';
-const DEFAULT_INSTALL_ENTRYPOINT = 'bash';
+// Exported for ServerSetupService, which builds the exact same
+// CreateAgentServerRequest shape for the post-setup dispatch — the
+// schema column already defaults to DEFAULT_INSTALL_IMAGE, so this is
+// belt-and-suspenders for a row written before that default existed, not
+// a real fallback path either caller expects to hit.
+export const DEFAULT_INSTALL_IMAGE = 'ghcr.io/pxhost/installers:debian';
+export const DEFAULT_INSTALL_ENTRYPOINT = 'bash';
+
+/**
+ * The subset of `CreateServerDto` that `createOnNode`'s reservation
+ * transaction actually needs — `CreateServerDto` (admin/legacy path,
+ * `template` resolved by the caller) and `CreateSetupPendingServerInput`
+ * (post-purchase path, no template yet) both satisfy this structurally,
+ * with no cast required at either call site.
+ */
+interface CreateOnNodeInput {
+  ownerId: string;
+  planId: string;
+  name?: string;
+  variables?: Record<string, string>;
+  allocationId?: string;
+  attachSubscriptionId?: string;
+}
 
 /** Default page size for `ServersService.list` when the caller doesn't pass `limit` — bounds what used to be a fully unbounded query (every server in the system, admin-wide) to something a request can always serve quickly. Mirrors `ListUsersDto`'s own 100 default/200 cap, sized a bit larger since a server row is lighter than a user row. */
 const DEFAULT_LIST_LIMIT = 200;
@@ -118,24 +139,73 @@ export class ServersService {
     const [, dockerImage] = Object.entries(images)[0] ?? [undefined, undefined];
     if (!dockerImage) throw new ConflictException('Template has no docker images configured');
 
-    if (dto.nodeId) {
-      return this.createOnNode(dto, dto.nodeId, template, dockerImage, null);
-    }
+    return this.withSchedulerRetry(dto.planId, dto.nodeId, (nodeId, candidates) =>
+      this.createOnNode(dto, nodeId, { template, dockerImage }, candidates),
+    );
+  }
+
+  /**
+   * Post-purchase provisioning (payments plan): reserves a plan slot and
+   * node RAM/disk/CPU/allocation/uid for a subscription — same
+   * capacity-checked transaction as `create`/`createOnNode` — but does
+   * NOT choose a software/version yet and never dispatches to the agent.
+   * `Server.status` starts at 'setup_pending', with
+   * templateId/dockerImage/startupCommand all NULL (see schema's
+   * `servers_setup_consistency` CHECK). The customer completes setup
+   * later via `ServerSetupService.complete`, the only path that ever
+   * moves a 'setup_pending' row forward — nothing here ever talks to the
+   * agent, which is exactly what keeps CPU/RAM at zero until then.
+   */
+  async createSetupPending(input: CreateSetupPendingServerInput): Promise<{ id: string; shortId: string; status: string }> {
+    const owner = await this.prisma.user.findFirst({ where: { id: input.ownerId, deletedAt: null } });
+    if (!owner) throw new NotFoundException('Owner not found');
+
+    const planExists = await this.prisma.plan.findFirst({ where: { id: input.planId, deletedAt: null }, select: { id: true } });
+    if (!planExists) throw new NotFoundException('Plan not found');
+
+    return this.withSchedulerRetry(input.planId, input.nodeId, (nodeId, candidates) =>
+      this.createOnNode(input, nodeId, null, candidates),
+    );
+  }
+
+  /**
+   * Explicit vs. automatic node selection, shared by `create` and
+   * `createSetupPending` — extracted so the retry policy (capacity plan
+   * Fase 5's own doc comment, reproduced below) can never drift between
+   * the two callers:
+   *
+   * - **Explicit `nodeId`**: goes straight to `attempt`, once, no retry.
+   *   Silently reallocating a server the admin deliberately pinned to a
+   *   node would be worse than the error.
+   * - **Automatic**: `NodeSchedulerService.selectNode` picks a candidate
+   *   (unlocked — a hint, see its own doc comment), `attempt` (which
+   *   re-verifies everything for real under lock) runs. If THAT fails
+   *   for a reason other than `NO_SLOTS`, the chosen node is excluded
+   *   and selection runs again, in a brand-new transaction, up to
+   *   `MAX_SCHEDULER_ATTEMPTS` times. `NO_SLOTS` is never retried — the
+   *   plan is out of stock globally, and no other node changes that.
+   */
+  private async withSchedulerRetry<T>(
+    planId: string,
+    nodeId: string | undefined,
+    attempt: (nodeId: string, schedulerCandidates: SchedulerCandidate[] | null) => Promise<T>,
+  ): Promise<T> {
+    if (nodeId) return attempt(nodeId, null);
 
     const excluded: string[] = [];
-    for (let attempt = 1; attempt <= MAX_SCHEDULER_ATTEMPTS; attempt++) {
-      const selection = await this.scheduler.selectNode(dto.planId, { excludeNodeIds: excluded });
+    for (let i = 1; i <= MAX_SCHEDULER_ATTEMPTS; i++) {
+      const selection = await this.scheduler.selectNode(planId, { excludeNodeIds: excluded });
       if (!selection.selected) {
         throw new ConflictException('No eligible node found for this plan');
       }
       try {
-        return await this.createOnNode(dto, selection.selected.nodeId, template, dockerImage, selection.candidates);
+        return await attempt(selection.selected.nodeId, selection.candidates);
       } catch (err) {
         if (err instanceof ConflictException && typeof err.message === 'string' && err.message.startsWith('NO_SLOTS:')) {
           throw err; // plan is out of stock everywhere — trying another node never helps
         }
         excluded.push(selection.selected.nodeId);
-        if (attempt === MAX_SCHEDULER_ATTEMPTS) throw err;
+        if (i === MAX_SCHEDULER_ATTEMPTS) throw err;
       }
     }
     // Unreachable — the loop above always returns or throws — but TypeScript
@@ -163,10 +233,12 @@ export class ServersService {
    * must never hold the node's capacity lock.
    */
   private async createOnNode(
-    dto: CreateServerDto,
+    dto: CreateOnNodeInput,
     nodeId: string,
-    template: ServerTemplate,
-    dockerImage: string,
+    // NULL for the post-purchase path (createSetupPending): the row is
+    // created with status 'setup_pending' and no template/variables at
+    // all, and dispatchToAgent below is skipped entirely.
+    templateContext: { template: ServerTemplate; dockerImage: string } | null,
     schedulerCandidates: SchedulerCandidate[] | null,
   ): Promise<{ id: string; shortId: string; status: string }> {
     const created = await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
@@ -234,12 +306,16 @@ export class ServersService {
           shortId,
           ownerId: dto.ownerId,
           nodeId,
-          templateId: dto.templateId,
+          templateId: templateContext?.template.id ?? null,
           planId: dto.planId,
           uid,
-          name: dto.name,
-          dockerImage,
-          startupCommand: template.startupCommand,
+          // A post-purchase reservation has no customer-chosen name yet
+          // (that's the whole point of `setup_pending`) — `shortId` is
+          // already unique and human-legible enough to stand in until
+          // ServerSetupService.complete overwrites it for real.
+          name: dto.name ?? `Servidor ${shortId}`,
+          dockerImage: templateContext?.dockerImage ?? null,
+          startupCommand: templateContext?.template.startupCommand ?? null,
           cpuLimitPercent: plan.cpuLimitPercent,
           memoryMb: plan.memoryMb,
           swapMb: plan.swapMb,
@@ -250,7 +326,7 @@ export class ServersService {
           maxBackups: plan.maxBackups,
           maxAllocations: plan.maxAllocations,
           maxSchedules: plan.maxSchedules,
-          status: 'installing',
+          status: templateContext ? 'installing' : 'setup_pending',
         },
       });
 
@@ -259,16 +335,32 @@ export class ServersService {
       if (dto.attachSubscriptionId) {
         // Scoped to `userId: dto.ownerId` — attaching a server to a
         // subscription belonging to someone ELSE would silently hand
-        // one customer's paid slot to another customer's server. The
-        // unique index on `subscriptions.server_id` is the hard
-        // backstop (a subscription already attached to a different
-        // server raises here, not silently overwrites).
+        // one customer's paid slot to another customer's server.
         const subscription = await tx.subscription.findFirst({ where: { id: dto.attachSubscriptionId, userId: dto.ownerId } });
         if (!subscription) throw new NotFoundException('Subscription not found for attach');
-        await tx.subscription.update({ where: { id: subscription.id }, data: { serverId: server.id } });
+        // Compare-and-swap, not a plain update: a bare SELECT-then-UPDATE
+        // has a real race window inside READ COMMITTED (nothing above
+        // takes a row lock on `subscription`), and the UNIQUE index on
+        // `subscriptions.server_id` does NOT protect this direction — it
+        // stops two subscriptions pointing at the same server, not the
+        // same subscription being re-pointed at a second one. The
+        // `serverId: null` guard in the WHERE clause is re-evaluated at
+        // UPDATE time under the row lock the UPDATE itself takes, so of
+        // two concurrent attaches exactly one gets `count === 1`.
+        const attach = await tx.subscription.updateMany({
+          where: { id: subscription.id, serverId: null },
+          data: { serverId: server.id },
+        });
+        if (attach.count === 0) {
+          throw new ConflictException('SUBSCRIPTION_ALREADY_HAS_SERVER: this subscription is already attached to a server');
+        }
       }
 
-      const templateVars = await tx.templateVariable.findMany({ where: { templateId: dto.templateId } });
+      if (!templateContext) {
+        return { server, uid, allocation, declaredNames: [] as string[], resolvedValues: {} as Record<string, string> };
+      }
+
+      const templateVars = await tx.templateVariable.findMany({ where: { templateId: templateContext.template.id } });
       const declaredNames = templateVars.map((v) => v.envVariable);
       const requested = dto.variables ?? {};
 
@@ -307,7 +399,7 @@ export class ServersService {
       metadata: {
         ownerId: dto.ownerId,
         nodeId,
-        templateId: dto.templateId,
+        templateId: templateContext?.template.id ?? null,
         planId: dto.planId,
         // Only present for automatic selection — an explicit `nodeId`
         // never invokes the scheduler at all. This is the only place
@@ -317,11 +409,18 @@ export class ServersService {
       },
     });
 
+    if (!templateContext) {
+      // No template chosen yet — nothing to dispatch. This is the entire
+      // reason CPU/RAM stay at zero for a 'setup_pending' server: the
+      // agent never hears about it until ServerSetupService.complete.
+      return { id: created.server.id, shortId: created.server.shortId, status: created.server.status };
+    }
+
     await this.dispatchToAgent(created.server.id, nodeId, {
       uuid: created.server.id,
       uid: created.uid,
-      image: dockerImage,
-      startupTemplate: template.startupCommand,
+      image: templateContext.dockerImage,
+      startupTemplate: templateContext.template.startupCommand,
       stopSignal: undefined,
       declaredVariables: created.declaredNames,
       variables: created.resolvedValues,
@@ -333,18 +432,61 @@ export class ServersService {
         ioWeight: created.server.ioWeight,
       },
       allocations: [{ ip: created.allocation.ip, port: created.allocation.port, primary: true }],
-      installImage: template.installImage || DEFAULT_INSTALL_IMAGE,
-      installEntrypoint: template.installEntrypoint || DEFAULT_INSTALL_ENTRYPOINT,
-      installScript: template.installScript,
+      installImage: templateContext.template.installImage || DEFAULT_INSTALL_IMAGE,
+      installEntrypoint: templateContext.template.installEntrypoint || DEFAULT_INSTALL_ENTRYPOINT,
+      installScript: templateContext.template.installScript,
     });
 
     return { id: created.server.id, shortId: created.server.shortId, status: created.server.status };
   }
 
-  private async dispatchToAgent(serverId: string, nodeId: string, payload: CreateAgentServerRequest): Promise<void> {
+  /**
+   * Public (not just for `createOnNode`) so `ServerSetupService.complete`
+   * — the post-purchase setup/retry path — dispatches through the exact
+   * same failure handling, rather than reimplementing it.
+   *
+   * `options.rethrow`: `createOnNode`'s admin/legacy callers have never
+   * seen a dispatch failure as an HTTP error — they always got their
+   * 200/201 back with a server that then silently showed
+   * `install_failed`, and that behavior is preserved by leaving this
+   * `false` by default. `ServerSetupService.complete` passes `true`: the
+   * customer's "Tentar novamente" needs a REAL error, not a false
+   * success, per the retry requirement (see that service's own doc
+   * comment).
+   */
+  async dispatchToAgent(
+    serverId: string,
+    nodeId: string,
+    payload: CreateAgentServerRequest,
+    options?: { rethrow?: boolean },
+  ): Promise<void> {
     try {
       await this.agent.createServer(nodeId, payload);
     } catch (err) {
+      // A 409 `SERVER_EXISTS` means the agent's own in-memory Register
+      // guard (agent/internal/srv/manager.go) already holds this exact
+      // UUID — i.e. an earlier call for this same server (this one or a
+      // prior attempt whose response the panel never received) already
+      // got through. Never a duplicate: Docker's own deterministic
+      // container name (`gxhost-<uuid>`) plus this in-memory guard are
+      // what make retrying `POST /setup` safe in the first place (see
+      // ServerSetupService's doc comment). Treated as SUCCESS, not
+      // failure — the row is left exactly as it is (`installing`), and
+      // the agent's own `install-completed`/`install-failed` callback
+      // (reportInstallResult, no status precondition) is what reconciles
+      // it for real. Overwriting to `install_failed` here would be
+      // actively wrong: it could race ahead of — or fight — that later,
+      // authoritative callback.
+      if (err instanceof ConflictException && err.message.includes('SERVER_EXISTS')) {
+        await this.audit.record({
+          action: 'server.create.dispatch_already_registered',
+          targetType: 'server',
+          targetId: serverId,
+          metadata: {},
+        });
+        return;
+      }
+
       // The create TRANSACTION already committed — the server row exists
       // with allocation/limits reserved. A dispatch failure (agent
       // unreachable, bad request) is reported the same way an install
@@ -360,6 +502,7 @@ export class ServersService {
         targetId: serverId,
         metadata: { error: (err as Error).message },
       });
+      if (options?.rethrow) throw err;
     }
   }
 

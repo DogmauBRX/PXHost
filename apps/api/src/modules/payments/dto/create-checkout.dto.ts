@@ -1,35 +1,30 @@
-import { IsIn, IsObject, IsOptional, IsString, IsUUID, Length } from 'class-validator';
+import { IsIn, IsUUID } from 'class-validator';
 
 /**
  * Everything the customer actually chooses at checkout. Notably absent:
  * price, RAM, CPU, disk, or anything else the backend derives from
- * `planId`/`templateId` under lock (OrdersService.createCheckoutOrder)
- * — the checkout security rule this whole feature is built around.
+ * `planId` under lock (OrdersService.createCheckoutOrder) — the
+ * checkout security rule this whole feature is built around.
  *
- * No card-token field since the Asaas migration ("checkout hospedado"
- * decision) — card data is entered on ASAAS'S OWN hosted checkout page
- * (`Order.checkoutUrl`), never tokenized in this platform's frontend at
- * all. `paymentMethod` alone is enough for the backend to create the
- * right kind of Asaas subscription.
+ * Also notably absent as of the post-purchase setup flow: `templateId`,
+ * `serverName`, `variables` — the customer no longer picks software at
+ * checkout at all. Every paid order provisions a bare, 'setup_pending'
+ * server (ServersService.createSetupPending); the customer chooses
+ * name/software/version afterward, in the panel, via
+ * ServerSetupService.complete. See OrderConfigSnapshot's own doc comment
+ * for why those fields still exist there (optional) even though nothing
+ * here collects them anymore.
+ *
+ * No card-token field: card data is entered on MERCADO PAGO'S OWN hosted
+ * page (`Order.checkoutUrl`, their `init_point`), never tokenized in
+ * this platform's frontend at all. `paymentMethod` alone is enough for
+ * the backend to pick the right Mercado Pago product — a one-off pix
+ * charge (`POST /v1/payments`) or a recurring card preapproval
+ * (`POST /preapproval`).
  */
 export class CreateCheckoutDto {
   @IsUUID()
   planId!: string;
-
-  @IsUUID()
-  templateId!: string;
-
-  @IsString()
-  @Length(1, 191)
-  serverName!: string;
-
-  // Only variables the template marks BOTH isUserViewable and
-  // isUserEditable are ever accepted — OrdersService rejects anything
-  // else outright (same posture ServerVariablesService.update already
-  // takes for a customer editing an existing server's variables).
-  @IsOptional()
-  @IsObject()
-  variables?: Record<string, string>;
 
   @IsIn(['pix', 'card'])
   paymentMethod!: 'pix' | 'card';

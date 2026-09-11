@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ServersService } from './servers.service';
 import { ClientServersService } from './client-servers.service';
 import { ServerVariablesService } from './server-variables.service';
+import { ServerSetupService } from './server-setup.service';
 import { ServersController } from './servers.controller';
 import { ClientServersController } from './client-servers.controller';
 import { ServerVariablesController } from './server-variables.controller';
@@ -13,10 +14,11 @@ import { DatabasesModule } from '../databases/databases.module';
 import { ActivityModule } from '../activity/activity.module';
 import { CapacityModule } from '../capacity/capacity.module';
 import { SchedulerModule } from '../scheduler/scheduler.module';
+import { PublicModule } from '../public/public.module';
 
 @Module({
-  imports: [NodesModule, AuditModule, AuthorizationModule, DatabasesModule, ActivityModule, CapacityModule, SchedulerModule],
-  providers: [ServersService, ClientServersService, ServerVariablesService],
+  imports: [NodesModule, AuditModule, AuthorizationModule, DatabasesModule, ActivityModule, CapacityModule, SchedulerModule, PublicModule],
+  providers: [ServersService, ClientServersService, ServerVariablesService, ServerSetupService],
   controllers: [ServersController, ClientServersController, ServerVariablesController, RemoteServersController],
   exports: [ServersService, ClientServersService],
 })

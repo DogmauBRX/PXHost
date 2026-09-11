@@ -1,55 +1,71 @@
 /**
- * The ONE seam between this platform's own order/payment model and
- * whichever external provider processes money. Every other service in
- * this module (OrdersService, the webhook handler, ProvisioningService,
- * the billing-cycle job) depends on THIS interface and the
- * `@Inject(PAYMENT_PROVIDER)` token — never on `AsaasClient` directly,
- * never on an HTTP call to Asaas's API. Adding a second provider later
- * (Stripe, Pagar.me — the explicit reason this interface exists) means
- * writing a new class that implements it and changing one binding in
- * `payments.module.ts`; nothing else in the platform changes.
+ * The ONE seam between this platform's own order/payment model and the
+ * external provider that processes money. Every other service in this
+ * module (OrdersService, the webhook handler, the billing queues)
+ * depends on THIS interface and the `@Inject(PAYMENT_PROVIDER)` token —
+ * never on `MercadoPagoClient` directly, never on an HTTP call to
+ * Mercado Pago's API.
+ *
+ * There is exactly ONE implementation (`MercadoPagoProvider`). The seam
+ * is not here to keep a second provider alive — it exists because it is
+ * what keeps every HTTP detail in one file and lets the e2e suite inject
+ * a fake without a network.
  *
  * Two different vocabularies are deliberately mixed in this file, and
  * that split is intentional, not sloppy:
  *  - INPUT fields (`paymentMethod`, `billingPeriod`) use THIS platform's
- *    own vocabulary — the domain never has to know Asaas calls a Pix
- *    subscription `billingType: 'PIX'` or a monthly cycle `'MONTHLY'`.
- *    Each concrete provider (`AsaasProvider`) translates in one place.
+ *    own vocabulary — the domain never has to know Mercado Pago calls a
+ *    monthly cycle `frequency: 1, frequency_type: 'months'`.
  *  - OUTPUT `status` fields stay the PROVIDER's own vocabulary,
- *    UNTRANSLATED — `PaymentsService.recordFromGateway` and
- *    `PaymentsWebhookService` are the only places that map a status
- *    onto this platform's own order/subscription states. Translating a
- *    provider's status into our own enum at the boundary would just
- *    move the coupling one file over, not remove it.
+ *    UNTRANSLATED (`approved`, `rejected`, `authorized`, ...). The one
+ *    place that interprets them is `classifyPayment`/
+ *    `classifySubscription` below, which is implemented BY the provider
+ *    — so provider vocabulary never leaks into the domain, and the
+ *    domain's own `InternalPaymentEvent` stays a closed union.
  *
- * Every amount in this file is integer CENTS — Asaas's own API takes a
- * decimal `value` (e.g. `75.56`), never cents; that conversion happens
- * exactly once, inside `AsaasProvider`, via `money.ts`. Nothing outside
- * this module should ever need to know that.
+ * Every amount in this file is integer CENTS — Mercado Pago's API takes
+ * a decimal `transaction_amount` (e.g. `75.56`), never cents; that
+ * conversion happens exactly once, inside `MercadoPagoProvider`, via
+ * `money.ts`.
  */
 
 export const PAYMENT_PROVIDER = Symbol('PAYMENT_PROVIDER');
 
 /**
- * A normalized webhook event, after this platform's own doctrine has
- * already been applied to the provider's raw event name. Kept as a
- * closed union (not a passthrough string) specifically so a switch over
- * it is exhaustively checked by the compiler — an event this platform
- * doesn't yet handle must be an explicit, deliberate choice (mapped to
- * `'Ignored'`), never a typo that silently falls through.
+ * Thrown when the PROVIDER itself rejects a request as unprocessable in
+ * a way the caller can act on (a payer the provider refuses, a
+ * preapproval that no longer exists). Generic on purpose so
+ * `OrdersService` never imports anything Mercado-Pago-shaped.
+ */
+export class PaymentProviderRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly providerCode: string | null = null,
+  ) {
+    super(message);
+    this.name = 'PaymentProviderRequestError';
+  }
+}
+
+/**
+ * The platform's own outcome vocabulary, derived from a re-fetched
+ * resource — never from a webhook's event name (Mercado Pago only ever
+ * says `payment.created` / `payment.updated`; the truth is the
+ * resource's own `status`). Kept as a closed union so the switch in
+ * `PaymentsWebhookService.process` is exhaustively checked by the
+ * compiler: an outcome this platform doesn't handle must be an explicit
+ * `'Ignored'`, never a typo that silently falls through.
  */
 export type InternalPaymentEvent =
-  | 'PaymentCreated'
   | 'PaymentConfirmed'
-  | 'PaymentOverdue'
+  | 'PaymentPending'
+  | 'PaymentFailed'
+  | 'PaymentCanceled'
   | 'PaymentRefunded'
   | 'PaymentChargeback'
-  | 'PaymentCanceled'
-  | 'PaymentRestored'
-  | 'PaymentFailed'
-  | 'PaymentPending'
-  | 'SubscriptionCanceled'
   | 'SubscriptionSynced'
+  | 'SubscriptionCanceled'
   | 'Ignored';
 
 export interface PayerAddressInput {
@@ -63,12 +79,13 @@ export interface PayerAddressInput {
 }
 
 /**
- * Enough to create (or find) the provider's own customer record for a
- * user. Every field comes from the billing profile
- * `SubscriptionsService.createPendingSubscription` already requires to
- * be complete before checkout — nothing is re-collected.
+ * The payer, straight off the billing profile checkout already requires
+ * to be complete. Mercado Pago has no mandatory customer resource for
+ * either flow used here — a Pix charge identifies the payer inline
+ * (`payer.email` + CPF) and a preapproval by `payer_email` alone — so
+ * there is deliberately no `ensureCustomer` on this interface.
  */
-export interface EnsureCustomerInput {
+export interface PayerInput {
   userId: string;
   email: string;
   firstName: string | null;
@@ -78,65 +95,85 @@ export interface EnsureCustomerInput {
   address: PayerAddressInput;
 }
 
-/**
- * Creates a recurring subscription — the ONLY way this platform charges
- * a customer since the Asaas migration (Checkout Bricks' one-off-Pix-
- * plus-manual-renewal model and the separate card-preapproval model are
- * both gone; Asaas's `POST /v3/subscriptions` acts as its own scheduler
- * for EITHER payment method, generating a new charge every cycle on its
- * own and notifying this platform by webhook — see
- * `PaymentsWebhookService`'s own doc comment for what happens on each
- * notification).
- */
-export interface CreateSubscriptionInput {
-  externalCustomerId: string;
-  /** Becomes the provider's own `externalReference` on the SUBSCRIPTION — the only key `getSubscription`/webhook lookups by subscription are allowed to use. Same generator as `Order.externalReference` (`OrdersService.generateExternalReference`). */
-  externalReference: string;
-  /** Human-readable line shown on the buyer's statement/receipt (the plan's name). */
-  description: string;
-  /** Charged every cycle — the SAME amount each time. */
+interface ChargeInputBase {
+  payer: PayerInput;
+  /** Charged amount, integer cents. */
   amountCents: number;
   /** ISO 4217, e.g. 'BRL'. */
   currency: string;
-  paymentMethod: 'pix' | 'card';
-  billingPeriod: 'monthly' | 'quarterly' | 'semiannual' | 'annual';
-  /** When the FIRST charge should be generated — always "today" in practice, since checkout is synchronous from the customer's point of view. */
-  firstDueDate: Date;
+  /** Human-readable line shown to the buyer (the plan's name). */
+  description: string;
+  /** `Order.externalReference` — server-generated, 192 bits, never accepted from the client. The ONLY key a Pix notification is matched back by. */
+  externalReference: string;
+  /**
+   * Deterministic per-order key sent as Mercado Pago's own
+   * `X-Idempotency-Key`, so a retried POST can never create a second
+   * charge at the provider (their docs call this out explicitly for
+   * both payments and refunds).
+   */
+  idempotencyKey: string;
 }
 
 /**
- * `status` is the provider's own vocabulary for a subscription
- * (`ACTIVE`, `INACTIVE`, `EXPIRED`, ...) — untranslated, same posture
- * `GatewayPayment.status` already takes. `PaymentsWebhookService` is
- * the one place that maps it onto `Subscription.status`.
+ * A one-off Pix charge (`POST /v1/payments`). Mercado Pago has NO
+ * recurring Pix product — `/preapproval` is card-only — so every Pix
+ * cycle is its own charge, generated by `BillingCycleProcessor` when the
+ * period is about to turn over. That is exactly what `Subscription
+ * .autoRenew = false` has always meant on this platform.
  */
-export interface GatewaySubscription {
-  id: string;
-  status: string;
-  externalReference: string | null;
-  nextDueDate: Date | null;
-  raw: unknown;
+export interface CreatePixChargeInput extends ChargeInputBase {
+  /** `date_of_expiration`. Mercado Pago accepts 30 minutes to 30 days out. */
+  expiresAt: Date;
+}
+
+/** A recurring card subscription (`POST /preapproval`) — Mercado Pago itself schedules and charges every cycle from here on. */
+export interface CreateCardSubscriptionInput extends ChargeInputBase {
+  billingPeriod: 'monthly' | 'quarterly' | 'semiannual' | 'annual';
+  /** Where Mercado Pago sends the customer back after they authorize. UX only — authorization is confirmed by webhook, never by this redirect. */
+  backUrl: string;
 }
 
 /**
- * The subset of a provider payment this platform actually persists
- * (`payments` table) — never card data, never anything beyond what
- * `raw` (a sanitized snapshot for admin diagnosis) already carries.
+ * The subset of a provider payment this platform persists (`payments`
+ * table) — never card data, never anything beyond what `raw` (a
+ * sanitized snapshot for admin diagnosis) already carries. `status` is
+ * Mercado Pago's own vocabulary, untranslated (see this file's header).
  */
 export interface GatewayPayment {
   id: string;
   status: string;
   statusDetail: string | null;
-  /** The provider's own subscription id this charge belongs to (Asaas's `payment.subscription`) — the PRIMARY key `PaymentsWebhookService` uses to find this platform's `Subscription`/`Order`. Only the very FIRST charge of a subscription is also reachable by `externalReference` (it's the one `OrdersService` itself created); every renewal charge Asaas generates on its own carries no reference back to a specific `Order` at all — only to the `Subscription`, which is exactly why lookups go through this field, never `externalReference`, once a subscription exists. */
+  /** The preapproval id this charge belongs to, when it is a recurring card charge. Null for a standalone Pix charge — those are matched by `externalReference` instead. */
   subscriptionExternalId: string | null;
+  /** Echoed back by Mercado Pago from the request — the `Order.externalReference` this charge was created for. The ONLY way a Pix payment finds its order. */
+  externalReference: string | null;
   amountCents: number | null;
   paidAmountCents: number | null;
   currency: string | null;
   paymentMethodId: string | null;
+  paymentTypeId: string | null;
   installments: number | null;
   approvedAt: Date | null;
-  /** Asaas's own hosted checkout page for this ONE charge (`invoiceUrl`) — only meaningful for `paymentMethod: 'card'` (checkout redirects here instead of tokenizing in-page, per the "checkout hospedado" decision); `null` for Pix, which never redirects. Written straight to `Order.checkoutUrl`. */
-  invoiceUrl: string | null;
+  raw: unknown;
+}
+
+/** A freshly created Pix charge — the QR is returned inline by `POST /v1/payments`, so there is no separate "fetch the QR" round trip. */
+export interface PixCharge extends GatewayPayment {
+  /** `point_of_interaction.transaction_data.qr_code` — the copy-and-paste Pix string. */
+  qrCode: string;
+  /** `point_of_interaction.transaction_data.qr_code_base64` — a PNG, base64, rendered inline by the client. */
+  qrCodeBase64: string;
+  expiresAt: Date | null;
+}
+
+/** `status` is the provider's own preapproval vocabulary (`pending`, `authorized`, `paused`, `cancelled`), untranslated. */
+export interface GatewaySubscription {
+  id: string;
+  status: string;
+  externalReference: string | null;
+  nextDueDate: Date | null;
+  /** `init_point` — the hosted page where the customer authorizes the card. Only present on creation. */
+  initPoint: string | null;
   raw: unknown;
 }
 
@@ -146,31 +183,34 @@ export interface RefundResult {
   amountCents: number | null;
 }
 
+/** Which Mercado Pago resource a notification is about — decides which endpoint the webhook service re-fetches from before acting. */
+export type WebhookResourceKind = 'payment' | 'preapproval' | 'authorized_payment';
+
 /**
- * A webhook event, already verified authentic (the provider's own
- * static token/signature checked BEFORE this is returned — see
- * `parseWebhook`'s own doc comment) and translated to this platform's
- * internal vocabulary. `paymentExternalId`/`subscriptionExternalId` are
- * whichever the raw event actually carried — a payment-shaped event
- * sets the first, a subscription-shaped event sets the second, never
- * both.
+ * A webhook notification, already verified authentic (the `x-signature`
+ * HMAC checked BEFORE this is returned — see `parseWebhook`) and reduced
+ * to "which resource changed".
+ *
+ * Deliberately carries NO outcome: Mercado Pago's notification says only
+ * `payment.created`/`payment.updated`, and its body carries nothing but
+ * an id. The outcome comes from re-fetching the resource and running it
+ * through `classifyPayment`/`classifySubscription`.
  */
 export interface ParsedWebhook {
-  /** The provider's own event id — the ONLY thing `payment_webhook_events.id` is keyed on for dedupe (at-least-once delivery, same PK-as-idempotency-key doctrine `Payment.id` already uses). */
+  /** Mercado Pago's own notification id — the ONLY thing `payment_webhook_events.id` is keyed on for dedupe (at-least-once delivery, same PK-as-idempotency-key doctrine `Payment.id` already uses). */
   notificationId: string;
-  /** The provider's raw event name (e.g. `'PAYMENT_RECEIVED'`) — kept for `payment_webhook_events.type` and audit logs, even though the domain switches on `internalEvent`, never this. */
+  /** `"<type>.<action>"` as received, kept for `payment_webhook_events.type` and audit logs. */
   rawEvent: string;
-  internalEvent: InternalPaymentEvent;
-  paymentExternalId: string | null;
-  subscriptionExternalId: string | null;
+  /** `null` for a topic this platform doesn't handle — acknowledged and ignored. */
+  resourceKind: WebhookResourceKind | null;
+  resourceId: string | null;
 }
 
 /**
  * Framework-agnostic shape of an inbound webhook request — deliberately
- * NOT `FastifyRequest`, so this interface (and every implementation of
- * it) stays free of an HTTP-framework dependency. The controller is
- * responsible for narrowing the real request into this shape before
- * calling `parseWebhook`.
+ * NOT `FastifyRequest`, so this interface stays free of an HTTP-framework
+ * dependency. The controller narrows the real request into this shape
+ * before calling `parseWebhook`.
  */
 export interface WebhookRequestInput {
   headers: Record<string, string | string[] | undefined>;
@@ -179,38 +219,47 @@ export interface WebhookRequestInput {
 }
 
 export interface PaymentProvider {
-  /** Short, stable identifier — `'asaas'` — written to `Order.provider`/`PaymentWebhookEvent.provider`/`PaymentCustomer.provider`. Never used for behavior outside `modules/payments/` (see this file's own top-of-file doc comment). */
+  /** Short, stable identifier — `'mercadopago'` — written to `Order.provider`/`PaymentWebhookEvent.provider`. */
   readonly name: string;
 
-  /** Creates or reuses (idempotent per `userId`) the provider's own customer record. Callers persist the result in `PaymentCustomer`, keyed `(provider, userId)`, so this is only ever called once per user per provider. */
-  ensureCustomer(input: EnsureCustomerInput): Promise<{ externalCustomerId: string }>;
+  /** Creates the one-off Pix charge for ONE billing cycle. The QR comes back inline. */
+  createPixCharge(input: CreatePixChargeInput): Promise<PixCharge>;
+  /** Creates the recurring card subscription. The returned `initPoint` is where the customer authorizes it; nothing is charged until they do. */
+  createCardSubscription(input: CreateCardSubscriptionInput): Promise<GatewaySubscription>;
 
-  /** Creates a recurring subscription — the provider itself generates and notifies every future charge; this platform never calls a separate "renew" endpoint again. */
-  createSubscription(input: CreateSubscriptionInput): Promise<GatewaySubscription>;
-  /** Re-fetches the subscription from the provider's own API — the webhook body is never trusted as the financial source of truth (payments plan's own rule). */
-  getSubscription(externalId: string): Promise<GatewaySubscription>;
-  /** Cancels at the provider — MUST be called before this platform cancels its own `Subscription` row, or the customer keeps being charged with no record on our side of why. */
-  cancelSubscription(externalId: string): Promise<void>;
-  /** Every charge the provider has generated for one subscription, newest first — the reconciliation job's own source of truth, compared against this platform's `Payment` rows for the same subscription. */
-  listSubscriptionPayments(externalId: string): Promise<GatewayPayment[]>;
-
-  /** Re-fetches ONE payment by its own id — same "never trust the webhook body" posture as `getSubscription`. */
+  /** Re-fetches ONE payment by its own id — the webhook body is never trusted as the financial source of truth. */
   getPayment(externalId: string): Promise<GatewayPayment>;
-  /** The Pix QR for one payment — `encodedImage`/`payload` in Asaas's own vocabulary, mapped to this platform's `qrCode`/`qrCodeBase64` naming (matches `Order.pixQrCode`/`pixQrCodeBase64`, unchanged from the Mercado Pago era). */
-  getPixQrCode(paymentId: string): Promise<{ qrCode: string; qrCodeBase64: string; expiresAt: Date | null }>;
+  /** Re-fetches a recurring charge (`GET /authorized_payments/{id}`) and normalizes it into the same `GatewayPayment` shape. */
+  getAuthorizedPayment(externalId: string): Promise<GatewayPayment>;
+  /** Re-fetches the preapproval (`GET /preapproval/{id}`). */
+  getSubscription(externalId: string): Promise<GatewaySubscription>;
+  /** Cancels at the provider — MUST succeed before this platform cancels its own `Subscription` row, or the customer keeps being charged with no record on our side of why. A subscription the provider no longer knows about counts as already cancelled. */
+  cancelSubscription(externalId: string): Promise<void>;
+
   /** Omit `amountCents` for a full refund; provide it for a partial one. */
   refund(externalId: string, amountCents?: number): Promise<RefundResult>;
 
   /**
+   * Turns a re-fetched payment into this platform's own outcome
+   * vocabulary. Implemented by the provider so Mercado Pago's status
+   * strings never leak into the domain.
+   */
+  classifyPayment(payment: GatewayPayment): InternalPaymentEvent;
+  /** Same, for a re-fetched preapproval. An `authorized` preapproval is a SubscriptionSynced — never a payment: the customer authorized future charges, they have not paid yet. */
+  classifySubscription(subscription: GatewaySubscription): InternalPaymentEvent;
+
+  /**
    * Verifies the request's authenticity BEFORE anything in the body is
-   * trusted, and translates the provider's own event name into
-   * `InternalPaymentEvent`. Throws (`UnauthorizedException`) when
-   * verification fails; never returns a "maybe legitimate" result. This
-   * is MORE load-bearing for Asaas than it was for Mercado Pago: Asaas
-   * authenticates a webhook with a single static token (no HMAC
-   * signature), so `parseWebhook` re-fetching the actual resource
-   * before acting (done by the caller, not here) is the only real
-   * defense against a leaked token being used to forge events.
+   * trusted, then reduces it to "which resource changed". Throws
+   * (`UnauthorizedException`) when verification fails; never returns a
+   * "maybe legitimate" result.
+   *
+   * Mercado Pago signs every notification with an HMAC-SHA256 over a
+   * manifest built from the resource id, the `x-request-id` header and
+   * the signature's own timestamp — so unlike a static shared token,
+   * a captured request cannot be replayed against a different resource.
+   * The caller's mandatory re-fetch-before-acting rule still stands on
+   * top of it.
    */
   parseWebhook(req: WebhookRequestInput): ParsedWebhook;
 }

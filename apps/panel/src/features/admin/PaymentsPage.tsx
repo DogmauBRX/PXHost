@@ -67,8 +67,7 @@ function formatDate(value: string | null): string {
 
 /**
  * Admin visibility and control over every customer's order/payment
- * (payments plan step 8) — the surface that never existed before the
- * Asaas migration. Mirrors `SubscriptionsPage.tsx`'s own filter/
+ * (payments plan step 8). Mirrors `SubscriptionsPage.tsx`'s own filter/
  * pagination/detail-modal shape exactly, including its cache-
  * invalidation fix (list AND detail are two DIFFERENT query keys, both
  * invalidated on a successful mutation — found live as a stale-modal
@@ -253,7 +252,7 @@ function OrderDetailModal({ id, onClose, onChanged }: { id: string | null; onClo
     mutationFn: () => refundOrder(id!, refundReason.trim()),
     onSuccess: (result) => {
       setActionError(null);
-      setActionMessage(`Reembolso solicitado ao Asaas (status: ${result.providerStatus ?? 'desconhecido'}). A confirmação chega pelo webhook.`);
+      setActionMessage(`Reembolso solicitado ao Mercado Pago (status: ${result.providerStatus ?? 'desconhecido'}). A confirmação chega pelo webhook.`);
       setRefundReason('');
       onChanged();
     },

@@ -101,13 +101,13 @@ touch.
 
 > **Superseded.** `src/modules/billing/` (`BillingWebhookService`,
 > `BillingController`, `BILLING_WEBHOOK_SECRET`) described below was
-> removed once the real Asaas integration (`src/modules/payments/`, see
-> `docs/payments/asaas.md`) replaced it as the actual payment pipeline —
+> removed once the real payments integration (`src/modules/payments/`, see
+> `docs/payments/mercadopago.md`) replaced it as the actual payment pipeline —
 > it was always a generic, provider-agnostic placeholder (the roadmap
 > named no specific processor), never a live integration. The
 > suspend/restore mechanism it exercises (`ServersService.suspend`/
 > `unsuspend`, the status gate, `suspensionSource`) is unaffected and is
-> exactly what the Asaas webhook and billing-cycle job call today. Left
+> exactly what the Mercado Pago webhook and billing-cycle job call today. Left
 > below as-is for the historical record of what M14 actually built and
 > why.
 

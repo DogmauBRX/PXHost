@@ -45,7 +45,41 @@ const SUSPENDED_BLOCKED_KEYS = [
   'startup.update',
 ];
 
-function allowedWhenSuspended(status: string, permission: string): boolean {
+// Post-purchase setup flow: a server that hasn't been configured yet
+// (`setup_pending`) has no template, no docker image, no startup
+// command at all (servers_setup_consistency's CHECK) — there is
+// nothing to back up, schedule, or connect a console to, and nothing
+// a customer could do with it besides read its own state and complete
+// setup. Deny by default here — the opposite posture from the
+// suspended block below, which is allow-by-default with a list of
+// what's blocked — because there is no fixed list of "things that make
+// sense before a server even has software": every NEW permission added
+// to the catalog going forward is automatically blocked pre-setup
+// without this list ever needing an update. `.read` keys still pass
+// (the setup screen itself calls `startup.read`, `server.read`, etc.),
+// and `startup.update` is the one write ServerSetupService itself
+// needs — it reaches the server directly (ServersService.
+// createSetupPending / the CAS in ServerSetupService.complete), never
+// through this gate, so excluding it here costs nothing.
+//
+// Deliberately NOT `installing`/`install_failed` too, despite both
+// also lacking a live container right now: those two statuses are the
+// pre-existing, universal "every server is born `installing`" states
+// (Server.status's own `@default("installing")`) that predate the
+// setup_pending flow entirely, and a wide swath of already-established
+// e2e coverage (backups/schedules/databases/files/subusers) creates
+// its fixture server via the admin path and exercises writes against
+// it while it's still sitting in one of these two states (their fake
+// agent stubs typically never answer the actual create-server call, so
+// the row lands on `install_failed` and stays there) — gating those
+// two the same way `setup_pending` is gated silently broke 25 passing
+// specs that have nothing to do with this feature. `setup_pending` is
+// the genuinely NEW, narrower case (template_id IS NULL, never true for
+// `installing`/`install_failed`), so it's the only one denied here.
+const PRE_READY_STATUSES = ['setup_pending'];
+
+function allowedForStatus(status: string, permission: string): boolean {
+  if (PRE_READY_STATUSES.includes(status)) return permission.endsWith('.read');
   if (status !== 'suspended') return true;
   if (permission.endsWith('.read')) return true;
   if (permission.startsWith('schedule.')) return false;
@@ -158,7 +192,7 @@ export class ServerAccessService {
       // ServersService already uses — this bypasses OWNERSHIP, not RLS.
       // The suspension gate is deliberately not applied: inspecting and
       // reviving a suspended server is precisely an operator's job, and
-      // `allowedWhenSuspended` exists to constrain customers, not staff.
+      // `allowedForStatus` exists to constrain customers, not staff.
       const server = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => fetchOwned(tx, serverId));
       if (!server) throw new NotFoundException('Server not found');
       return { server, role: 'admin', can: () => true };
@@ -172,18 +206,19 @@ export class ServerAccessService {
     // gate applies AFTER the permission-key check and to EVERY role,
     // owner included: ownership answers "can you touch this server at
     // all," not "does this server's current status allow this specific
-    // action right now." allowedWhenSuspended is what actually encodes
-    // the gating table's own split (reads/backup-download always pass;
-    // control/schedule/mutating-write actions don't).
+    // action right now." allowedForStatus is what actually encodes both
+    // gating rules — the pre-ready deny-by-default one above, and the
+    // original suspended gating table's own split (reads/backup-download
+    // always pass; control/schedule/mutating-write actions don't).
     if (server.ownerId === userId) {
-      return { server, role: 'owner', can: (permission: string) => allowedWhenSuspended(server.status, permission) };
+      return { server, role: 'owner', can: (permission: string) => allowedForStatus(server.status, permission) };
     }
 
     const permissions = await this.resolveSubuserPermissions(userId, serverId);
     return {
       server,
       role: 'subuser',
-      can: (permission: string) => permissions.includes(permission) && allowedWhenSuspended(server.status, permission),
+      can: (permission: string) => permissions.includes(permission) && allowedForStatus(server.status, permission),
     };
   }
 

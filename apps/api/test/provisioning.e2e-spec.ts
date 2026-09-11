@@ -6,50 +6,8 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/core/prisma/prisma.service';
 import { RedisService } from '../src/core/redis/redis.service';
 import { ProvisioningService } from '../src/modules/payments/provisioning.service';
-import {
-  PAYMENT_PROVIDER,
-  type CreateSubscriptionInput,
-  type EnsureCustomerInput,
-  type GatewayPayment,
-  type GatewaySubscription,
-  type PaymentProvider,
-} from '../src/modules/payments/payment-provider.interface';
-
-/** Same fake-provider convention every other payments e2e file uses — checkout only needs the subscription-creation path here (this file always checks out via Pix), nothing about the webhook or card flow is exercised by this file. */
-class FakePaymentProvider implements Partial<PaymentProvider> {
-  readonly name = 'asaas';
-
-  async ensureCustomer(input: EnsureCustomerInput): Promise<{ externalCustomerId: string }> {
-    return { externalCustomerId: `cus-${input.userId}` };
-  }
-
-  async createSubscription(input: CreateSubscriptionInput): Promise<GatewaySubscription> {
-    return { id: `fake-sub-${input.externalReference}`, status: 'ACTIVE', externalReference: input.externalReference, nextDueDate: input.firstDueDate, raw: {} };
-  }
-
-  async listSubscriptionPayments(externalId: string): Promise<GatewayPayment[]> {
-    return [
-      {
-        id: `fake-pay-${externalId}`,
-        status: 'PENDING',
-        statusDetail: null,
-        subscriptionExternalId: externalId,
-        amountCents: 0, // never read by ProvisioningService — only OrdersService's own recordFromGateway cares, and this file overwrites order.status/amountCents directly (see `checkout()` below)
-        paidAmountCents: null,
-        currency: 'BRL',
-        paymentMethodId: 'PIX',
-        installments: null,
-        approvedAt: null,
-        invoiceUrl: null,
-        raw: {},
-      },
-    ];
-  }
-
-  async getPixQrCode(paymentId: string) {
-    return { qrCode: `fake-qr-${paymentId}`, qrCodeBase64: 'ZmFrZS1xci1wbmc=', expiresAt: null };
-  }
-}
+import { PAYMENT_PROVIDER } from '../src/modules/payments/payment-provider.interface';
+import { FakePaymentProvider } from './fake-payment-provider';
 
 /**
  * Payments plan step 6: turning a PAID order into a real server.
@@ -90,7 +48,7 @@ describe('Provisioning (e2e)', () => {
       method: 'POST',
       url: '/api/client/checkout',
       headers: { authorization: `Bearer ${customerToken}` },
-      payload: { planId, templateId, serverName: `srv-${Math.random().toString(36).slice(2)}`, paymentMethod: 'pix' },
+      payload: { planId, paymentMethod: 'pix' },
     });
     expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body);
@@ -222,7 +180,7 @@ describe('Provisioning (e2e)', () => {
     await app.close();
   });
 
-  it('provisions a paid order: creates the server, attaches subscription.server_id AND order.server_id, with the PLAN\'s resources (not the template\'s)', async () => {
+  it('provisions a paid order: creates a SETUP_PENDING server (no template/software chosen yet), attaches subscription.server_id AND order.server_id, with the PLAN\'s own resources reserved', async () => {
     const { orderId, subscriptionId } = await checkout(fitPlanId);
 
     await provisioning.provisionOrder(orderId);
@@ -237,11 +195,18 @@ describe('Provisioning (e2e)', () => {
 
     const server = await asAdmin((tx) => tx.server.findUnique({ where: { id: order.serverId } }));
     expect(server.ownerId).toBe(customerId);
-    expect(server.templateId).toBe(templateId);
     expect(server.nodeId).toBe(nodeId);
-    // The PLAN's own numbers, never the template's (the template
-    // declares no resource limits at all — this is the whole point of
-    // "plano = recursos, template = software").
+    // The post-purchase setup flow's whole point: no software chosen yet
+    // at provisioning time — the row is reserved, not installing. See
+    // the `servers_setup_consistency` CHECK for why all three columns
+    // move together.
+    expect(server.status).toBe('setup_pending');
+    expect(server.templateId).toBeNull();
+    expect(server.dockerImage).toBeNull();
+    expect(server.startupCommand).toBeNull();
+    // The PLAN's own numbers, snapshotted onto the row at reservation
+    // time — this is what CapacityService.usageForNode already counts
+    // even while the server is stopped and unconfigured.
     expect(server.memoryMb).toBe(512);
     expect(server.diskMb).toBe(1024);
   });
@@ -297,7 +262,7 @@ describe('Provisioning (e2e)', () => {
       method: 'POST',
       url: '/api/client/checkout',
       headers: { authorization: `Bearer ${customerToken}` },
-      payload: { planId: fitPlanId, templateId, serverName: 'unpaid-srv', paymentMethod: 'pix' },
+      payload: { planId: fitPlanId, paymentMethod: 'pix' },
     });
     const orderId = JSON.parse(res.body).id;
 
@@ -305,5 +270,52 @@ describe('Provisioning (e2e)', () => {
     const order = await asAdmin((tx) => tx.order.findUnique({ where: { id: orderId } }));
     expect(order.serverId).toBeNull();
     expect(order.provisioningStatus).toBe('pending'); // never even attempted — refused before the 'running' transition
+  });
+
+  /**
+   * `CreateCheckoutDto` no longer collects a template (see its own doc
+   * comment) — every NEW order's `config` snapshot only ever has `plan`.
+   * But `OrderConfigSnapshot.template` stays a legal, optional shape
+   * specifically so an already-paid order placed BEFORE this change
+   * keeps provisioning exactly as it always did, rather than losing the
+   * software the customer already picked and paid for. This test
+   * fabricates exactly that legacy shape directly (checkout itself can
+   * no longer produce it) to prove `ProvisioningService`'s branch is
+   * still live — see its own doc comment for the removal condition.
+   */
+  it('a legacy order whose config still carries a template provisions through the old already-installing path', async () => {
+    const legacyOrder = await asAdmin((tx) =>
+      tx.order.create({
+        data: {
+          externalReference: `ord_legacy_${suffix}_${Math.random().toString(36).slice(2)}`,
+          userId: customerId,
+          planId: fitPlanId,
+          kind: 'plan_initial',
+          amountCents: 2990,
+          currency: 'BRL',
+          status: 'paid',
+          paidAt: new Date(),
+          paymentMethod: 'pix',
+          provisioningStatus: 'pending',
+          config: {
+            plan: { id: fitPlanId, name: 'legacy-plan-snapshot', memoryMb: 512, diskMb: 1024, cpuLimitPercent: 100 },
+            serverName: 'legacy-servidor',
+            template: { id: templateId, name: 'legacy-template-snapshot', groupId, groupName: 'legacy-group-snapshot' },
+          },
+        },
+      }),
+    );
+
+    await provisioning.provisionOrder(legacyOrder.id);
+
+    const order = await asAdmin((tx) => tx.order.findUnique({ where: { id: legacyOrder.id } }));
+    expect(order.provisioningStatus).toBe('done');
+    expect(order.serverId).toBeTruthy();
+
+    const server = await asAdmin((tx) => tx.server.findUnique({ where: { id: order.serverId } }));
+    expect(server.ownerId).toBe(customerId);
+    expect(server.templateId).toBe(templateId); // the legacy path chooses software immediately, unlike setup_pending
+    expect(server.name).toBe('legacy-servidor');
+    expect(['installing', 'ready', 'install_failed']).toContain(server.status); // never 'setup_pending' — this path always dispatches
   });
 });

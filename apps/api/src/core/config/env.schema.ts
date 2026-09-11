@@ -1,5 +1,23 @@
 import { z } from 'zod';
 
+/**
+ * An optional secret that may appear in a `.env` as an EMPTY line.
+ * `.env.example` ships every optional key with no value, so a deployment
+ * that copies it verbatim ends up with `MERCADOPAGO_ACCESS_TOKEN=` —
+ * present, but empty. A plain `.string().min(1).optional()` treats that
+ * as an INVALID value rather than an absent one and refuses to boot,
+ * which is exactly backwards: an empty line means "not configured yet",
+ * the state every one of these vars is explicitly allowed to be in.
+ */
+function optionalSecret() {
+  return z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().min(1).optional());
+}
+
+/** Same, for an optional URL. */
+function optionalUrl() {
+  return z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().url().optional());
+}
+
 // Architecture doc 3.6: the process refuses to start on any missing or
 // invalid env var, validated once at boot via Zod inside
 // ConfigModule.forRoot({ validate }). No defaults for secrets — a missing
@@ -49,7 +67,7 @@ export const envSchema = z.object({
   // above) because requiring it would force every dev/test deployment to
   // configure an LLM key just to boot — AssistantModule's provider
   // factory falls back to 'kb' with a boot warning if 'llm' is requested
-  // without a key, deliberately different from ASAAS_API_KEY's
+  // without a key, deliberately different from MERCADOPAGO_ACCESS_TOKEN's
   // refuse-at-use-time below: a customer-facing assistant that 500s on every
   // message is worse than one that quietly answers from the catalog.
   ASSISTANT_PROVIDER: z.enum(['kb', 'llm']).default('kb'),
@@ -57,7 +75,7 @@ export const envSchema = z.object({
 
   // Client account management, Fase 1 — generic SMTP for password-reset
   // emails, no specific provider baked in. All optional, same posture as
-  // ASSISTANT_LLM_API_KEY just above (not ASAAS_API_KEY's own
+  // ASSISTANT_LLM_API_KEY just above (not MERCADOPAGO_ACCESS_TOKEN's own
   // refuse-at-use-time below): MailService falls back to logging the reset
   // link instead of failing when MAIL_HOST is unset, since the
   // forgot-password endpoint must always return 200 regardless of mail
@@ -90,42 +108,42 @@ export const envSchema = z.object({
   // different domain than the panel app itself.
   PUBLIC_SITE_URL: z.string().url().optional(),
 
-  // Payments plan (Asaas, migrated from Mercado Pago 2026-09) — all
-  // optional, refuse-at-USE-time posture (not ASSISTANT_LLM_API_KEY's
-  // silent-fallback posture): a deployment that hasn't configured Asaas must fail
-  // loudly the moment a customer tries to check out, never boot-fail
-  // (every dev/test environment must still start with none of this
-  // configured) and never silently accept an unverifiable payment.
+  // Payments — Mercado Pago. All optional, refuse-at-USE-time posture
+  // (not ASSISTANT_LLM_API_KEY's silent-fallback posture): a deployment
+  // that hasn't configured Mercado Pago must fail loudly the moment a
+  // customer tries to check out, never boot-fail (every dev/test
+  // environment must still start with none of this configured) and
+  // never silently accept an unverifiable payment.
   //
-  // Asaas authenticates by API key (`access_token` header — NOT
-  // `Bearer`, confirmed against their own docs) plus, for webhooks, the
-  // separate WEBHOOK_TOKEN below — a static token, not an HMAC
-  // signature (see AsaasProvider.parseWebhook's own doc comment for why
-  // that makes the mandatory re-fetch-before-acting rule even more
-  // load-bearing here than it was for Mercado Pago).
-  ASAAS_API_KEY: z.string().min(1).optional(),
-  // Asaas's dashboard and API are genuinely separate environments with
-  // separate credentials (sandbox.asaas.com vs asaas.com; sandbox keys
-  // never work in production and vice versa) — this decides which base
-  // URL AsaasClient talks to. Defaults to the safe choice: a deployment
-  // that forgets to set this talks to sandbox, never accidentally to
-  // production.
-  ASAAS_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
-  // Override for the base URL — only needed for something unusual
-  // (a proxy, a mock server in CI). Normally unset; AsaasClient derives
-  // the real URL from ASAAS_ENVIRONMENT alone.
-  ASAAS_BASE_URL: z.string().url().optional(),
-  // The static token configured in Asaas's own dashboard (Integrações >
-  // Webhooks), sent back as the `asaas-access-token` header on every
-  // notification. AsaasProvider.parseWebhook compares it with
-  // timingSafeEqual — never the API key, a different value entirely.
-  ASAAS_WEBHOOK_TOKEN: z.string().min(1).optional(),
+  // Sandbox vs production is decided ENTIRELY by which token this is —
+  // `TEST-…` for sandbox, `APP_USR-…` for production. Mercado Pago
+  // serves both from the same host, so unlike the provider this
+  // replaced there is deliberately no environment switch: a deployment
+  // cannot point "production credentials" at a sandbox URL by mistake,
+  // because there is only one URL.
+  MERCADOPAGO_ACCESS_TOKEN: optionalSecret(),
+  // The application's webhook secret, from the Mercado Pago dashboard
+  // (Suas integrações > a aplicação > Webhooks). A DIFFERENT value from
+  // the access token. `MercadoPagoProvider.parseWebhook` HMACs the
+  // notification's own manifest with it and compares in constant time;
+  // unset means webhooks are unverifiable, and an unverifiable
+  // notification is refused rather than trusted.
+  MERCADOPAGO_WEBHOOK_SECRET: optionalSecret(),
+  // The public URL Mercado Pago posts notifications to, sent as
+  // `notification_url` on every charge this platform creates. Optional:
+  // falls back to `${PUBLIC_SITE_URL}/api/webhooks/mercadopago`. Needed
+  // explicitly in local development, where the API is only reachable
+  // through a tunnel that is not PUBLIC_SITE_URL.
+  MERCADOPAGO_NOTIFICATION_URL: optionalUrl(),
+  // Override for the API base URL — only needed for something unusual
+  // (a mock server in CI). Normally unset.
+  MERCADOPAGO_BASE_URL: optionalUrl(),
 
   // Anti-bot for login/register/forgot-password (Cloudflare Turnstile).
   // Optional, and off (verification skipped entirely) when unset — the
   // same "explicit opt-in, zero dev/test friction" posture
   // ALLOW_PUBLIC_REGISTRATION already uses, deliberately NOT
-  // ASAAS_API_KEY's refuse-at-use-time above: an unconfigured
+  // MERCADOPAGO_ACCESS_TOKEN's refuse-at-use-time above: an unconfigured
   // deployment should behave exactly like it did before this feature
   // existed (nobody locked out of login), not fail every auth attempt
   // because nobody has set up a Cloudflare account yet. The site key

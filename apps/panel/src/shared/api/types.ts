@@ -545,6 +545,9 @@ export interface AdminPlan {
   compareAtPriceCents: number | null;
   currency: string;
   billingPeriod: string;
+  // Checkout redesign (WHMCS-style) — see Plan.planFamily's own doc
+  // comment in schema.prisma. null = single-cycle product.
+  planFamily: string | null;
   maxServers: number | null;
   // Capacity plan Fase 4 — commercial stock. null = unlimited.
   // Deliberately absent from `ClientPlan` above (remaining stock is a
@@ -732,6 +735,12 @@ export interface PublicPlan {
   recommendedPluginsMin: number | null;
   recommendedPluginsMax: number | null;
   availability: PlanAvailability;
+  // Checkout redesign (WHMCS-style) — ONLY present on `GET
+  // /api/public/plans/:slug` (PublicPlansService.getBySlug's own doc
+  // comment), never on the list endpoint. Every public plan sharing this
+  // one's billing family, itself included, ordered by price — lets the
+  // checkout render a cycle switcher without navigating routes.
+  familyCycles?: PublicPlan[];
 }
 
 // GET /api/public/templates — the software catalog a customer picks from
@@ -796,7 +805,7 @@ export interface Order {
   updatedAt: string;
 }
 
-// GET /api/admin/orders — one Asaas charge attempt against an order
+// GET /api/admin/orders — one Mercado Pago charge attempt against an order
 // (an order can have several over its renewal history). Never card
 // data — see Payment's own backend doc comment.
 export interface Payment {

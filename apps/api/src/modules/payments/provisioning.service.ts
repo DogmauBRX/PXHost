@@ -68,14 +68,34 @@ export class ProvisioningService {
     const config = order.config as unknown as OrderConfigSnapshot;
 
     try {
-      const created = await this.servers.create({
-        ownerId: order.userId,
-        planId: order.planId,
-        templateId: config.template.id,
-        name: config.serverName,
-        variables: config.variables,
-        attachSubscriptionId: order.subscriptionId ?? undefined,
-      });
+      // Two provisioning shapes, branching on whether this order's own
+      // snapshot ever collected a template — never on when the order was
+      // placed. `config.template` is only present on an order created
+      // before checkout stopped collecting software (CreateCheckoutDto's
+      // own doc comment): that legacy shape still provisions an
+      // already-`installing` server exactly as it always has. Every
+      // order placed since provisions bare instead — `createSetupPending`
+      // reserves the plan slot + node capacity and returns a
+      // 'setup_pending' server with NO agent dispatch at all, which is
+      // the entire mechanism that keeps a freshly-paid server's CPU/RAM
+      // at zero until `ServerSetupService.complete` picks a software.
+      // Drop this branch once no pre-existing order still carries
+      // `config.template` (i.e. once every such order has either been
+      // provisioned or is old enough to no longer matter).
+      const created = config.template
+        ? await this.servers.create({
+            ownerId: order.userId,
+            planId: order.planId,
+            templateId: config.template.id,
+            name: config.serverName ?? config.template.name,
+            variables: config.variables,
+            attachSubscriptionId: order.subscriptionId ?? undefined,
+          })
+        : await this.servers.createSetupPending({
+            ownerId: order.userId,
+            planId: order.planId,
+            attachSubscriptionId: order.subscriptionId ?? undefined,
+          });
 
       await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
         tx.order.update({ where: { id: orderId }, data: { serverId: created.id, provisioningStatus: 'done', provisioningError: null } }),

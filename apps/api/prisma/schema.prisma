@@ -545,6 +545,14 @@ model Plan {
   compareAtPriceCents   Int?      @map("compare_at_price_cents")
   currency              String    @default("BRL") @db.Char(3)
   billingPeriod         String    @default("monthly") @map("billing_period")
+  // Checkout redesign (WHMCS-style) — the ONLY link between billing-cycle
+  // variations of the same product (e.g. "Básico mensal" and "Básico
+  // trimestral" are two separate Plan rows with the same planFamily).
+  // Nullable: a plan with no family (or the only member of its family)
+  // is simply a single-cycle product, rendered as a single card by the
+  // public checkout — see migration 0030_plan_family's own comment for
+  // the backfill that makes every pre-existing plan its own family.
+  planFamily            String?   @map("plan_family")
   // Advisory metadata only — never enforced, never copied onto Server, and
   // deliberately absent from PlansService.DRIFTABLE_FIELDS. These describe
   // the plan in prose for the customer ("we recommend ~30-80 mods"), not a
@@ -606,7 +614,17 @@ model Server {
   shortId            String    @unique @map("short_id") @db.Char(8)
   ownerId            String    @map("owner_id") @db.Uuid
   nodeId             String    @map("node_id") @db.Uuid
-  templateId         String    @map("template_id") @db.Uuid
+  // Nullable: a server born from post-purchase provisioning (Order ->
+  // Subscription auto-provisioning) reserves its plan slot and node
+  // RAM/disk/CPU/allocation/uid immediately — CapacityService only ever
+  // filters on `status <> 'deleting'`, never on this column — but starts
+  // life with no software chosen yet (`status: 'setup_pending'`). It
+  // becomes permanently non-null the moment the customer completes setup
+  // and status leaves 'setup_pending' — enforced together with
+  // dockerImage/startupCommand by `servers_setup_consistency` below, the
+  // same biconditional-CHECK posture `servers_suspension_consistency`
+  // already uses for suspendedAt.
+  templateId         String?   @map("template_id") @db.Uuid
   planId             String?   @map("plan_id") @db.Uuid
   // Per-node container uid (maps to the Linux uid the agent runs the
   // container as and chowns its bind-mounted data directory to — see
@@ -623,8 +641,10 @@ model Server {
   uid                Int?
   name               String
   description        String    @default("")
-  dockerImage        String    @map("docker_image")
-  startupCommand     String    @map("startup_command")
+  // NULL exactly when templateId is NULL — see templateId's own doc
+  // comment and servers_setup_consistency.
+  dockerImage        String?   @map("docker_image")
+  startupCommand     String?   @map("startup_command")
   cpuLimitPercent    Int       @default(100) @map("cpu_limit_percent")
   cpuPinning         String    @default("") @map("cpu_pinning")
   memoryMb           Int       @map("memory_mb")
@@ -656,10 +676,10 @@ model Server {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  owner    User           @relation("ServerOwner", fields: [ownerId], references: [id])
-  node     Node           @relation(fields: [nodeId], references: [id])
-  template ServerTemplate @relation(fields: [templateId], references: [id])
-  plan     Plan?          @relation(fields: [planId], references: [id])
+  owner    User            @relation("ServerOwner", fields: [ownerId], references: [id])
+  node     Node            @relation(fields: [nodeId], references: [id])
+  template ServerTemplate? @relation(fields: [templateId], references: [id])
+  plan     Plan?           @relation(fields: [planId], references: [id])
 
   allocations Allocation[]
   variables   ServerVariable[]
@@ -671,11 +691,13 @@ model Server {
   transfers   ServerTransfer[]
   metrics     ServerMetric1m[]
   // Nullable, unique on the Subscription side (a server has at most one
-  // subscription) — see Subscription.serverId's doc comment. NULL for
-  // every server today (nothing links the two yet) and for any server an
-  // admin still creates directly; it becomes non-null only once the
-  // (future, deliberately not built in this milestone — see §13/§35 of
-  // the commercial plan) auto-provisioning flow assigns one.
+  // subscription) — see Subscription.serverId's doc comment. NULL for any
+  // server an admin still creates directly; non-null the moment
+  // ServersService.createSetupPending attaches it, at payment
+  // confirmation — before the customer has even chosen software, which
+  // is exactly why this attach and the template snapshot are two
+  // separate steps now (see the 'setup_pending' status and
+  // ServerSetupService.complete).
   subscription  Subscription?
   // Same shape as `subscription` above, one level up the chain: the
   // Order that paid for this server, once ProvisioningService attaches
@@ -900,11 +922,16 @@ model Subscription {
   id                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
   userId              String    @map("user_id") @db.Uuid
   planId              String    @map("plan_id") @db.Uuid
-  // NULL until the (future) auto-provisioning flow creates and attaches
-  // a server. UNIQUE: a server is provisioned for at most one
-  // subscription, never shared. `onDelete: SetNull` — an admin
-  // hard-deleting the server a subscription is attached to must not
-  // cascade into deleting the customer's billing history.
+  // NULL until ServersService.createSetupPending attaches a server, at
+  // payment confirmation (ProvisioningService) — a bare reservation with
+  // no software chosen yet, see the server's own 'setup_pending' status.
+  // UNIQUE: a server is provisioned for at most one subscription, never
+  // shared — application code also checks this explicitly before the
+  // attach (`SUBSCRIPTION_ALREADY_HAS_SERVER:`) so a real race raises a
+  // domain error instead of a raw constraint violation, but the index is
+  // still the hard backstop. `onDelete: SetNull` — an admin hard-deleting
+  // the server a subscription is attached to must not cascade into
+  // deleting the customer's billing history.
   serverId            String?   @unique @map("server_id") @db.Uuid
   status              String    @default("pending")
   // Snapshotted at contract time — same doctrine as Server's own
@@ -940,21 +967,17 @@ model Subscription {
   // are allowed to look this row up by (never amount/name), same
   // doctrine Order.externalReference already follows.
   externalSubscriptionId   String?   @unique @map("external_subscription_id")
-  // true for BOTH pix and card since the Asaas migration (2026-09) —
-  // `POST /v3/subscriptions` is a scheduler that generates a new charge
-  // every cycle for either billingType, so there is no more manual-
-  // renewal method distinction. billing-cycle applies the SAME grace
-  // period (BILLING_GRACE_DAYS) to both on PAYMENT_OVERDUE — the
-  // Mercado-Pago-era asymmetry (card deferring to MP's own retry
-  // cadence) no longer applies. False only for subscriptions still on
-  // the legacy `provider = 'mercadopago'` rows kept for history.
+  // TRUE only for card: a Mercado Pago preapproval is a real recurring
+  // subscription that Mercado Pago itself schedules and charges.
+  // FALSE for pix, because Mercado Pago has no recurring pix product at
+  // all — BillingCycleProcessor generates each cycle's charge instead.
+  // Either way billing-cycle applies the SAME grace period
+  // (BILLING_GRACE_DAYS) once a period lapses unpaid.
   autoRenew                Boolean   @default(false) @map("auto_renew")
-  // Mercado-Pago-era flag (preapproval "authorized" before the first
-  // charge settles, ~1h later). The Asaas flow has no such gap —
-  // provisioning always waits for an actual PaymentConfirmed — so this
-  // column is unused (stays false) for every `provider = 'asaas'` row.
-  // Left in place rather than dropped: still meaningful on legacy
-  // Mercado Pago rows kept for financial history.
+  // A preapproval can read "authorized" before its first charge
+  // actually settles. This platform never provisions on that: it waits
+  // for a real approved payment, so the flag stays false and exists
+  // only for legacy rows written before that rule was established.
   firstChargePending       Boolean   @default(false) @map("first_charge_pending")
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz
@@ -997,8 +1020,9 @@ model SubscriptionEvent {
 }
 
 // ─────────────────────── BILLING / PAYMENTS ──────────────────────────
-// Multi-provider payments (Asaas since 2026-09, Mercado Pago before
-// that — see PAYMENT_PROVIDER/PaymentProvider's own doc comment).
+// Payments via Mercado Pago (see PAYMENT_PROVIDER/PaymentProvider's own
+// doc comment). Rows written during the 2026-09 Asaas period are kept
+// as financial history and are distinguishable by their `provider`.
 // `PaymentCustomer` links a User to their id on ONE provider;
 // `Order` is the platform's OWN commercial pedido (what was bought, at
 // what price, in what state, and what it should provision once paid);
@@ -1011,9 +1035,12 @@ model SubscriptionEvent {
 // nothing in this section.
 
 // Links a User to their customer id on ONE payment provider. Composite-
-// unique on (provider, userId): at most one Asaas customer per user
-// (re-used across every subscription/order that user ever creates,
-// never re-created). Also unique on (provider, externalCustomerId) —
+// unique on (provider, userId): at most one provider-side customer per
+// user. DORMANT under Mercado Pago, which requires no customer resource
+// for either flow this platform uses (a pix charge identifies the payer
+// inline, a preapproval by `payer_email`) — kept, not dropped, because
+// it still holds the ids created during the Asaas period.
+// Also unique on (provider, externalCustomerId) —
 // the reverse lookup a reconciliation job would need. No RLS: written/
 // read only by the webhook handler and OrdersService's own admin-
 // equivalent RLS context, same posture `payments` already documents —
@@ -1054,11 +1081,11 @@ model Order {
   amountCents Int     @map("amount_cents")
   currency    String  @db.Char(3)
   status      String  @default("pending")
-  // 'asaas' since the 2026-09 migration; legacy rows keep 'mercadopago'
-  // untouched, for financial history — see PaymentProvider's own doc
-  // comment for why nothing outside `modules/payments/` ever reads
-  // this column to decide behavior.
-  provider    String  @default("asaas")
+  // 'mercadopago'. Rows written during the 2026-09 Asaas period keep
+  // 'asaas' untouched, for financial history — see PaymentProvider's
+  // own doc comment for why nothing outside `modules/payments/` ever
+  // reads this column to decide behavior.
+  provider    String  @default("mercadopago")
 
   // Unused by the Checkout Bricks flow (card and Pix are both created
   // without a Preference/redirect) — left in place, not removed: a

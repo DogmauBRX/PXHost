@@ -19,7 +19,7 @@ interface TurnstileVerifyResponse {
  * Off by default (`TURNSTILE_SECRET_KEY` unset skips verification
  * entirely, see env.schema.ts's own comment) — the same "explicit
  * opt-in, no dev/test friction" posture `ALLOW_PUBLIC_REGISTRATION`
- * already uses, not `ASAAS_API_KEY`'s refuse-at-use-time: an
+ * already uses, not `MERCADOPAGO_ACCESS_TOKEN`'s refuse-at-use-time: an
  * unconfigured deployment must behave exactly like it did before this
  * feature existed, not lock everyone out of login.
  */
@@ -64,7 +64,7 @@ export class TurnstileService {
     } catch (err) {
       // Fails CLOSED — Cloudflare being unreachable is never a reason to
       // let an unverified request through, the same "never accept what
-      // can't be verified" rule AsaasProvider.parseWebhook follows for a
+      // can't be verified" rule MercadoPagoProvider.parseWebhook follows for an
       // missing/invalid webhook token.
       this.logger.error(`Turnstile verification request failed: ${(err as Error).message}`);
       ok = false;

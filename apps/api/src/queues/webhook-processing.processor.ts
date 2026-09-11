@@ -9,8 +9,8 @@ import type { ParsedWebhook } from '../modules/payments/payment-provider.interfa
 /**
  * Consumes jobs `WebhookProcessingQueueService` (API process) adds —
  * see that class's own doc comment for why this queue exists at all
- * (Asaas interrupts webhook delivery after 15 consecutive failures, so
- * the controller can't afford to do the real work synchronously).
+ * (answering Mercado Pago must never be coupled to doing the work, or a
+ * slow query turns into a redelivery).
  * `PaymentsWebhookService.process` does the actual re-fetch/apply-
  * outcome work; this is just the BullMQ plumbing.
  *

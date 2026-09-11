@@ -7,22 +7,21 @@ import type { ParsedWebhook } from './payment-provider.interface';
 
 /**
  * The API process's producer for the `webhook-processing` queue — same
- * "thin add-a-job half" shape as `ProvisioningQueueService`. This queue
- * exists specifically BECAUSE Asaas is less forgiving of a slow/failing
- * endpoint than Mercado Pago was: their own docs say the sync queue is
- * INTERRUPTED entirely after 15 consecutive non-2xx responses (new
- * events keep generating but stop being delivered until manually
- * resumed). `PaymentsWebhookController` therefore does the absolute
- * minimum synchronously (verify the token, dedupe-insert, enqueue) and
- * responds 2xx — all the actual re-fetching/state-changing work
- * (`PaymentsWebhookService.process`) happens here, off the request path,
- * where a transient failure retries without ever costing Asaas a
- * "failure" against that 15-strike counter.
+ * "thin add-a-job half" shape as `ProvisioningQueueService`.
+ *
+ * This queue exists so that answering Mercado Pago is never coupled to
+ * doing the work. `PaymentsWebhookController` does the absolute minimum
+ * synchronously (verify the signature, dedupe-insert, enqueue) and
+ * responds 2xx; all the actual re-fetching and state-changing
+ * (`PaymentsWebhookService.process`) happens here, off the request path.
+ * Otherwise a slow database query or a transient re-fetch failure would
+ * turn into a non-2xx and make Mercado Pago retry a notification it had
+ * in fact already delivered successfully.
  *
  * `attempts`/`backoff` mirror `ProvisioningQueueService`'s own choice —
- * a webhook this platform fails to process (a DB hiccup, Asaas briefly
- * unreachable for the mandatory re-fetch) must retry, not silently drop
- * a payment confirmation.
+ * a webhook this platform fails to process (a DB hiccup, Mercado Pago
+ * briefly unreachable for the mandatory re-fetch) must retry, not
+ * silently drop a payment confirmation.
  */
 @Injectable()
 export class WebhookProcessingQueueService implements OnModuleInit, OnModuleDestroy {

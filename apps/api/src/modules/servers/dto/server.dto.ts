@@ -46,6 +46,23 @@ export class CreateServerDto {
   attachSubscriptionId?: string;
 }
 
+/**
+ * Internal-only — never bound by a `ValidationPipe` (ProvisioningService
+ * calls `ServersService.createSetupPending` directly, not over HTTP).
+ * Deliberately much smaller than `CreateServerDto`: no `templateId`, no
+ * required `name` — a post-purchase server reserves its plan slot and
+ * node capacity before the customer has chosen either (see the
+ * 'setup_pending' status and `ServerSetupService.complete`, which is
+ * the only path that ever fills those in).
+ */
+export interface CreateSetupPendingServerInput {
+  ownerId: string;
+  planId: string;
+  nodeId?: string;
+  name?: string;
+  attachSubscriptionId?: string;
+}
+
 export class SuspendServerDto {
   @IsString()
   @Length(1, 500)

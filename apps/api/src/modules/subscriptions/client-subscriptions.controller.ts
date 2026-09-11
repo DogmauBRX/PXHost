@@ -35,7 +35,7 @@ export class ClientSubscriptionsController {
   }
 
   // Cancellation lives in ClientOrdersController (PaymentsModule) —
-  // since the Asaas migration it must also cancel at the provider, and
+  // it must also cancel at the provider, and
   // OrdersService is the only place already holding that dependency.
   // Keeping it here would require SubscriptionsModule to import
   // PaymentsModule, which already imports SubscriptionsModule —

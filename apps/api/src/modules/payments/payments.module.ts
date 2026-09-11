@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PAYMENT_PROVIDER } from './payment-provider.interface';
-import { AsaasClient } from './asaas.client';
-import { AsaasProvider } from './asaas.provider';
+import { MercadoPagoClient } from './mercadopago.client';
+import { MercadoPagoProvider } from './mercadopago.provider';
 import { OrdersService } from './orders.service';
 import { PaymentsService } from './payments.service';
 import { PaymentsWebhookService } from './payments-webhook.service';
@@ -17,11 +17,12 @@ import { CapacityModule } from '../capacity/capacity.module';
 import { ServersModule } from '../servers/servers.module';
 
 /**
- * `OrdersService`, the webhook, and `ProvisioningService` all inject
- * `PAYMENT_PROVIDER`, never `AsaasProvider` directly — the binding
- * below is the ONLY place that names the concrete provider (payments
- * plan's own explicit multi-provider goal: adding Stripe/Pagar.me later
- * means writing a new class and changing this ONE line).
+ * `OrdersService`, the webhook, and the billing queues all inject
+ * `PAYMENT_PROVIDER`, never `MercadoPagoProvider` directly — the binding
+ * below is the ONLY place that names the concrete provider. There is
+ * exactly one, deliberately: the seam exists to keep every HTTP detail
+ * in one file and to let the e2e suite inject a fake, not to keep a
+ * second provider alive.
  * `SubscriptionsModule` is imported for `SubscriptionsService.
  * lockAndValidatePlanForSubscription`/`createPendingSubscription`/
  * `applyTransition`/`applyRenewal`/`cancelForUser` — checkout and the
@@ -47,8 +48,8 @@ import { ServersModule } from '../servers/servers.module';
 @Module({
   imports: [AuditModule, SubscriptionsModule, CapacityModule, ServersModule],
   providers: [
-    AsaasClient,
-    { provide: PAYMENT_PROVIDER, useClass: AsaasProvider },
+    MercadoPagoClient,
+    { provide: PAYMENT_PROVIDER, useClass: MercadoPagoProvider },
     OrdersService,
     PaymentsService,
     PaymentsWebhookService,

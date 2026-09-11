@@ -14,7 +14,7 @@ import type { AuthenticatedUser } from '../auth/guards/jwt-auth.guard';
  *
  * `subscriptions/:id/cancel` lives HERE, not on
  * `ClientSubscriptionsController`, specifically because cancelling
- * since the Asaas migration also has to cancel at the provider —
+ * also has to cancel at the provider —
  * `OrdersService` is the only place already holding that dependency
  * (see this file's own routing, and `ClientSubscriptionsController`'s
  * own comment on why importing `PaymentsModule` there would be
@@ -40,7 +40,16 @@ export class ClientOrdersController {
   }
 
   @Post('subscriptions/:id/cancel')
-  cancelSubscription(@Param('id') id: string, @Body() dto: CancelSubscriptionDto, @CurrentUser() user: AuthenticatedUser) {
+  cancelSubscription(@Param('id') id: string, @Body() dto: CancelSubscriptionDto = {}, @CurrentUser() user: AuthenticatedUser) {
+    // A request with no body at all (no `reason`/`atPeriodEnd` — every
+    // field on CancelSubscriptionDto is optional) comes through as
+    // `dto === undefined`, not `{}`: Fastify's body parser never runs
+    // when there's nothing to parse, so `@Body()` resolves to
+    // `undefined` before the ValidationPipe ever gets a plain object to
+    // instantiate. The default parameter above is what used to be
+    // missing — without it this crashed with a 500 (`Cannot read
+    // properties of undefined (reading 'reason')`) instead of reaching
+    // OrdersService at all, on EVERY bodyless cancel request.
     return this.orders.cancelSubscriptionForUser(user.id, id, { reason: dto.reason, atPeriodEnd: dto.atPeriodEnd });
   }
 

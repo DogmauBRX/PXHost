@@ -1,0 +1,42 @@
+-- Mercado Pago becomes the payment provider again, reverting exactly
+-- what 0029_asaas_provider changed about provider identity.
+--
+-- Nothing is dropped. Every external-id column in this schema is
+-- provider-NEUTRAL by name and by design (`provider`,
+-- `external_subscription_id`, `external_customer_id`,
+-- `external_preference_id`), so there is no Asaas-specific structure to
+-- remove — only a default to put back.
+--
+-- Historical rows are untouched on purpose: `orders` / `payments` /
+-- `payment_webhook_events` hold financial history (all three carry a
+-- deliberate REVOKE DELETE from 0022_payments), and the `provider`
+-- column is the only thing that distinguishes which integration
+-- produced a given row. A provider change is not a reason to erase what
+-- customers actually paid.
+
+-- ─────────────────────────────────────────────────────────────────
+-- 1. New rows are Mercado Pago's again. Existing rows keep whichever
+--    provider actually created them.
+--
+--    This also resolves a real drift: schema.prisma has declared
+--    PaymentWebhookEvent.provider @default("mercadopago") all along,
+--    while the database has carried 'asaas' since 0029 — the two now
+--    agree.
+-- ─────────────────────────────────────────────────────────────────
+ALTER TABLE "orders" ALTER COLUMN "provider" SET DEFAULT 'mercadopago';
+ALTER TABLE "payment_webhook_events" ALTER COLUMN "provider" SET DEFAULT 'mercadopago';
+
+-- ─────────────────────────────────────────────────────────────────
+-- 2. payments_status_check is deliberately LEFT LOOSE
+--    (`length(status) > 0`, as 0029 made it).
+--
+--    Re-tightening it to Mercado Pago's own nine statuses would fail
+--    outright: rows written during the Asaas period store that
+--    provider's uppercase vocabulary (CONFIRMED / OVERDUE / ...), and
+--    the only ways to make a strict CHECK apply would be to rewrite or
+--    delete real payment history. Both are refused here.
+--
+--    The real validation lives in application code:
+--    `PaymentsService.recordFromGateway` only ever writes a status that
+--    `MercadoPagoProvider` itself produced.
+-- ─────────────────────────────────────────────────────────────────

@@ -211,8 +211,14 @@ export class TransfersService {
       await this.agent.importTransfer(transfer.targetNodeId, {
         uuid: transfer.serverId,
         uid: resolvedUid,
-        image: server.dockerImage,
-        startupTemplate: server.startupCommand,
+        // Non-null by construction, not just by luck: `initiate()` already
+        // required `status === 'ready'` before this transfer could even be
+        // queued, and `servers_setup_consistency` guarantees a 'ready'
+        // server always has both columns set — only 'setup_pending' (a
+        // status this flow never produces or accepts) allows either to be
+        // NULL.
+        image: server.dockerImage!,
+        startupTemplate: server.startupCommand!,
         declaredVariables: variableRows.map((v) => v.variable.envVariable),
         variables: Object.fromEntries(variableRows.map((v) => [v.variable.envVariable, v.value])),
         limits: {

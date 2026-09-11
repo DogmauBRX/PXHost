@@ -9,32 +9,44 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { canTransition, type SubscriptionStatus } from '../subscriptions/subscription-status';
 import { PaymentsService } from './payments.service';
 import { ProvisioningQueueService } from './provisioning-queue.service';
-import { PAYMENT_PROVIDER, type GatewayPayment, type ParsedWebhook, type PaymentProvider } from './payment-provider.interface';
+import {
+  PAYMENT_PROVIDER,
+  type GatewayPayment,
+  type GatewaySubscription,
+  type InternalPaymentEvent,
+  type ParsedWebhook,
+  type PaymentProvider,
+} from './payment-provider.interface';
 
 /**
  * The actual webhook processing logic — runs inside the
  * `webhook-processing` queue's worker (`WebhookProcessingProcessor`),
  * never on the HTTP request path (see `PaymentsWebhookController`'s own
- * doc comment for why). `process(parsed)` is the single entry point;
- * everything below preserves the exact pipeline discipline the Mercado
- * Pago era already established, in the exact order:
+ * doc comment for why). `process(parsed)` is the single entry point,
+ * and the pipeline discipline below is in this exact order:
  *
  * 1. The webhook BODY is never trusted as the financial source of
- *    truth — every branch below re-fetches the actual payment/
- *    subscription from Asaas's own API before acting on it. This
- *    matters MORE for Asaas than it did for Mercado Pago: Asaas
- *    authenticates a webhook with a single static token, not a
- *    signature, so the re-fetch is the real defense against a leaked
- *    token being used to forge a `PaymentConfirmed` notification.
+ *    truth. It cannot be, even in principle: Mercado Pago's
+ *    notification carries nothing but a resource id and
+ *    `payment.created`/`payment.updated` — the outcome lives in the
+ *    resource itself. So every branch re-fetches from Mercado Pago's
+ *    API and runs the result through `provider.classifyPayment` /
+ *    `classifySubscription`.
  * 2. A payment is matched to this platform's own `Order`/`Subscription`
- *    ONLY by `subscriptionExternalId` (a payment's own `subscription`
- *    field in Asaas) — never by amount, description, or customer name.
+ *    ONLY by an identifier this platform itself generated
+ *    (`external_reference`, for a standalone Pix charge) or by the
+ *    preapproval id it belongs to (for a recurring card charge) — never
+ *    by amount, description, or payer name.
  * 3. The amount is verified before anything is marked `paid`.
  * 4. Every state change happens under the SAME advisory lock
  *    `ServersService.createOnNode` already uses for the subscription's
- *    plan — the identical protection against two notifications racing
- *    on the same order/subscription that the Mercado Pago era relied
- *    on.
+ *    plan — protection against two notifications racing on the same
+ *    order/subscription.
+ *
+ * A preapproval turning `authorized` is deliberately NOT a payment: the
+ * customer authorized future charges, they have not paid. Only a
+ * re-fetched payment whose own status is `approved` ever produces
+ * `PaymentConfirmed`.
  *
  * `process` is safe to call twice for the same notification (BullMQ's
  * own retry, or a redelivered webhook whose dedupe-insert already
@@ -59,80 +71,113 @@ export class PaymentsWebhookService {
 
   async process(parsed: ParsedWebhook): Promise<void> {
     try {
-      switch (parsed.internalEvent) {
-        case 'PaymentCreated':
-        case 'PaymentConfirmed':
-        case 'PaymentOverdue':
-        case 'PaymentRefunded':
-        case 'PaymentChargeback':
-        case 'PaymentCanceled':
-        case 'PaymentRestored':
-        case 'PaymentFailed':
+      switch (parsed.resourceKind) {
+        case 'payment':
+        case 'authorized_payment':
           await this.processPaymentEvent(parsed);
           break;
-        case 'PaymentPending':
-          // Not a final outcome — acknowledge and change nothing, same
-          // 'hold' posture the Mercado Pago era used for pending/
-          // in_process/authorized.
+        case 'preapproval':
+          await this.processPreapprovalEvent(parsed);
           break;
-        case 'SubscriptionCanceled':
-          await this.processSubscriptionCanceled(parsed);
-          break;
-        case 'SubscriptionSynced':
-          await this.processSubscriptionSynced(parsed);
-          break;
-        case 'Ignored':
+        case null:
+          // A topic this platform doesn't handle. Acknowledged, recorded,
+          // and deliberately no-op — never an error, or Mercado Pago
+          // would retry it forever.
           break;
       }
       await this.markEvent(parsed.notificationId, 'processed');
     } catch (err) {
       await this.markEvent(parsed.notificationId, 'failed', err instanceof Error ? err.message : String(err));
-      throw err; // let BullMQ retry — a transient failure (DB hiccup, Asaas briefly unreachable) must not be swallowed
+      throw err; // let BullMQ retry — a transient failure (DB hiccup, Mercado Pago briefly unreachable) must not be swallowed
     }
   }
 
+  /**
+   * A `payment` or `subscription_authorized_payment` notification. The
+   * outcome comes from the re-fetched resource's own status, never from
+   * the notification (see this class's doc comment).
+   */
   private async processPaymentEvent(parsed: ParsedWebhook): Promise<void> {
-    if (!parsed.paymentExternalId) {
-      this.logger.warn(`${parsed.internalEvent} webhook ${parsed.notificationId} carries no payment id — nothing to re-fetch`);
+    if (!parsed.resourceId) {
+      this.logger.warn(`${parsed.rawEvent} webhook ${parsed.notificationId} carries no resource id — nothing to re-fetch`);
       return;
     }
 
-    // Re-fetch — the webhook body is never trusted (see this class's
-    // own doc comment).
-    const payment = await this.provider.getPayment(parsed.paymentExternalId);
-    if (!payment.subscriptionExternalId) {
-      // This platform only ever creates subscription-attached charges —
-      // a payment with no subscription is either a manual one created
-      // directly in the Asaas dashboard (out of scope) or malformed.
-      await this.audit.record({
-        action: 'payment.webhook.order_not_found',
-        targetType: 'payment_webhook_event',
-        targetId: parsed.notificationId,
-        metadata: { paymentId: payment.id, reason: 'no subscription on payment' },
-      });
-      return;
-    }
+    const payment =
+      parsed.resourceKind === 'authorized_payment'
+        ? await this.provider.getAuthorizedPayment(parsed.resourceId)
+        : await this.provider.getPayment(parsed.resourceId);
 
-    const subscription = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
-      tx.subscription.findFirst({ where: { externalSubscriptionId: payment.subscriptionExternalId! } }),
-    );
+    const event = this.provider.classifyPayment(payment);
+    if (event === 'Ignored') return;
+
+    const subscription = await this.findSubscriptionForPayment(payment);
     if (!subscription) {
       await this.audit.record({
         action: 'payment.webhook.order_not_found',
         targetType: 'payment_webhook_event',
         targetId: parsed.notificationId,
-        metadata: { externalSubscriptionId: payment.subscriptionExternalId, paymentId: payment.id },
+        metadata: {
+          paymentId: payment.id,
+          externalReference: payment.externalReference,
+          externalSubscriptionId: payment.subscriptionExternalId,
+        },
       });
       return;
     }
 
-    const shouldProvision = await this.applyPaymentOutcome(subscription.id, subscription.planId, parsed.internalEvent, payment);
+    const shouldProvision = await this.applyPaymentOutcome(subscription.id, subscription.planId, event, payment);
     if (shouldProvision) {
       // Deliberately AFTER the transaction has committed — an outbound
       // Redis call must never happen inside a transaction that could
       // still roll back, the same reason ServersService.createOnNode
       // keeps agent dispatch out of ITS transaction too.
       await this.provisioningQueue.enqueue(shouldProvision);
+    }
+  }
+
+  /**
+   * Two ways a Mercado Pago payment links back to a subscription here,
+   * and no third — never by amount or payer:
+   *  - a **recurring card charge** carries the `preapproval_id` it
+   *    belongs to (`Subscription.externalSubscriptionId`);
+   *  - a **standalone Pix charge** belongs to no preapproval at all, so
+   *    it carries the `external_reference` this platform generated for
+   *    the Order it was created for.
+   */
+  private async findSubscriptionForPayment(payment: GatewayPayment) {
+    return this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
+      if (payment.subscriptionExternalId) {
+        return tx.subscription.findFirst({ where: { externalSubscriptionId: payment.subscriptionExternalId } });
+      }
+      if (payment.externalReference) {
+        const order = await tx.order.findFirst({ where: { externalReference: payment.externalReference } });
+        if (order?.subscriptionId) {
+          return tx.subscription.findFirst({ where: { id: order.subscriptionId } });
+        }
+      }
+      return null;
+    });
+  }
+
+  /**
+   * A `subscription_preapproval` notification — the customer authorized
+   * (or cancelled/paused) the recurring card charge. Authorization is
+   * NOT payment: it never marks an order paid, never activates a
+   * subscription, and never provisions a server. Only the charge that
+   * follows does.
+   */
+  private async processPreapprovalEvent(parsed: ParsedWebhook): Promise<void> {
+    if (!parsed.resourceId) return;
+    const subscription = await this.provider.getSubscription(parsed.resourceId);
+    const event = this.provider.classifySubscription(subscription);
+
+    if (event === 'SubscriptionCanceled') {
+      await this.processSubscriptionCanceled(parsed.resourceId);
+      return;
+    }
+    if (event === 'SubscriptionSynced') {
+      await this.processSubscriptionSynced(parsed.resourceId, subscription);
     }
   }
 
@@ -145,7 +190,7 @@ export class PaymentsWebhookService {
   private async applyPaymentOutcome(
     subscriptionId: string,
     planId: string,
-    event: ParsedWebhook['internalEvent'],
+    event: InternalPaymentEvent,
     payment: GatewayPayment,
   ): Promise<string | null> {
     return this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
@@ -167,10 +212,14 @@ export class PaymentsWebhookService {
       }
 
       switch (event) {
-        case 'PaymentCreated': {
+        case 'PaymentPending': {
+          // Not a final outcome — record the charge so the admin can see
+          // it, and change nothing else. (Nothing needs fetching for
+          // presentation: every Pix QR this platform shows was captured
+          // when the charge was CREATED, by checkout or by the billing
+          // cycle — Mercado Pago never generates a charge on its own for
+          // pix, and a card charge has no QR.)
           await this.payments.recordFromGateway(order.id, payment, tx);
-          await this.populatePaymentPresentation(order.id, subscription.paymentMethod, payment);
-          await this.audit.record({ action: 'payment.checkout.created', targetType: 'order', targetId: order.id, metadata: { paymentId: payment.id } });
           return null;
         }
         case 'PaymentConfirmed': {
@@ -223,16 +272,6 @@ export class PaymentsWebhookService {
           // server — a renewal's provisioningStatus is 'not_required'.
           return order.provisioningStatus === 'pending' ? order.id : null;
         }
-        case 'PaymentOverdue': {
-          await this.payments.recordFromGateway(order.id, payment, tx);
-          if (canTransition(subscription.status as SubscriptionStatus, 'past_due')) {
-            await this.subscriptions.applyTransition(tx, subscriptionId, 'past_due', { actorId: null, reason: 'payment webhook: overdue' });
-            await this.audit.record({ action: 'payment.rejected', targetType: 'subscription', targetId: subscriptionId, metadata: { paymentId: payment.id } });
-          }
-          // No suspension here — billing-cycle applies BILLING_GRACE_DAYS
-          // uniformly for pix and card since the Asaas migration.
-          return null;
-        }
         case 'PaymentRefunded':
         case 'PaymentChargeback': {
           await this.payments.recordFromGateway(order.id, payment, tx);
@@ -249,16 +288,21 @@ export class PaymentsWebhookService {
           }
           return null;
         }
-        case 'PaymentRestored': {
-          if (order.status === 'cancelled') {
-            await tx.order.update({ where: { id: order.id }, data: { status: 'pending' } });
-          }
-          return null;
-        }
         case 'PaymentFailed': {
+          await this.payments.recordFromGateway(order.id, payment, tx);
           if (order.status === 'pending') {
             await tx.order.update({ where: { id: order.id }, data: { status: 'failed' } });
-            await this.audit.record({ action: 'payment.rejected', targetType: 'order', targetId: order.id, metadata: { paymentId: payment.id } });
+          }
+          await this.audit.record({ action: 'payment.rejected', targetType: 'order', targetId: order.id, metadata: { paymentId: payment.id } });
+
+          // A RENEWAL charge Mercado Pago rejected is delinquency: the
+          // customer has a running subscription and this period's money
+          // did not arrive, so the grace period starts now (billing-cycle
+          // suspends after BILLING_GRACE_DAYS). A FIRST charge failing is
+          // not delinquency at all — nothing was ever activated, so the
+          // order simply fails and the subscription stays `pending`.
+          if (order.kind === 'plan_renewal' && canTransition(subscription.status as SubscriptionStatus, 'past_due')) {
+            await this.subscriptions.applyTransition(tx, subscriptionId, 'past_due', { actorId: null, reason: 'payment webhook: renewal charge rejected' });
           }
           return null;
         }
@@ -269,18 +313,22 @@ export class PaymentsWebhookService {
   }
 
   /**
-   * A payment always belongs to a subscription in this platform's
-   * model. If a `Payment` row for it already exists, its `orderId` is
-   * authoritative (idempotent — a redelivered/retried notification about
-   * a payment already linked). Otherwise: the subscription's own
-   * `plan_initial` order, if it's still `pending` and has never had a
-   * payment recorded (the very first charge Asaas generated for a brand
-   * new subscription) — or, failing that, a NEW `plan_renewal` order,
-   * mirroring the shape `OrdersService.createCheckoutOrder` itself would
-   * have produced. Asaas's own scheduler generates a renewal charge with
-   * no reference back to a specific Order at all — only to the
-   * Subscription — which is exactly why this lookup never uses
-   * `externalReference` once a subscription exists.
+   * Resolves the `Order` a payment belongs to, in strict order of how
+   * certain the link is:
+   *
+   * 1. A `Payment` row already exists for this provider payment id — its
+   *    `orderId` is authoritative (idempotent: a redelivered or retried
+   *    notification about a charge already linked).
+   * 2. The payment echoes an `external_reference` — this platform
+   *    generated that charge FOR a specific order (every pix charge,
+   *    whether from checkout or from the billing cycle), so that order
+   *    is an exact match.
+   * 3. Otherwise this is a recurring card charge Mercado Pago generated
+   *    on its own schedule, which references only the preapproval and no
+   *    order at all: reuse the subscription's untouched `plan_initial`
+   *    order if it's still awaiting its first payment, else create a NEW
+   *    `plan_renewal` order mirroring the shape
+   *    `OrdersService.createCheckoutOrder` itself would have produced.
    */
   private async findOrCreateOrderForPayment(
     tx: Prisma.TransactionClient,
@@ -290,6 +338,11 @@ export class PaymentsWebhookService {
     const existingPayment = await tx.payment.findUnique({ where: { id: payment.id } });
     if (existingPayment) {
       return tx.order.findFirst({ where: { id: existingPayment.orderId } });
+    }
+
+    if (payment.externalReference) {
+      const referenced = await tx.order.findFirst({ where: { externalReference: payment.externalReference } });
+      if (referenced) return referenced;
     }
 
     const initialOrder = await tx.order.findFirst({
@@ -316,37 +369,30 @@ export class PaymentsWebhookService {
     });
   }
 
-  /** Pix QR / card checkout URL for a NEW order (the first charge at checkout already gets this from `OrdersService`; a renewal charge Asaas generates on its own needs it fetched here instead, the first time `PaymentCreated` fires for it). */
-  private async populatePaymentPresentation(orderId: string, paymentMethod: string | null, payment: GatewayPayment): Promise<void> {
-    if (paymentMethod === 'pix') {
-      const qr = await this.provider.getPixQrCode(payment.id).catch(() => null);
-      if (qr) {
-        await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
-          tx.order.update({ where: { id: orderId }, data: { pixQrCode: qr.qrCode, pixQrCodeBase64: qr.qrCodeBase64 } }),
-        );
-      }
-    }
-  }
-
-  private async processSubscriptionCanceled(parsed: ParsedWebhook): Promise<void> {
-    if (!parsed.subscriptionExternalId) return;
+  private async processSubscriptionCanceled(externalSubscriptionId: string): Promise<void> {
     await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
-      const subscription = await tx.subscription.findFirst({ where: { externalSubscriptionId: parsed.subscriptionExternalId! } });
+      const subscription = await tx.subscription.findFirst({ where: { externalSubscriptionId } });
       if (!subscription) return;
       if (canTransition(subscription.status as SubscriptionStatus, 'cancelled')) {
-        await this.subscriptions.applyTransition(tx, subscription.id, 'cancelled', { actorId: null, reason: 'subscription webhook: canceled at Asaas' });
+        await this.subscriptions.applyTransition(tx, subscription.id, 'cancelled', {
+          actorId: null,
+          reason: 'subscription webhook: cancelled at Mercado Pago',
+        });
       }
     });
   }
 
-  /** A light courtesy sync of `nextDueDate` — never the authority on activation/period-extension, which stays exclusively `PaymentConfirmed`'s job (see this class's own doc comment). */
-  private async processSubscriptionSynced(parsed: ParsedWebhook): Promise<void> {
-    if (!parsed.subscriptionExternalId) return;
-    const gatewaySubscription = await this.provider.getSubscription(parsed.subscriptionExternalId);
+  /**
+   * A light courtesy sync of the next charge date — never the authority
+   * on activation or period extension, which stays exclusively
+   * `PaymentConfirmed`'s job (see this class's own doc comment). This is
+   * the ONLY thing an `authorized` preapproval does on this platform.
+   */
+  private async processSubscriptionSynced(externalSubscriptionId: string, gatewaySubscription: GatewaySubscription): Promise<void> {
     if (!gatewaySubscription.nextDueDate) return;
     await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
       tx.subscription.updateMany({
-        where: { externalSubscriptionId: parsed.subscriptionExternalId!, status: 'active' },
+        where: { externalSubscriptionId, status: 'active' },
         data: { currentPeriodEndsAt: gatewaySubscription.nextDueDate! },
       }),
     );

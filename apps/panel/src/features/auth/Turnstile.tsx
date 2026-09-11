@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef } from 'react';
 
 // The public Site Key only (safe in a browser bundle by design — same
-// posture as VITE_MERCADOPAGO_PUBLIC_KEY in CheckoutPage.tsx). The
+// posture the panel uses for every public build-time key). The
 // matching Secret Key is a server-side value in apps/api/.env
 // (TURNSTILE_SECRET_KEY), never here. Read once at module scope: when
 // unset, every consumer of this component below just renders nothing

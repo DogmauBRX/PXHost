@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ClientServersService } from './client-servers.service';
+import { ServerSetupService } from './server-setup.service';
 import { PowerActionDto } from './dto/power.dto';
+import { CompleteServerSetupDto } from './dto/server-setup.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/guards/jwt-auth.guard';
 
@@ -17,11 +19,26 @@ import type { AuthenticatedUser } from '../auth/guards/jwt-auth.guard';
  */
 @Controller('api/client/servers')
 export class ClientServersController {
-  constructor(private readonly servers: ClientServersService) {}
+  constructor(
+    private readonly servers: ClientServersService,
+    private readonly setup: ServerSetupService,
+  ) {}
 
   @Get()
   list(@CurrentUser() user: AuthenticatedUser) {
     return this.servers.list(user.id);
+  }
+
+  /** The setup screen's own data source — software catalog + current plan limits. See ServerSetupService.getSetupInfo's doc comment. */
+  @Get(':id/setup')
+  getSetup(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.setup.getSetupInfo(user, id);
+  }
+
+  /** First-time setup AND retry-after-failure both land here — see ServerSetupService.complete's doc comment for why the same call safely serves both. */
+  @Post(':id/setup')
+  completeSetup(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: CompleteServerSetupDto) {
+    return this.setup.complete(user, id, dto);
   }
 
   @Get(':id')

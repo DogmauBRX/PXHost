@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { ServerAccessService } from '../authorization/server-access.service';
 import type { AccessActor } from '../authorization/server-access.service';
@@ -32,6 +32,11 @@ export class ServerVariablesService {
   async list(actor: AccessActor, serverId: string): Promise<ClientVariable[]> {
     const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('startup.read')) throw new ForbiddenException('Missing permission: startup.read');
+    // 'setup_pending' has no template yet (see servers_setup_consistency) —
+    // `startup.read` itself still passes ServerAccessService's gate (every
+    // `.read` permission does, even pre-setup), so the setup screen's own
+    // calls to this endpoint must see an empty list, never a crash.
+    if (!server.templateId) return [];
 
     const [templateVars, serverVars] = await Promise.all([
       this.prisma.templateVariable.findMany({ where: { templateId: server.templateId, isUserViewable: true }, orderBy: { sortOrder: 'asc' } }),
@@ -70,6 +75,12 @@ export class ServerVariablesService {
   async update(actor: AccessActor, serverId: string, values: Record<string, string>): Promise<ClientVariable[]> {
     const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('startup.update')) throw new ForbiddenException('Missing permission: startup.update');
+    // 'setup_pending' has no template yet — there is nothing to edit here
+    // until ServerSetupService.complete picks one. In practice
+    // ServerAccessService already blocks 'startup.update' for this
+    // status (Fase 7), so this is a second, explicit guard rather than
+    // the only one — belt and suspenders for a TypeScript-visible null.
+    if (!server.templateId) throw new ConflictException('Server has no template yet — complete initial setup first');
 
     const [templateVars, serverVars] = await Promise.all([
       this.prisma.templateVariable.findMany({ where: { templateId: server.templateId } }),

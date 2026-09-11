@@ -21,6 +21,7 @@ const PLAN_PUBLIC_SELECT = {
   highlightLabel: true,
   sortOrder: true,
   maxSlots: true, // read internally to COMPUTE availability; stripped before the response leaves toPublicPlan()
+  planFamily: true, // read internally to find cycle siblings for getBySlug's familyCycles; stripped before the response leaves toPublicPlan()
 } satisfies Prisma.PlanSelect;
 
 type PlanRow = Prisma.PlanGetPayload<{ select: typeof PLAN_PUBLIC_SELECT }>;
@@ -85,6 +86,23 @@ export class PublicPlansService {
     return result;
   }
 
+  /**
+   * Checkout redesign (WHMCS-style) — beyond the plan itself, returns
+   * `familyCycles`: every public plan sharing this one's `planFamily`
+   * (itself included), so `/checkout/:slug` can offer a billing-cycle
+   * switcher without navigating to a different route. A plan with no
+   * `planFamily` (or no living sibling) gets `familyCycles = [itself]` —
+   * the checkout always renders the cycle block, never an empty one, per
+   * the approved plan's "não some — o mockup mostra o bloco sempre".
+   *
+   * Siblings come back as FULL `PublicPlan` objects (same shape/
+   * availability computation as `list()`, not a stripped-down summary) so
+   * a sold-out cycle renders disabled instead of letting the client pick
+   * something `SubscriptionsService.createForUser`'s own slot check would
+   * then reject. The LIST endpoint (`list()` above) is untouched —
+   * `familyCycles` only exists on this single-plan response, so the
+   * catalog grid's payload never grows.
+   */
   async getBySlug(slug: string) {
     // Deliberately not cached individually — the list above already is,
     // and a plan-detail page is a low-traffic path compared to the grid;
@@ -95,8 +113,26 @@ export class PublicPlansService {
       select: PLAN_PUBLIC_SELECT,
     });
     if (!plan) throw new NotFoundException('Plan not found');
-    const [occupiedByPlan, derivedSlotsByPlan] = await Promise.all([this.occupancyForPlans([plan.id]), this.derivedSlotsForPlans([plan])]);
-    return this.toPublicPlan(plan, this.computeAvailability(plan.maxSlots, occupiedByPlan.get(plan.id) ?? 0, derivedSlotsByPlan?.get(plan.id)));
+
+    const familyPlans = plan.planFamily
+      ? await this.prisma.plan.findMany({
+          where: { planFamily: plan.planFamily, deletedAt: null, isPublic: true },
+          select: PLAN_PUBLIC_SELECT,
+          orderBy: { priceCents: 'asc' },
+        })
+      : [plan];
+
+    // Batched across the whole family, same reasoning as `list()`'s own
+    // batching (occupancyForPlans's doc comment) — one query pair for
+    // every cycle, not one per cycle.
+    const familyIds = familyPlans.map((p) => p.id);
+    const [occupiedByPlan, derivedSlotsByPlan] = await Promise.all([this.occupancyForPlans(familyIds), this.derivedSlotsForPlans(familyPlans)]);
+    const familyCycles = familyPlans.map((p) =>
+      this.toPublicPlan(p, this.computeAvailability(p.maxSlots, occupiedByPlan.get(p.id) ?? 0, derivedSlotsByPlan?.get(p.id))),
+    );
+
+    const selected = familyCycles.find((p) => p.id === plan.id) ?? familyCycles[0];
+    return { ...selected, familyCycles };
   }
 
   /**
@@ -192,9 +228,9 @@ export class PublicPlansService {
     return { status: remaining <= LOW_STOCK_THRESHOLD ? 'limited' : 'available', remaining };
   }
 
-  /** Strips `maxSlots` (internal-only, see PLAN_PUBLIC_SELECT's own doc comment) and attaches the computed `availability` in its place. */
+  /** Strips `maxSlots`/`planFamily` (internal-only, see PLAN_PUBLIC_SELECT's own doc comment) and attaches the computed `availability` in its place. */
   private toPublicPlan(plan: PlanRow, availability: PlanAvailability) {
-    const { maxSlots: _maxSlots, ...publicFields } = plan;
+    const { maxSlots: _maxSlots, planFamily: _planFamily, ...publicFields } = plan;
     return { ...publicFields, availability };
   }
 }

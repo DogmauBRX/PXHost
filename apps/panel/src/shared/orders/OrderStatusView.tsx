@@ -9,7 +9,7 @@ import { Alert, Button, Card, CardBody, CardHeader, CardTitle } from '@/ui/primi
  * `GET /api/client/orders/:id` (never assumes payment succeeded just
  * because this rendered; only the order's own `status`, set by the
  * webhook, decides). Pix shows the QR code synchronously returned at
- * creation, in-page; card shows a link out to Asaas's OWN hosted
+ * creation, in-page; card shows a link out to Mercado Pago's OWN hosted
  * checkout (`order.checkoutUrl`, "checkout hospedado" decision — card
  * data is entered THERE, never on this platform), and keeps polling in
  * the background so this page updates on its own whether the customer
@@ -103,7 +103,7 @@ export function OrderStatusView({ order, onRetry }: { order: Order; onRetry: () 
           </CardHeader>
           <CardBody className="space-y-4">
             <p className="text-sm text-text-muted">
-              Você será redirecionado para a página segura do Asaas para inserir os dados do cartão — eles nunca passam pelo nosso site.
+              Você será redirecionado para a página segura do Mercado Pago para autorizar a cobrança no cartão — os dados do cartão nunca passam pelo nosso site.
             </p>
             <Button
               type="button"

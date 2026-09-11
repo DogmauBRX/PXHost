@@ -37,17 +37,27 @@ export function PublicShell({ children }: { children: ReactNode }) {
   const onPlans = useLocation({ select: (l) => l.pathname }).startsWith('/plans');
   const catalogNavTo = onPlans ? '/' : '/plans';
   const catalogNavLabel = onPlans ? 'Início' : 'Ver planos';
+  // `/`'s own beforeLoad bounces a signed-in visitor straight to their
+  // dashboard by default (login.tsx's post-login fallback and a plain
+  // bookmark both rely on that) — `stay` is this route's own opt-out, so
+  // a logged-in customer clicking Início/the logo actually SEES the
+  // landing page instead of getting bounced right back to /client every
+  // time (see app/routes/index.tsx's own doc comment). Harmless when
+  // logged out or when `to` is `/plans` (that route ignores unknown
+  // search params, and the guard this opts out of only ever fires for an
+  // authenticated visitor anyway).
+  const homeSearch = { stay: true } as const;
 
   return (
     <div className="min-h-screen bg-bg">
       <header className="sticky top-0 z-30 border-b border-border bg-surface/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-4">
-            <Link to="/" className="flex items-center gap-3">
+            <Link to="/" search={homeSearch} className="flex items-center gap-3">
               <Logo size={40} />
               <Wordmark className="text-2xl" />
             </Link>
-            <Link to={catalogNavTo} className="hidden md:block">
+            <Link to={catalogNavTo} search={onPlans ? homeSearch : undefined} className="hidden md:block">
               <Button variant="secondary">{catalogNavLabel}</Button>
             </Link>
           </div>
@@ -91,7 +101,12 @@ export function PublicShell({ children }: { children: ReactNode }) {
         {mobileOpen && (
           <div className="border-t border-border bg-surface px-4 py-4 md:hidden">
             <nav className="flex flex-col gap-1">
-              <Link to={catalogNavTo} onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-text hover:bg-surface-2">
+              <Link
+                to={catalogNavTo}
+                search={onPlans ? homeSearch : undefined}
+                onClick={() => setMobileOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-sm font-medium text-text hover:bg-surface-2"
+              >
                 {catalogNavLabel}
               </Link>
               {accessToken ? (

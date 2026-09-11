@@ -8,21 +8,31 @@ import { AuditService } from '../modules/audit/audit.service';
 import { ServersService } from '../modules/servers/servers.service';
 import { SubscriptionsService } from '../modules/subscriptions/subscriptions.service';
 import { canTransition, type SubscriptionStatus } from '../modules/subscriptions/subscription-status';
+import { OrdersService } from '../modules/payments/orders.service';
 
 const RUN_EVERY_MS = 24 * 60 * 60 * 1000; // daily — order TTL and the grace period are both day-granularity concerns, same cadence partition-maintenance already uses for a comparably slow-moving job
+/** How far ahead a pix subscription's next charge is generated. Wide enough that a missed daily run still leaves the customer time to pay before the period lapses. */
+const PIX_RENEWAL_LOOKAHEAD_DAYS = 3;
 
 /**
- * Two jobs that existed only as inert columns before the Asaas
- * migration (`Order.expiresAt`/`CHECKOUT_ORDER_TTL_MINUTES`,
- * `BILLING_GRACE_DAYS`) — nothing in this codebase ever read either
- * one. Same `upsertJobScheduler` repeatable-job pattern
- * `PartitionMaintenanceProcessor` already established.
+ * The daily billing job. Same `upsertJobScheduler` repeatable-job
+ * pattern `PartitionMaintenanceProcessor` already established.
  *
- * 1. Abandoned checkout: a `pending` Order past its own `expiresAt`
- *    stops holding the slot its `Subscription` reserved — expires the
- *    order, cancels the (still-`pending`) subscription. Never touches
- *    an order that's already `paid`/`failed`/anything else.
- * 2. Inadimplência: a subscription that's been `past_due` for more
+ * 1. **Pix renewal**: Mercado Pago has no recurring Pix product at all
+ *    (`/preapproval` is card-only), so for pix THIS platform is the
+ *    scheduler — every subscription whose period is about to end gets
+ *    the next cycle's charge generated here
+ *    (`OrdersService.createPixRenewalCharge`, idempotent). Card
+ *    subscriptions are skipped entirely: Mercado Pago charges those
+ *    itself and simply notifies us.
+ * 2. **Abandoned checkout / unpaid renewal**: a `pending` Order past
+ *    its own `expiresAt` stops holding the slot its `Subscription`
+ *    reserved. A `plan_initial` one cancels the still-`pending`
+ *    subscription (the customer never paid at all); a `plan_renewal`
+ *    one moves the subscription to `past_due` — which is exactly how an
+ *    unpaid Pix becomes delinquency, with no provider event needed.
+ *    Never touches an order that's already `paid`/`failed`.
+ * 3. **Inadimplência**: a subscription that's been `past_due` for more
  *    than `BILLING_GRACE_DAYS` gets suspended — subscription status AND
  *    the actual server, via `ServersService.suspend(..., 'billing')` so
  *    `unsuspend`'s `requireSource` guard later refuses to let a
@@ -47,6 +57,7 @@ export class BillingCycleProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly audit: AuditService,
     private readonly servers: ServersService,
     private readonly subscriptions: SubscriptionsService,
+    private readonly orders: OrdersService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -67,9 +78,52 @@ export class BillingCycleProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async runOnce(): Promise<void> {
+    // Renewals FIRST: a subscription whose period is ending gets its
+    // next charge before anything downstream considers it late.
+    const renewedCount = await this.generatePixRenewalCharges();
     const expiredCount = await this.expireStaleOrders();
     const suspendedCount = await this.suspendOverdueSubscriptions();
-    this.logger.log(`billing-cycle run complete: ${expiredCount} order(s) expired, ${suspendedCount} subscription(s) suspended`);
+    this.logger.log(
+      `billing-cycle run complete: ${renewedCount} pix renewal charge(s) created, ${expiredCount} order(s) expired, ${suspendedCount} subscription(s) suspended`,
+    );
+  }
+
+  /**
+   * One Pix charge per subscription whose period ends inside the
+   * lookahead window. Card subscriptions are excluded by
+   * `paymentMethod` — Mercado Pago charges those on its own schedule.
+   *
+   * A failure for one subscription never aborts the run: the next daily
+   * pass retries it, and the customer isn't late until their period
+   * actually lapses unpaid.
+   */
+  private async generatePixRenewalCharges(): Promise<number> {
+    const horizon = new Date(Date.now() + PIX_RENEWAL_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000);
+
+    const due = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+      tx.subscription.findMany({
+        where: {
+          paymentMethod: 'pix',
+          status: { in: ['active', 'past_due'] },
+          // A subscription already on its way out never gets charged
+          // again — the customer asked to stop.
+          cancelAtPeriodEnd: false,
+          currentPeriodEndsAt: { lte: horizon },
+        },
+        select: { id: true },
+      }),
+    );
+
+    let created = 0;
+    for (const sub of due) {
+      try {
+        const orderId = await this.orders.createPixRenewalCharge(sub.id);
+        if (orderId) created++;
+      } catch (err) {
+        this.logger.error(`pix renewal failed for subscription ${sub.id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return created;
   }
 
   private async expireStaleOrders(): Promise<number> {
@@ -83,14 +137,30 @@ export class BillingCycleProcessor implements OnModuleInit, OnModuleDestroy {
     for (const order of staleOrders) {
       await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
         await tx.order.update({ where: { id: order.id }, data: { status: 'expired' } });
-        if (order.kind === 'plan_initial' && order.subscriptionId) {
-          const subscription = await tx.subscription.findFirst({ where: { id: order.subscriptionId } });
-          if (subscription && canTransition(subscription.status as SubscriptionStatus, 'cancelled')) {
+        if (!order.subscriptionId) return;
+        const subscription = await tx.subscription.findFirst({ where: { id: order.subscriptionId } });
+        if (!subscription) return;
+
+        if (order.kind === 'plan_initial') {
+          // Never paid at all — the subscription never started.
+          if (canTransition(subscription.status as SubscriptionStatus, 'cancelled')) {
             await this.subscriptions.applyTransition(tx, order.subscriptionId, 'cancelled', {
               actorId: null,
               reason: 'billing-cycle: checkout abandoned (order expired)',
             });
           }
+          return;
+        }
+
+        // A renewal charge that expired unpaid IS the delinquency
+        // signal for pix — Mercado Pago has no "overdue" event to send
+        // for a charge it never scheduled. From here the existing grace
+        // period and suspension logic take over unchanged.
+        if (canTransition(subscription.status as SubscriptionStatus, 'past_due')) {
+          await this.subscriptions.applyTransition(tx, order.subscriptionId, 'past_due', {
+            actorId: null,
+            reason: 'billing-cycle: renewal charge expired unpaid',
+          });
         }
       });
       await this.audit.record({ action: 'payment.checkout.expired', targetType: 'order', targetId: order.id });

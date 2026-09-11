@@ -180,6 +180,11 @@ export class PlansService {
         priceCents: dto.priceCents ?? 0,
         currency: dto.currency ?? 'BRL',
         billingPeriod: dto.billingPeriod ?? 'monthly',
+        // Undefined leaves this NULL — a plan created without an explicit
+        // family is simply a single-cycle product (Plan.planFamily's own
+        // doc comment), same "no group" default every other plan has had
+        // since before this column existed.
+        planFamily: dto.planFamily,
         // Advisory-only, all nullable — undefined leaves them NULL, which
         // means "this plan publishes no recommendation," not "0".
         recommendedPlayersMin: dto.recommendedPlayersMin,

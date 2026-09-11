@@ -193,6 +193,7 @@ export interface CreatePlanInput {
   compareAtPriceCents?: number;
   currency?: string;
   billingPeriod?: string;
+  planFamily?: string;
   maxServers?: number;
   maxSlots?: number;
   isFeatured?: boolean;
@@ -329,7 +330,7 @@ export const getSubscription = (id: string) => apiFetch<AdminSubscriptionDetail>
 export const updateSubscriptionStatus = (id: string, status: SubscriptionStatus, reason?: string) =>
   apiFetch<AdminSubscriptionDetail>(`/api/admin/subscriptions/${id}/status`, { method: 'POST', body: JSON.stringify({ status, reason }) });
 
-// ---- Orders / payments (Asaas) ----
+// ---- Orders / payments (Mercado Pago) ----
 
 export interface ListOrdersParams {
   status?: OrderStatus;

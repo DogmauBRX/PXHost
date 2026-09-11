@@ -65,7 +65,7 @@ const PERMISSION_CATALOG: { key: string; groupKey: string; i18nKey: string; isDa
   { key: 'control.restart', groupKey: 'control', i18nKey: 'permission.control.restart', sortOrder: 4 },
   { key: 'control.kill', groupKey: 'control', i18nKey: 'permission.control.kill', isDangerous: true, sortOrder: 5 },
   // Read-only usage snapshot (client-features roadmap) — a `.read` key, so
-  // allowedWhenSuspended() passes it unconditionally: a suspended customer
+  // allowedForStatus() passes it unconditionally: a suspended customer
   // can still see WHY they're suspended (e.g. memory pressure) instead of
   // just a dead console.
   { key: 'server.read', groupKey: 'server', i18nKey: 'permission.server.read', sortOrder: 6 },
@@ -477,6 +477,11 @@ async function seedPlans(): Promise<void> {
         priceCents: p.priceCents,
         currency: 'BRL',
         billingPeriod: 'monthly',
+        // Same slug — a seeded plan starts as its own single-cycle family,
+        // identical behavior to before this column existed (checkout
+        // redesign, migration 0030_plan_family's own backfill does the
+        // same for pre-existing rows).
+        planFamily: p.slug,
         maxServers: p.maxServers,
         recommendedPlayersMin: p.recommendedPlayersMin,
         recommendedPlayersMax: p.recommendedPlayersMax,

@@ -49,7 +49,7 @@ export const ADMIN_PERMISSIONS = [
   // between the two.
   'subscriptions.view',
   'subscriptions.manage',
-  // Asaas migration — orders/payments admin visibility. Its own
+  // Orders/payments admin visibility. Its own
   // vocabulary for the same reason `subscriptions.*` is: an Order/
   // Payment is neither "a customer account" nor "a subscription
   // contract," it's the individual charge/provisioning record behind

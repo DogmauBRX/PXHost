@@ -33,6 +33,7 @@ interface PlanFormValues {
   compareAtPriceReais: string;
   currency: string;
   billingPeriod: string;
+  planFamily: string;
   cpuVcpu: string;
   memoryGb: string;
   swapMb: string;
@@ -65,6 +66,7 @@ const EMPTY_FORM: PlanFormValues = {
   compareAtPriceReais: '',
   currency: 'BRL',
   billingPeriod: 'monthly',
+  planFamily: '',
   cpuVcpu: '1',
   memoryGb: '1',
   swapMb: '0',
@@ -98,6 +100,7 @@ function planToForm(p: AdminPlan): PlanFormValues {
     compareAtPriceReais: p.compareAtPriceCents != null ? (p.compareAtPriceCents / 100).toString() : '',
     currency: p.currency,
     billingPeriod: p.billingPeriod,
+    planFamily: p.planFamily ?? '',
     cpuVcpu: percentToVcpu(p.cpuLimitPercent),
     memoryGb: mbToGb(p.memoryMb),
     swapMb: String(p.swapMb),
@@ -172,6 +175,7 @@ function toInput(v: PlanFormValues): CreatePlanInput {
     compareAtPriceCents: v.compareAtPriceReais.trim() ? Math.round(parseReais(v.compareAtPriceReais) * 100) : undefined,
     currency: v.currency,
     billingPeriod: v.billingPeriod,
+    planFamily: v.planFamily.trim() || undefined,
     cpuLimitPercent: v.cpuVcpu.trim() ? vcpuToPercent(v.cpuVcpu) : undefined,
     memoryMb: gbToMb(v.memoryGb),
     swapMb: n(v.swapMb),
@@ -395,6 +399,13 @@ function PlanFormModal({ open, mode, plan, onClose }: { open: boolean; mode: 'cr
                 <option value="semiannual">Semestral</option>
                 <option value="annual">Anual</option>
               </Select>
+            </Field>
+            <Field
+              label="Família (ciclos)"
+              htmlFor="plan-family"
+              hint="Dois planos com a mesma família viram um único produto com seletor de ciclo no checkout. Deixe em branco para um plano de ciclo único."
+            >
+              <Input id="plan-family" value={values.planFamily} onChange={(e) => patch({ planFamily: e.target.value })} placeholder="basico" />
             </Field>
           </div>
         </fieldset>
