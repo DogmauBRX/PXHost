@@ -24,6 +24,7 @@ import type {
   PlanApplyResult,
   PlanDriftReport,
   PlanOccupancy,
+  PresetKind,
   SoftwareKind,
   ReadyzResponse,
   ServerTransfer,
@@ -170,6 +171,32 @@ export const updateTemplate = (id: string, input: UpdateTemplateInput) =>
   apiFetch<AdminTemplate>(`/api/admin/eggs/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
 export const removeTemplate = (id: string) => apiFetch<void>(`/api/admin/eggs/${id}`, { method: 'DELETE' });
 
+// ---- Criação rápida (wizard) ----
+
+export interface CreateTemplateFromPresetInput {
+  groupId: string;
+  name: string;
+  softwareKind: PresetKind;
+  description?: string;
+  minecraftVersions: string[];
+  builds?: string[];
+  isPublic?: boolean;
+  isActive?: boolean;
+}
+export const createTemplateFromPreset = (input: CreateTemplateFromPresetInput) =>
+  apiFetch<AdminTemplate>('/api/admin/templates/quick-create', { method: 'POST', body: JSON.stringify(input) });
+
+export const duplicateTemplate = (id: string, name: string) =>
+  apiFetch<AdminTemplate>(`/api/admin/eggs/${id}/duplicate`, { method: 'POST', body: JSON.stringify({ name }) });
+
+// Never throws on a discovery miss — the wizard's own fallback is a free-text
+// field, so a network hiccup here degrades the suggestion list, never blocks
+// creating a template. See SoftwareDiscoveryService's own doc comment.
+export const discoverSoftwareVersions = (kind: PresetKind) =>
+  apiFetch<string[]>(`/api/admin/templates/discover/${kind}/versions`).catch(() => []);
+export const discoverSoftwareBuilds = (kind: PresetKind, mcVersion: string) =>
+  apiFetch<string[]>(`/api/admin/templates/discover/${kind}/versions/${encodeURIComponent(mcVersion)}/builds`).catch(() => []);
+
 // ---- Plans ----
 
 export const listPlans = () => apiFetch<AdminPlan[]>('/api/admin/plans');
@@ -209,6 +236,7 @@ export const createPlan = (input: CreatePlanInput) => apiFetch<AdminPlan>('/api/
 export const updatePlan = (id: string, input: Partial<CreatePlanInput>) => apiFetch<AdminPlan>(`/api/admin/plans/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
 export const getPlanDrift = (id: string) => apiFetch<PlanDriftReport>(`/api/admin/plans/${id}/drift`);
 export const applyPlan = (id: string) => apiFetch<PlanApplyResult>(`/api/admin/plans/${id}/apply`, { method: 'POST' });
+export const deletePlan = (id: string) => apiFetch<void>(`/api/admin/plans/${id}`, { method: 'DELETE' });
 
 // ---- Capacity (read-only — see apps/api/src/modules/capacity) ----
 
@@ -285,6 +313,7 @@ export const updateUser = (id: string, input: UpdateUserInput) =>
 
 export const blockUser = (id: string) => apiFetch<void>(`/api/admin/users/${id}/block`, { method: 'POST' });
 export const unblockUser = (id: string) => apiFetch<void>(`/api/admin/users/${id}/unblock`, { method: 'POST' });
+export const deleteUser = (id: string) => apiFetch<void>(`/api/admin/users/${id}`, { method: 'DELETE' });
 
 // ---- Audit logs ----
 
@@ -345,6 +374,8 @@ export const getOrder = (id: string) => apiFetch<AdminOrderDetail>(`/api/admin/o
 export const retryProvisioning = (id: string) => apiFetch<{ enqueued: boolean }>(`/api/admin/orders/${id}/retry-provisioning`, { method: 'POST' });
 export const refundOrder = (id: string, reason: string) =>
   apiFetch<{ requested: boolean; providerStatus: string | null }>(`/api/admin/orders/${id}/refund`, { method: 'POST', body: JSON.stringify({ reason }) });
+export const archiveOrders = (ids: string[]) =>
+  apiFetch<{ archived: number }>('/api/admin/orders/archive', { method: 'POST', body: JSON.stringify({ ids }) });
 
 // ---- Site announcement ----
 

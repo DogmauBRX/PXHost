@@ -1122,6 +1122,16 @@ model Order {
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  // Admin-only "remove clutter from view" — DELETE is revoked from
+  // app_user on this table entirely (0022_payments: financial history
+  // is never deleted, provider change or not), so this is the ONLY way
+  // an admin can make an order stop cluttering /admin/payments. The row
+  // itself, every field above, and every Payment/PaymentWebhookEvent
+  // pointing at it are completely untouched — `listForAdmin` is the
+  // ONLY place that reads this column; nothing else in the platform
+  // (webhooks, provisioning, billing-cycle) treats an archived order any
+  // differently from a normal one.
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz
 
   user         User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
   plan         Plan                  @relation(fields: [planId], references: [id], onDelete: Restrict)

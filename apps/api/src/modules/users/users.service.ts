@@ -219,4 +219,43 @@ export class UsersService {
     await this.prisma.user.update({ where: { id }, data: { isActive } });
     await this.audit.record({ action: isActive ? 'admin.user.unblock' : 'admin.user.block', actorId: actor.id, targetType: 'user', targetId: id });
   }
+
+  /**
+   * Soft-delete only — `deletedAt`, never a hard `DELETE`. The user row
+   * is referenced by `Order`/`Payment`-adjacent history, audit logs, and
+   * more; a hard delete would either cascade-destroy financial/audit
+   * history or fail outright on FK constraints, neither of which is
+   * acceptable. `JwtAuthGuard`/`AuthService.login` both already refuse a
+   * `deletedAt`-set user (same fresh-from-DB check `setActive`'s own doc
+   * comment describes for `isActive`), so this takes effect immediately
+   * — no separate session-revocation step needed.
+   *
+   * Blocked outright (never forced) if the account still owns a real
+   * server or a subscription that isn't already cancelled/expired — a
+   * customer mid-service or mid-checkout should never silently lose
+   * their account out from under a running server or an open contract.
+   * The admin has to close those out first (or use `setActive` to just
+   * cut off login instead), same "never delete something still in use"
+   * posture `PlansService.remove` already takes for a plan with servers.
+   */
+  async remove(id: string, actor: AuthenticatedUser): Promise<void> {
+    const target = await this.prisma.user.findFirst({ where: { id, deletedAt: null }, select: { id: true, globalRole: true } });
+    if (!target) throw new NotFoundException('User not found');
+    if (id === actor.id) throw new ConflictException('You cannot delete your own account');
+    if (!canActOnRole(actor.globalRole, target.globalRole)) {
+      throw new ForbiddenException('Cannot delete a user of equal or higher rank');
+    }
+
+    const [serverCount, activeSubscriptionCount] = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+      Promise.all([
+        tx.server.count({ where: { ownerId: id } }),
+        tx.subscription.count({ where: { userId: id, status: { notIn: ['cancelled', 'expired'] } } }),
+      ]),
+    );
+    if (serverCount > 0) throw new ConflictException('Cannot delete a client that still owns servers');
+    if (activeSubscriptionCount > 0) throw new ConflictException('Cannot delete a client with an active or pending subscription');
+
+    await this.prisma.user.update({ where: { id }, data: { deletedAt: new Date() } });
+    await this.audit.record({ action: 'admin.user.delete', actorId: actor.id, targetType: 'user', targetId: id });
+  }
 }

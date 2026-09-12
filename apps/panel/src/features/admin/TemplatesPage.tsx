@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Package, Plus, Search } from 'lucide-react';
+import { Copy, Package, Plus, Search } from 'lucide-react';
 import {
   addTemplateVariable,
   createTemplate,
   createTemplateGroup,
+  duplicateTemplate,
   listTemplateGroups,
   listTemplates,
   removeTemplate,
@@ -12,6 +13,7 @@ import {
   updateTemplate,
   updateTemplateVariable,
 } from './admin.api';
+import { QuickCreateTemplateWizard } from './QuickCreateTemplateWizard';
 import { ApiError } from '@/shared/api/client';
 import type { AdminTemplate, AdminTemplateVariable, SoftwareKind } from '@/shared/api/types';
 
@@ -33,8 +35,6 @@ import {
   Alert,
   Badge,
   Button,
-  Card,
-  CardBody,
   CodeEditor,
   ConfirmDialog,
   EmptyState,
@@ -43,8 +43,16 @@ import {
   LoadingRow,
   Modal,
   PageHeader,
+  PromptDialog,
   Select,
+  Table,
+  TableWrap,
+  TBody,
+  TD,
+  TH,
+  THead,
   Toggle,
+  TR,
 } from '@/ui/primitives';
 
 // ---- One variable's inline edit form — rules/description/viewable/editable/order weren't reachable from the panel at all before (only add/remove existed); this is what lets an admin restrict e.g. MINECRAFT_VERSION to `required|string|in:1.21.1,1.20.6` without touching the database directly. ----
@@ -522,6 +530,13 @@ function EditTemplateModal({
         </Alert>
       )}
       <TemplateFormFields values={values} onChange={(p) => setValues((v) => ({ ...v, ...p }))} groups={groups} />
+      {/* Moved here from the page's own template card (Admin Templates
+          redesign) — the list is a table now, with no room left for an
+          always-expanded variables panel per row. Editing a variable's
+          `rules` here (e.g. MINECRAFT_VERSION's `in:` list) is also how
+          an admin adjusts version curation for a template the wizard
+          created, since the wizard itself is create-only. */}
+      {template && <TemplateVariables templateId={template.id} variables={template.variables} />}
       <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
         <Button variant="secondary" onClick={onClose}>
           Cancelar
@@ -536,6 +551,15 @@ function EditTemplateModal({
 
 // ---- Page ----
 
+/** The `MINECRAFT_VERSION` variable's `in:` allow-list, formatted for the table's "Versões" column — mirrors `PublicTemplatesService.deriveOptionShape`'s own `in:` parsing on the backend, read-only here (editing happens in the variable editor inside "Editar"). Falls back to the variable's own default (e.g. "latest") when no curated list was ever set — a template hand-edited before the wizard existed, or the advanced form. */
+function templateVersions(t: AdminTemplate): string[] {
+  const versionVar = t.variables.find((v) => v.envVariable === 'MINECRAFT_VERSION');
+  if (!versionVar) return [];
+  const match = /in:([^|]*)/.exec(versionVar.rules ?? '');
+  if (match) return match[1].split(',').map((v) => v.trim()).filter(Boolean);
+  return versionVar.defaultValue ? [versionVar.defaultValue] : [];
+}
+
 export function TemplatesPage() {
   const queryClient = useQueryClient();
   const { data: groups } = useQuery({ queryKey: ['admin', 'template-groups'], queryFn: listTemplateGroups });
@@ -546,11 +570,17 @@ export function TemplatesPage() {
   });
 
   const [search, setSearch] = useState('');
+  const [softwareFilter, setSoftwareFilter] = useState<SoftwareKind | ''>('');
+  const [statusFilter, setStatusFilter] = useState<'' | 'active' | 'inactive'>('');
   const [groupName, setGroupName] = useState('');
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [groupError, setGroupError] = useState<string | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [editing, setEditing] = useState<AdminTemplate | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [duplicateTarget, setDuplicateTarget] = useState<AdminTemplate | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminTemplate | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -583,6 +613,22 @@ export function TemplatesPage() {
     }
   }
 
+  async function handleDuplicate(name: string) {
+    if (!duplicateTarget) return;
+    setDuplicating(true);
+    setDuplicateError(null);
+    try {
+      const copy = await duplicateTemplate(duplicateTarget.id, name);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'templates'] });
+      setDuplicateTarget(null);
+      setEditingId(copy.id); // falls straight into editing the copy — it needs at least a look before going public
+    } catch (err) {
+      setDuplicateError(err instanceof ApiError ? err.message : 'Não foi possível duplicar o template.');
+    } finally {
+      setDuplicating(false);
+    }
+  }
+
   const [toggleError, setToggleError] = useState<string | null>(null);
   async function handleToggle(t: AdminTemplate, patch: { isActive?: boolean; isPublic?: boolean }) {
     setToggleError(null);
@@ -595,7 +641,16 @@ export function TemplatesPage() {
   }
 
   const groupNameById = new Map((groups ?? []).map((g) => [g.id, g.name]));
+  // `editingId` (not the row object itself) is what EditTemplateModal is fed
+  // — looked up fresh from the query result on every render, so an edit
+  // made INSIDE that modal (a variable add/remove, which invalidates this
+  // same query) is reflected the moment the refetch lands, never a stale
+  // snapshot taken when "Editar" was first clicked.
+  const editingTemplate = templates?.find((t) => t.id === editingId) ?? null;
   const visible = (templates ?? []).filter((t) => {
+    if (softwareFilter && t.softwareKind !== softwareFilter) return false;
+    if (statusFilter === 'active' && !t.isActive) return false;
+    if (statusFilter === 'inactive' && t.isActive) return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
     return t.name.toLowerCase().includes(q) || t.author.toLowerCase().includes(q);
@@ -607,9 +662,9 @@ export function TemplatesPage() {
         title="Templates"
         subtitle="Gerencie os templates utilizados pelos seus servidores."
         actions={
-          <Button variant="primary" onClick={() => setCreateOpen(true)}>
+          <Button variant="primary" onClick={() => setWizardOpen(true)}>
             <Plus className="h-4 w-4" aria-hidden="true" />
-            Novo Template
+            Adicionar template
           </Button>
         }
       />
@@ -623,6 +678,23 @@ export function TemplatesPage() {
                 {g.name}
               </option>
             ))}
+          </Select>
+        </div>
+        <div className="w-40">
+          <Select value={softwareFilter} onChange={(e) => setSoftwareFilter(e.target.value as SoftwareKind | '')} aria-label="Filtrar por tipo">
+            <option value="">Todos os tipos</option>
+            {SOFTWARE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="w-36">
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as '' | 'active' | 'inactive')} aria-label="Filtrar por status">
+            <option value="">Todos os status</option>
+            <option value="active">Ativo</option>
+            <option value="inactive">Inativo</option>
           </Select>
         </div>
         <div className="relative min-w-[220px] flex-1">
@@ -641,6 +713,7 @@ export function TemplatesPage() {
 
       {groupError && <Alert className="mb-6">{groupError}</Alert>}
       {deleteError && <Alert className="mb-6">{deleteError}</Alert>}
+      {duplicateError && <Alert className="mb-6">{duplicateError}</Alert>}
       {toggleError && <Alert className="mb-6">{toggleError}</Alert>}
       {isError && <Alert className="mb-6">Não foi possível carregar os templates.</Alert>}
 
@@ -650,72 +723,101 @@ export function TemplatesPage() {
         <EmptyState
           icon={Package}
           title="Nenhum template encontrado"
-          description={search || selectedGroup ? 'Ajuste os filtros ou crie um novo template.' : 'Crie o primeiro acima.'}
+          description={search || selectedGroup || softwareFilter || statusFilter ? 'Ajuste os filtros ou adicione um novo template.' : 'Adicione o primeiro acima.'}
           action={
-            <Button variant="primary" onClick={() => setCreateOpen(true)}>
+            <Button variant="primary" onClick={() => setWizardOpen(true)}>
               <Plus className="h-4 w-4" aria-hidden="true" />
-              Novo Template
+              Adicionar template
             </Button>
           }
         />
       ) : (
-        <div className="space-y-3">
-          {visible.map((t) => (
-            <Card key={t.id}>
-              <CardBody>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
+        <TableWrap>
+          <Table>
+            <THead>
+              <TR>
+                <TH>Template</TH>
+                <TH>Jogo</TH>
+                <TH>Tipo</TH>
+                <TH>Versões</TH>
+                <TH>Status</TH>
+                <TH>Criado em</TH>
+                <TH className="text-right">Ações</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {visible.map((t) => {
+                const versions = templateVersions(t);
+                return (
+                  <TR key={t.id}>
+                    <TD>
                       <p className="font-medium text-text">{t.name}</p>
-                      <span className="text-xs text-text-faint">por {t.author}</span>
-                      {groupNameById.get(t.groupId) && <Badge>{groupNameById.get(t.groupId)}</Badge>}
-                      {t.softwareKind ? (
-                        <Badge tone="ok">{SOFTWARE_LABEL[t.softwareKind]}</Badge>
-                      ) : (
-                        <Badge tone="warn">software não definido</Badge>
-                      )}
-                      {!t.isActive && <Badge tone="neutral">inativo</Badge>}
-                      {t.isPublic ? <Badge tone="ok">público</Badge> : <Badge tone="neutral">não público</Badge>}
-                    </div>
-                    <p className="mt-1 font-mono text-xs text-text-faint">{Object.values(t.dockerImages).join(', ')}</p>
-                    <p className="font-mono text-xs text-text-faint">$ {t.startupCommand}</p>
-                    {/* Quick switches — the two flags that decide whether a customer can ever
-                        reach this template through checkout: `isActive` (usable at all) and
-                        `isPublic` (visible/selectable to a customer, GET /api/public/templates).
-                        Kept out of the edit modal so flipping either doesn't require a full save. */}
-                    <div className="mt-2 flex flex-wrap gap-6">
-                      <Toggle
-                        id={`t-active-${t.id}`}
-                        checked={t.isActive}
-                        onChange={(checked) => void handleToggle(t, { isActive: checked })}
-                        label="Ativo"
-                      />
-                      <Toggle
-                        id={`t-public-${t.id}`}
-                        checked={t.isPublic}
-                        onChange={(checked) => void handleToggle(t, { isPublic: checked })}
-                        label="Público (aparece no checkout)"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button variant="secondary" size="sm" onClick={() => setEditing(t)}>
-                      Editar
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(t)}>
-                      Excluir
-                    </Button>
-                  </div>
-                </div>
-                <TemplateVariables templateId={t.id} variables={t.variables} />
-              </CardBody>
-            </Card>
-          ))}
-        </div>
+                      <p className="text-xs text-text-faint">por {t.author}</p>
+                    </TD>
+                    <TD className="text-text-muted">{groupNameById.get(t.groupId) ?? '—'}</TD>
+                    <TD>
+                      {t.softwareKind ? <Badge tone="ok">{SOFTWARE_LABEL[t.softwareKind]}</Badge> : <Badge tone="warn">não definido</Badge>}
+                    </TD>
+                    <TD>
+                      <div className="flex max-w-[220px] flex-wrap gap-1">
+                        {versions.length > 0 ? (
+                          versions.map((v) => <Badge key={v}>{v}</Badge>)
+                        ) : (
+                          <span className="text-xs text-text-faint">—</span>
+                        )}
+                      </div>
+                    </TD>
+                    <TD>
+                      <div className="flex flex-col gap-1">
+                        <Toggle id={`t-active-${t.id}`} checked={t.isActive} onChange={(checked) => void handleToggle(t, { isActive: checked })} label="Ativo" />
+                        <Toggle id={`t-public-${t.id}`} checked={t.isPublic} onChange={(checked) => void handleToggle(t, { isPublic: checked })} label="Público" />
+                      </div>
+                    </TD>
+                    <TD className="text-text-muted">{new Date(t.createdAt).toLocaleDateString('pt-BR')}</TD>
+                    <TD>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="secondary" size="sm" onClick={() => setEditingId(t.id)}>
+                          Editar
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setDuplicateTarget(t)} title="Duplicar">
+                          <Copy className="h-4 w-4" aria-hidden="true" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(t)}>
+                          Excluir
+                        </Button>
+                      </div>
+                    </TD>
+                  </TR>
+                );
+              })}
+            </TBody>
+          </Table>
+        </TableWrap>
       )}
 
+      <QuickCreateTemplateWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        defaultGroupId={selectedGroup}
+        onOpenAdvanced={() => {
+          setWizardOpen(false);
+          setCreateOpen(true);
+        }}
+      />
       <CreateTemplateModal open={createOpen} onClose={() => setCreateOpen(false)} groups={groups} defaultGroupId={selectedGroup} />
-      <EditTemplateModal template={editing} onClose={() => setEditing(null)} groups={groups} />
+      <EditTemplateModal template={editingTemplate} onClose={() => setEditingId(null)} groups={groups} />
+
+      <PromptDialog
+        open={duplicateTarget !== null}
+        title="Duplicar template"
+        label="Nome do novo template"
+        hint="Cria uma cópia completa (imagem, script, variáveis) com este nome — a cópia começa não pública até você revisá-la."
+        defaultValue={duplicateTarget ? `${duplicateTarget.name} (cópia)` : ''}
+        confirmLabel="Duplicar"
+        loading={duplicating}
+        onSubmit={(name) => void handleDuplicate(name)}
+        onCancel={() => setDuplicateTarget(null)}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}

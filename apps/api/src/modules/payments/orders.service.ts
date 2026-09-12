@@ -50,6 +50,7 @@ const ORDER_SELECT = {
   config: true,
   createdAt: true,
   updatedAt: true,
+  archivedAt: true,
 } satisfies Prisma.OrderSelect;
 
 type BillingProfile = {
@@ -533,6 +534,7 @@ export class OrdersService {
     const skip = dto.offset ?? 0;
 
     const where: Prisma.OrderWhereInput = {
+      archivedAt: null,
       ...(dto.status ? { status: dto.status } : {}),
       ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
       ...(dto.planId ? { planId: dto.planId } : {}),
@@ -621,6 +623,34 @@ export class OrdersService {
       metadata: { reason, paymentId: latestPayment.id, providerStatus: result.status },
     });
     return { requested: true, providerStatus: result.status };
+  }
+
+  /**
+   * Hides orders from the admin listing — never a delete. `DELETE` is
+   * revoked from the app role on this table (financial history is
+   * never destroyed, see the `archivedAt` field's own doc comment in
+   * schema.prisma), so this is the only "remove from view" an admin
+   * can have. Every field, every `Payment`/`PaymentWebhookEvent` row
+   * pointing at these orders, and every other code path (webhooks,
+   * provisioning, billing) is completely unaffected — only
+   * `listForAdmin`'s default filter reads this column.
+   *
+   * Scoped to exactly the given ids (never a broad `WHERE`), matching
+   * the lesson from the mass plan-deletion incident this session
+   * already root-caused. One audit row per order, not one batched row
+   * — the same convention `retryProvisioningAsAdmin`/`refundAsAdmin`
+   * already establish for a single-entity `targetId`.
+   */
+  async archiveOrdersAsAdmin(orderIds: string[], actorId: string): Promise<{ archived: number }> {
+    const ids = [...new Set(orderIds)];
+    const archivedIds = await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
+      const matches = await tx.order.findMany({ where: { id: { in: ids }, archivedAt: null }, select: { id: true } });
+      if (matches.length === 0) return [];
+      await tx.order.updateMany({ where: { id: { in: matches.map((m) => m.id) } }, data: { archivedAt: new Date() } });
+      return matches.map((m) => m.id);
+    });
+    await Promise.all(archivedIds.map((id) => this.audit.record({ action: 'admin.order.archived', actorId, targetType: 'order', targetId: id })));
+    return { archived: archivedIds.length };
   }
 }
 

@@ -4,6 +4,7 @@
 // `pnpm prisma:seed` — idempotent, safe to re-run.
 import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { PRESET_KINDS, SOFTWARE_PRESETS } from '../src/modules/templates/software-presets';
 
 const prisma = new PrismaClient();
 
@@ -23,7 +24,12 @@ async function main(): Promise<void> {
   // soft-delete-aware PARTIAL index created in raw SQL — see migration
   // 0001_init — which Prisma's schema DSL can't express as `@unique`), so
   // `upsert` isn't available here; find-then-create/update by hand instead.
-  const existing = await prisma.user.findFirst({ where: { email } });
+  // Also matches by the literal `username: 'admin'` this script always
+  // creates with — a database where SEED_ROOT_ADMIN_EMAIL was customized
+  // (or changed between runs) still has a row with that username, and
+  // blindly re-creating would hit `users_username_key` (P2002) instead of
+  // finding it.
+  const existing = await prisma.user.findFirst({ where: { OR: [{ email }, { username: 'admin' }] } });
   const user = existing
     ? await prisma.user.update({ where: { id: existing.id }, data: {} })
     : await prisma.user.create({
@@ -134,214 +140,48 @@ async function seedLocationAndTemplate(): Promise<void> {
     () => prisma.templateGroup.create({ data: { name: 'Minecraft', description: 'Minecraft: Java Edition servers' } }),
   );
 
-  const existingTemplate = await prisma.serverTemplate.findFirst({ where: { groupId: group.id, name: 'Paper' } });
-  if (!existingTemplate) {
+  // The 6 software presets (Admin Templates redesign) — same source
+  // `TemplatesService.createFromPreset` uses for the panel's "criação
+  // rápida" wizard, imported rather than duplicated so a template a
+  // customer buys and one a fresh dev database seeds are byte-identical.
+  // Paper stays first/`isPublic` (payments plan's own "a customer needs
+  // at least one choosable software at checkout" requirement); the other
+  // five are public too as of the six-software client setup screen.
+  for (const [index, kind] of PRESET_KINDS.entries()) {
+    const preset = SOFTWARE_PRESETS[kind];
+    const existing = await prisma.serverTemplate.findFirst({ where: { groupId: group.id, name: preset.name } });
+    if (existing) {
+      // eslint-disable-next-line no-console
+      console.log(`Template "${preset.name}" already present — skipped`);
+      continue;
+    }
     await prisma.serverTemplate.create({
       data: {
         groupId: group.id,
-        name: 'Paper',
+        name: preset.name,
         author: 'gxhost',
-        description: 'High-performance Paper server for Minecraft: Java Edition.',
-        dockerImages: { 'Java 21': 'ghcr.io/pxhost/yolks:java_21' },
-        startupCommand: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui',
-        stopCommand: 'stop',
-        installImage: 'ghcr.io/pxhost/installers:debian',
-        installEntrypoint: 'bash',
-        installScript: PAPER_INSTALL_SCRIPT,
+        description: preset.description,
+        dockerImages: preset.dockerImages,
+        startupCommand: preset.startupCommand,
+        stopCommand: preset.stopCommand,
+        installImage: preset.installImage,
+        installEntrypoint: preset.installEntrypoint,
+        installScript: preset.installScript,
         // Explicit here, not left to migration 0008's ILIKE backfill — that
         // backfill only ever runs once, against rows that already existed
         // at migration time. A template created by THIS seed script on a
         // brand-new database never goes through it.
-        softwareKind: 'paper',
+        softwareKind: preset.softwareKind,
         // Public on a fresh database — a customer needs at least one
-        // choosable software at checkout (`GET /api/public/templates`),
-        // and Paper is the sensible default (`isPublic` itself defaults
-        // to false everywhere else, deliberately, per its own doc
-        // comment — this is the one seed-time exception).
+        // choosable software at checkout (`GET /api/public/templates`);
+        // all six presets are public as of the client setup screen.
         isPublic: true,
-        sortOrder: 0,
-        variables: {
-          create: [
-            {
-              name: 'Server Jar File',
-              description: 'The name of the server jar to execute.',
-              envVariable: 'SERVER_JARFILE',
-              defaultValue: 'server.jar',
-              rules: 'required|string|max:64',
-              isUserViewable: true,
-              isUserEditable: true,
-              sortOrder: 0,
-            },
-            {
-              name: 'Minecraft Version',
-              description: 'The version of Minecraft to install. Use "latest" for the newest release.',
-              envVariable: 'MINECRAFT_VERSION',
-              defaultValue: 'latest',
-              rules: 'required|string|max:16',
-              isUserViewable: true,
-              isUserEditable: true,
-              sortOrder: 1,
-            },
-            {
-              name: 'Paper Build',
-              description: 'The Paper build number to install. Use "latest" for the newest build.',
-              envVariable: 'PAPER_BUILD',
-              defaultValue: 'latest',
-              rules: 'required|string|max:16',
-              isUserViewable: true,
-              isUserEditable: true,
-              sortOrder: 2,
-            },
-            {
-              name: 'Server Memory (MB)',
-              description: "The container's memory limit, substituted into -Xmx. Set by the plan, not directly editable.",
-              envVariable: 'SERVER_MEMORY',
-              defaultValue: '1024',
-              rules: 'required|integer|min:512',
-              isUserViewable: true,
-              isUserEditable: false,
-              sortOrder: 3,
-            },
-          ],
-        },
+        sortOrder: index,
+        variables: { create: preset.variables },
       },
     });
     // eslint-disable-next-line no-console
-    console.log(`Seeded template group "${group.name}" and template "Paper" in location "${location.name}"`);
-  } else {
-    // eslint-disable-next-line no-console
-    console.log(`Template "Paper" already present — skipped`);
-  }
-
-  // Fabric (mods) and Vanilla (no add-ons) alongside Paper (plugins) so
-  // the software-mismatch and "no add-ons" code paths — the Add-ons tab
-  // hiding itself, the assistant's addons.unsupported topic — are
-  // actually reachable in a fresh install instead of only provable by
-  // hand-editing a template's software_kind after the fact.
-  const existingFabric = await prisma.serverTemplate.findFirst({ where: { groupId: group.id, name: 'Fabric' } });
-  if (!existingFabric) {
-    await prisma.serverTemplate.create({
-      data: {
-        groupId: group.id,
-        name: 'Fabric',
-        author: 'gxhost',
-        description: 'Modded Minecraft: Java Edition server running the Fabric mod loader.',
-        dockerImages: { 'Java 21': 'ghcr.io/pxhost/yolks:java_21' },
-        startupCommand: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui',
-        stopCommand: 'stop',
-        installImage: 'ghcr.io/pxhost/installers:debian',
-        installEntrypoint: 'bash',
-        installScript: FABRIC_INSTALL_SCRIPT,
-        softwareKind: 'fabric',
-        variables: {
-          create: [
-            {
-              name: 'Server Jar File',
-              description: 'The name of the server jar to execute.',
-              envVariable: 'SERVER_JARFILE',
-              defaultValue: 'fabric-server-launch.jar',
-              rules: 'required|string|max:64',
-              isUserViewable: true,
-              isUserEditable: true,
-              sortOrder: 0,
-            },
-            {
-              name: 'Minecraft Version',
-              description: 'The version of Minecraft to install. Use "latest" for the newest release.',
-              envVariable: 'MINECRAFT_VERSION',
-              defaultValue: 'latest',
-              rules: 'required|string|max:16',
-              isUserViewable: true,
-              isUserEditable: true,
-              sortOrder: 1,
-            },
-            {
-              name: 'Fabric Loader Version',
-              description: 'The Fabric loader version to install. Use "latest" for the newest stable release.',
-              envVariable: 'FABRIC_LOADER_VERSION',
-              defaultValue: 'latest',
-              rules: 'required|string|max:16',
-              isUserViewable: true,
-              isUserEditable: true,
-              sortOrder: 2,
-            },
-            {
-              name: 'Server Memory (MB)',
-              description: "The container's memory limit, substituted into -Xmx. Set by the plan, not directly editable.",
-              envVariable: 'SERVER_MEMORY',
-              defaultValue: '1024',
-              rules: 'required|integer|min:512',
-              isUserViewable: true,
-              isUserEditable: false,
-              sortOrder: 3,
-            },
-          ],
-        },
-      },
-    });
-    // eslint-disable-next-line no-console
-    console.log('Seeded template "Fabric"');
-  } else {
-    // eslint-disable-next-line no-console
-    console.log('Template "Fabric" already present — skipped');
-  }
-
-  const existingVanilla = await prisma.serverTemplate.findFirst({ where: { groupId: group.id, name: 'Vanilla' } });
-  if (!existingVanilla) {
-    await prisma.serverTemplate.create({
-      data: {
-        groupId: group.id,
-        name: 'Vanilla',
-        author: 'gxhost',
-        description: 'Unmodified, official Minecraft: Java Edition server — no plugins or mods.',
-        dockerImages: { 'Java 21': 'ghcr.io/pxhost/yolks:java_21' },
-        startupCommand: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui',
-        stopCommand: 'stop',
-        installImage: 'ghcr.io/pxhost/installers:debian',
-        installEntrypoint: 'bash',
-        installScript: VANILLA_INSTALL_SCRIPT,
-        softwareKind: 'vanilla',
-        variables: {
-          create: [
-            {
-              name: 'Server Jar File',
-              description: 'The name of the server jar to execute.',
-              envVariable: 'SERVER_JARFILE',
-              defaultValue: 'server.jar',
-              rules: 'required|string|max:64',
-              isUserViewable: true,
-              isUserEditable: true,
-              sortOrder: 0,
-            },
-            {
-              name: 'Minecraft Version',
-              description: 'The version of Minecraft to install. Use "latest" for the newest release.',
-              envVariable: 'MINECRAFT_VERSION',
-              defaultValue: 'latest',
-              rules: 'required|string|max:16',
-              isUserViewable: true,
-              isUserEditable: true,
-              sortOrder: 1,
-            },
-            {
-              name: 'Server Memory (MB)',
-              description: "The container's memory limit, substituted into -Xmx. Set by the plan, not directly editable.",
-              envVariable: 'SERVER_MEMORY',
-              defaultValue: '1024',
-              rules: 'required|integer|min:512',
-              isUserViewable: true,
-              isUserEditable: false,
-              sortOrder: 2,
-            },
-          ],
-        },
-      },
-    });
-    // eslint-disable-next-line no-console
-    console.log('Seeded template "Vanilla"');
-  } else {
-    // eslint-disable-next-line no-console
-    console.log('Template "Vanilla" already present — skipped');
+    console.log(index === 0 ? `Seeded template group "${group.name}" and template "${preset.name}" in location "${location.name}"` : `Seeded template "${preset.name}"`);
   }
 }
 
@@ -500,80 +340,6 @@ async function findOrCreate<T>(find: () => Promise<T | null>, create: () => Prom
   const existing = await find();
   return existing ?? create();
 }
-
-const PAPER_INSTALL_SCRIPT = `#!/bin/bash
-set -euo pipefail
-cd /mnt/server
-
-: "\${MINECRAFT_VERSION:=latest}"
-: "\${PAPER_BUILD:=latest}"
-: "\${SERVER_JARFILE:=server.jar}"
-
-if [ "$MINECRAFT_VERSION" == "latest" ]; then
-  MINECRAFT_VERSION=$(curl -sSL https://api.papermc.io/v2/projects/paper | jq -r '.versions[-1]')
-fi
-
-if [ "$PAPER_BUILD" == "latest" ]; then
-  PAPER_BUILD=$(curl -sSL "https://api.papermc.io/v2/projects/paper/versions/\${MINECRAFT_VERSION}" | jq -r '.builds[-1]')
-fi
-
-DOWNLOAD_URL="https://api.papermc.io/v2/projects/paper/versions/\${MINECRAFT_VERSION}/builds/\${PAPER_BUILD}/downloads/paper-\${MINECRAFT_VERSION}-\${PAPER_BUILD}.jar"
-echo "Downloading Paper \${MINECRAFT_VERSION} build \${PAPER_BUILD}..."
-curl -sSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
-
-echo "eula=true" > eula.txt
-echo "Install complete."
-`;
-
-const FABRIC_INSTALL_SCRIPT = `#!/bin/bash
-set -euo pipefail
-cd /mnt/server
-
-: "\${MINECRAFT_VERSION:=latest}"
-: "\${FABRIC_LOADER_VERSION:=latest}"
-: "\${SERVER_JARFILE:=fabric-server-launch.jar}"
-
-if [ "$MINECRAFT_VERSION" == "latest" ]; then
-  MINECRAFT_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/game | jq -r '[.[] | select(.stable == true)][0].version')
-fi
-if [ "$FABRIC_LOADER_VERSION" == "latest" ]; then
-  FABRIC_LOADER_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/loader | jq -r '[.[] | select(.stable == true)][0].version')
-fi
-INSTALLER_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/installer | jq -r '[.[] | select(.stable == true)][0].version')
-
-echo "Downloading Fabric installer \${INSTALLER_VERSION}..."
-curl -sSL -o fabric-installer.jar "https://maven.fabricmc.net/net/fabricmc/fabric-installer/\${INSTALLER_VERSION}/fabric-installer-\${INSTALLER_VERSION}.jar"
-java -jar fabric-installer.jar server -mcversion "$MINECRAFT_VERSION" -loader "$FABRIC_LOADER_VERSION" -downloadMinecraft
-rm -f fabric-installer.jar
-
-if [ -f server.jar ] && [ "\${SERVER_JARFILE}" != "server.jar" ]; then
-  mv server.jar "\${SERVER_JARFILE}"
-fi
-
-echo "eula=true" > eula.txt
-echo "Install complete."
-`;
-
-const VANILLA_INSTALL_SCRIPT = `#!/bin/bash
-set -euo pipefail
-cd /mnt/server
-
-: "\${MINECRAFT_VERSION:=latest}"
-: "\${SERVER_JARFILE:=server.jar}"
-
-MANIFEST=$(curl -sSL https://launchermeta.mojang.com/mc/game/version_manifest.json)
-if [ "$MINECRAFT_VERSION" == "latest" ]; then
-  MINECRAFT_VERSION=$(echo "$MANIFEST" | jq -r '.latest.release')
-fi
-VERSION_URL=$(echo "$MANIFEST" | jq -r --arg v "$MINECRAFT_VERSION" '.versions[] | select(.id == $v) | .url')
-DOWNLOAD_URL=$(curl -sSL "$VERSION_URL" | jq -r '.downloads.server.url')
-
-echo "Downloading vanilla Minecraft \${MINECRAFT_VERSION}..."
-curl -sSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
-
-echo "eula=true" > eula.txt
-echo "Install complete."
-`;
 
 main()
   .catch((err) => {

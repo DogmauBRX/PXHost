@@ -1,5 +1,5 @@
 import { API_URL, ApiError } from '@/shared/api/client';
-import type { PublicPlan, PublicAnnouncement, PublicLocationStatus } from '@/shared/api/types';
+import type { PublicPlan, PublicAnnouncement, PublicPlatformStatus } from '@/shared/api/types';
 
 /**
  * The commercial catalog's own fetch helper — deliberately NOT `apiFetch`
@@ -33,4 +33,4 @@ export const getPublicPlan = (slug: string) => publicFetch<PublicPlan>(`/api/pub
 // unauthenticated fetch helper, never `apiFetch` — see this file's own
 // doc comment on why.
 export const getPublicAnnouncement = () => publicFetch<PublicAnnouncement | null>('/api/public/status/announcement');
-export const getPublicNodeStatus = () => publicFetch<PublicLocationStatus[]>('/api/public/status/nodes');
+export const getPublicNodeStatus = () => publicFetch<PublicPlatformStatus | null>('/api/public/status/nodes');

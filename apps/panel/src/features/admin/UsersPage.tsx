@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Plus, Search, ShieldCheck, Users } from 'lucide-react';
-import { blockUser, createUser, listUsers, unblockUser, updateUser } from './admin.api';
+import { blockUser, createUser, deleteUser, listUsers, unblockUser, updateUser } from './admin.api';
 import { ApiError } from '@/shared/api/client';
 import { formatDateTimeShort } from '@/shared/format/datetime';
 import type { AdminUserSummary } from '@/shared/api/types';
@@ -164,6 +164,9 @@ export function UsersPage() {
   const [blockTarget, setBlockTarget] = useState<AdminUserSummary | null>(null);
   const [blockError, setBlockError] = useState<string | null>(null);
   const [blocking, setBlocking] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AdminUserSummary | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const params = { q: query || undefined, role: role || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE };
   const { data, isPending, error } = useQuery({
@@ -223,6 +226,24 @@ export function UsersPage() {
     }
   }
 
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteUser(deleteTarget.id);
+      setDeleteTarget(null);
+      refresh();
+    } catch (err) {
+      // The backend refuses (409) whenever the account still owns a
+      // server or has an active/pending subscription — surfaced
+      // verbatim, since "just try again" wouldn't fix it.
+      setDeleteError(err instanceof ApiError ? err.message : 'Não foi possível excluir o cliente.');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const total = data?.total ?? 0;
   const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
 
@@ -274,6 +295,11 @@ export function UsersPage() {
 
       {error && <Alert className="mb-4">Não foi possível carregar os clientes.</Alert>}
       {blockError && <Alert className="mb-4">{blockError}</Alert>}
+      {deleteError && (
+        <Alert className="mb-4" tone="fail" onDismiss={() => setDeleteError(null)}>
+          {deleteError}
+        </Alert>
+      )}
 
       {isPending ? (
         <LoadingRow />
@@ -334,6 +360,9 @@ export function UsersPage() {
                         <Button variant="ghost" size="sm" onClick={() => setBlockTarget(u)}>
                           {u.isActive ? 'Bloquear' : 'Desbloquear'}
                         </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(u)}>
+                          Excluir
+                        </Button>
                       </div>
                     </TD>
                   </TR>
@@ -391,6 +420,17 @@ export function UsersPage() {
         loading={blocking}
         onConfirm={() => void handleConfirmBlock()}
         onCancel={() => setBlockTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Excluir cliente"
+        message={`A conta de "${deleteTarget?.username}" será removida da plataforma. Isso falha se o cliente ainda tiver servidores ou uma assinatura ativa/pendente.`}
+        confirmLabel="Excluir"
+        tone="danger"
+        loading={deleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={() => setDeleteTarget(null)}
       />
     </>
   );

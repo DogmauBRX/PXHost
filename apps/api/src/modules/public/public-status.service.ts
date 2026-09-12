@@ -4,19 +4,15 @@ import { RedisService } from '../../core/redis/redis.service';
 import { deriveHealthStatus } from '../nodes/nodes.service';
 import { SiteAnnouncementService, type PublicAnnouncement } from '../site-announcement/site-announcement.service';
 
-export type LocationStatusLevel = 'operational' | 'degraded' | 'maintenance' | 'offline';
+export type PlatformStatusLevel = 'operational' | 'maintenance' | 'offline';
 
-export interface PublicLocationStatus {
-  id: string;
-  name: string;
-  shortCode: string;
-  country: string | null;
-  status: LocationStatusLevel;
-  // The nearest FUTURE `Node.maintenanceScheduledAt` among this
-  // location's public nodes, or `null`. Only ever populated when
-  // `status !== 'maintenance'` — once a node is actually IN maintenance,
-  // "entra em manutenção em X" would be a confusing, already-stale
-  // thing to say (see `aggregateSchedule`'s own doc comment).
+export interface PublicPlatformStatus {
+  status: PlatformStatusLevel;
+  // The nearest FUTURE `Node.maintenanceScheduledAt` across every public
+  // node, or `null`. Only ever populated when `status !== 'maintenance'`
+  // — once a node is actually IN maintenance, "entra em manutenção em X"
+  // would be a confusing, already-stale thing to say (see
+  // `aggregateSchedule`'s own doc comment).
   nextMaintenanceAt: string | null;
 }
 
@@ -25,14 +21,16 @@ const CACHE_TTL_SECONDS = 30; // same window public-plans.service.ts uses for it
 
 /**
  * What a customer sees of node health — never a raw node name/fqdn/
- * hostname (that stays admin-only, `NodesService`/`CapacityReportService`),
- * aggregated to per-LOCATION so "which physical machine" is never
- * exposed either. `Node.isPublic` gates membership here the same way it
+ * hostname, never even which LOCATION (that granularity was tried and
+ * dropped: with a single-digit node count, "por região" read as either
+ * empty or as a one-card grid that just restated the overall status —
+ * a visitor only ever needs "is the platform up", not a health matrix
+ * per machine). `Node.isPublic` gates membership here the same way it
  * already gates `NodeSchedulerService`'s candidate pool — a node an
- * admin marked private has no business appearing in a customer-facing
- * status page. A location with zero eligible nodes is omitted entirely
- * rather than shown as some fabricated status: never surface a location
- * this deployment doesn't actually have public infrastructure in.
+ * admin marked private has no business affecting a customer-facing
+ * status page. Zero public nodes anywhere → `null`, so the frontend's
+ * own "no infrastructure deployed yet" branch renders instead of a
+ * fabricated status.
  */
 @Injectable()
 export class PublicStatusService {
@@ -46,68 +44,50 @@ export class PublicStatusService {
     return this.announcement.getPublic();
   }
 
-  async getNodeStatus(): Promise<PublicLocationStatus[]> {
+  async getNodeStatus(): Promise<PublicPlatformStatus | null> {
     const cached = await this.redis.client.get(CACHE_KEY).catch(() => null);
     if (cached) return JSON.parse(cached);
 
-    const locations = await this.prisma.location.findMany({
-      where: { deletedAt: null },
-      select: {
-        id: true,
-        name: true,
-        shortCode: true,
-        country: true,
-        nodes: {
-          where: { deletedAt: null, isPublic: true },
-          select: { maintenanceMode: true, lastHeartbeatAt: true, maintenanceScheduledAt: true },
-        },
-      },
-      orderBy: { name: 'asc' },
+    const nodes = await this.prisma.node.findMany({
+      where: { deletedAt: null, isPublic: true, location: { deletedAt: null } },
+      select: { maintenanceMode: true, lastHeartbeatAt: true, maintenanceScheduledAt: true },
     });
 
-    const result: PublicLocationStatus[] = locations
-      .filter((l) => l.nodes.length > 0)
-      .map((l) => {
-        const status = this.aggregateStatus(l.nodes);
-        return {
-          id: l.id,
-          name: l.name,
-          shortCode: l.shortCode,
-          country: l.country,
-          status,
-          nextMaintenanceAt: status === 'maintenance' ? null : this.aggregateSchedule(l.nodes),
-        };
-      });
+    let result: PublicPlatformStatus | null = null;
+    if (nodes.length > 0) {
+      const status = this.aggregateStatus(nodes);
+      result = { status, nextMaintenanceAt: status === 'maintenance' ? null : this.aggregateSchedule(nodes) };
+    }
 
     await this.redis.client.set(CACHE_KEY, JSON.stringify(result), 'EX', CACHE_TTL_SECONDS).catch(() => undefined);
     return result;
   }
 
   /**
-   * `maintenanceMode` wins outright — an admin deliberately taking a
-   * node down for work is a different signal from an unplanned outage,
-   * and a customer should be told which one it is. Otherwise derived
-   * purely from heartbeat freshness (`deriveHealthStatus`, the same
-   * function the admin dashboard uses — one definition of "online,"
-   * never a second one for the public page). `unknown` (never
-   * heartbeated) is treated as `degraded`, not `operational` — a node
-   * this deployment can't currently vouch for should never read as a
-   * clean green light.
+   * Deliberately lenient: `operational` the moment ANY public node is
+   * online, regardless of how many others are degraded/offline — the
+   * platform owner's own call (2026-09-12), replacing an earlier
+   * per-location rule where a single non-online node downgraded the
+   * WHOLE location to `degraded`. With node counts this low, that
+   * stricter rule read as "flaky" for what was in fact one machine
+   * having a slow heartbeat while everything else served traffic fine.
+   * `maintenanceMode` only surfaces once NOTHING is online — an admin
+   * deliberately taking the only/last node down for work is a more
+   * honest thing to say than a bare "offline" in that specific case.
    */
-  private aggregateStatus(nodes: { maintenanceMode: boolean; lastHeartbeatAt: Date | null }[]): LocationStatusLevel {
+  private aggregateStatus(nodes: { maintenanceMode: boolean; lastHeartbeatAt: Date | null }[]): PlatformStatusLevel {
+    const anyOnline = nodes.some((n) => deriveHealthStatus(n.lastHeartbeatAt) === 'online');
+    if (anyOnline) return 'operational';
     if (nodes.some((n) => n.maintenanceMode)) return 'maintenance';
-    const healths = nodes.map((n) => deriveHealthStatus(n.lastHeartbeatAt));
-    if (healths.every((h) => h === 'offline')) return 'offline';
-    if (healths.some((h) => h !== 'online')) return 'degraded';
-    return 'operational';
+    return 'offline';
   }
 
   /**
-   * The EARLIEST future `maintenanceScheduledAt` among this location's
-   * nodes — a past value (an admin who set a date and never cleared it
+   * The EARLIEST future `maintenanceScheduledAt` across every public
+   * node — a past value (an admin who set a date and never cleared it
    * once the window passed) is silently ignored rather than shown as a
    * stale "entra em manutenção" that already happened. Only called when
-   * the location isn't already `'maintenance'` (see the caller).
+   * the platform isn't already `'maintenance'` (see the caller).
    */
   private aggregateSchedule(nodes: { maintenanceScheduledAt: Date | null }[]): string | null {
     const now = Date.now();

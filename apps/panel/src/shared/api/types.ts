@@ -36,6 +36,13 @@ export interface ClientAccount {
 // this on the frontend; always read it off the server response.
 export type SoftwareKind = 'paper' | 'purpur' | 'spigot' | 'bukkit' | 'fabric' | 'forge' | 'neoforge' | 'vanilla' | 'bungeecord' | 'velocity' | 'other';
 
+// The 6 software choices the admin "criação rápida" wizard offers as
+// cards (Admin Templates redesign) — a strict subset of `SoftwareKind`,
+// mirroring `apps/api/src/modules/templates/software-presets.ts`'s own
+// `PRESET_KINDS`. Every other kind still exists, just only reachable
+// through the advanced/manual template form.
+export type PresetKind = 'paper' | 'fabric' | 'vanilla' | 'forge' | 'neoforge' | 'purpur';
+
 export interface SoftwareInfo {
   kind: SoftwareKind | null;
   label: string;
@@ -803,6 +810,7 @@ export interface Order {
   provisioningError: string | null;
   createdAt: string;
   updatedAt: string;
+  archivedAt: string | null;
 }
 
 // GET /api/admin/orders — one Mercado Pago charge attempt against an order
@@ -936,18 +944,16 @@ export interface PublicAnnouncement {
   updatedAt: string;
 }
 
-// GET /api/public/status/nodes — aggregated per LOCATION, never a raw
-// node name/fqdn (see PublicStatusService's own doc comment for why).
-export type LocationStatusLevel = 'operational' | 'degraded' | 'maintenance' | 'offline';
+// GET /api/public/status/nodes — ONE aggregate across every public node
+// platform-wide, never a raw node/location name (see
+// PublicStatusService's own doc comment for why). `null` means zero
+// public nodes exist anywhere yet.
+export type PlatformStatusLevel = 'operational' | 'maintenance' | 'offline';
 
-export interface PublicLocationStatus {
-  id: string;
-  name: string;
-  shortCode: string;
-  country: string | null;
-  status: LocationStatusLevel;
-  // The nearest FUTURE scheduled maintenance among this location's
-  // nodes, or null — only ever set when `status !== 'maintenance'` (see
+export interface PublicPlatformStatus {
+  status: PlatformStatusLevel;
+  // The nearest FUTURE scheduled maintenance across every public node,
+  // or null — only ever set when `status !== 'maintenance'` (see
   // PublicStatusService's own doc comment).
   nextMaintenanceAt: string | null;
 }

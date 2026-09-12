@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Layers, Plus } from 'lucide-react';
-import { applyPlan, createPlan, getPlanCapacity, getPlanDrift, listPlans, updatePlan, type CreatePlanInput } from './admin.api';
+import { applyPlan, createPlan, deletePlan, getPlanCapacity, getPlanDrift, listPlans, updatePlan, type CreatePlanInput } from './admin.api';
 import { ApiError } from '@/shared/api/client';
 import type { AdminPlan, PlanApplyResult, PlanDriftReport } from '@/shared/api/types';
 import { discountPercent, formatPrice, formatRange } from '@/shared/format/plan';
@@ -11,6 +11,7 @@ import {
   Button,
   Card,
   CardBody,
+  ConfirmDialog,
   EmptyState,
   Field,
   Input,
@@ -592,11 +593,33 @@ function PlanDriftPanel({ planId }: { planId: string }) {
 // ---- page ----
 
 export function PlansPage() {
+  const queryClient = useQueryClient();
   const { data: plans, isLoading, isError } = useQuery({ queryKey: ['admin', 'plans'], queryFn: listPlans });
   const { data: occupancy } = useQuery({ queryKey: ['admin', 'capacity', 'plans'], queryFn: getPlanCapacity });
   const occupancyById = new Map((occupancy ?? []).map((o) => [o.id, o]));
   const [formOpen, setFormOpen] = useState<{ mode: 'create' | 'edit'; plan: AdminPlan | null } | null>(null);
   const [driftOpenId, setDriftOpenId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AdminPlan | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deletePlan(deleteTarget.id);
+      setDeleteTarget(null);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'plans'] });
+    } catch (err) {
+      // The backend refuses (409) whenever a real server still uses this
+      // plan (PlansService.remove) — surfaced verbatim, never silently
+      // swallowed, since "just try again" wouldn't fix it.
+      setDeleteError(err instanceof ApiError ? err.message : 'Não foi possível excluir o plano.');
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <>
@@ -612,6 +635,11 @@ export function PlansPage() {
       />
 
       {isError && <Alert className="mb-6">Não foi possível carregar os planos.</Alert>}
+      {deleteError && (
+        <Alert className="mb-6" tone="fail" onDismiss={() => setDeleteError(null)}>
+          {deleteError}
+        </Alert>
+      )}
 
       {isLoading ? (
         <LoadingRow />
@@ -673,6 +701,9 @@ export function PlansPage() {
                       <Button variant="ghost" size="sm" onClick={() => setDriftOpenId(driftOpenId === p.id ? null : p.id)}>
                         {driftOpenId === p.id ? 'Ocultar' : 'Aplicar'}
                       </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(p)}>
+                        Excluir
+                      </Button>
                     </div>
                   </div>
                   {driftOpenId === p.id && <PlanDriftPanel planId={p.id} />}
@@ -684,6 +715,17 @@ export function PlansPage() {
       )}
 
       <PlanFormModal open={formOpen !== null} mode={formOpen?.mode ?? 'create'} plan={formOpen?.plan ?? null} onClose={() => setFormOpen(null)} />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Excluir plano"
+        message={`"${deleteTarget?.name}" será removido do catálogo. Isso falha se algum servidor ainda estiver usando esse plano.`}
+        confirmLabel="Excluir"
+        tone="danger"
+        loading={deleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </>
   );
 }

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -13,9 +14,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { TemplatesService } from './templates.service';
+import { SoftwareDiscoveryService } from './software-discovery.service';
+import { PRESET_KINDS, type PresetKind } from './software-presets';
 import {
   CreateServerTemplateDto,
+  CreateTemplateFromPresetDto,
   CreateTemplateGroupDto,
+  DuplicateTemplateDto,
   TemplateVariableDto,
   UpdateServerTemplateDto,
   UpdateTemplateVariableDto,
@@ -25,7 +30,32 @@ import { AdminGuard } from '../admin/guards/admin.guard';
 @Controller('api/admin')
 @UseGuards(AdminGuard)
 export class TemplatesController {
-  constructor(private readonly templates: TemplatesService) {}
+  constructor(
+    private readonly templates: TemplatesService,
+    private readonly discovery: SoftwareDiscoveryService,
+  ) {}
+
+  // ---- criação rápida (wizard) ----
+
+  @Post('templates/quick-create')
+  createFromPreset(@Body() dto: CreateTemplateFromPresetDto) {
+    return this.templates.createFromPreset(dto);
+  }
+
+  @Post('eggs/:id/duplicate')
+  duplicateTemplate(@Param('id') id: string, @Body() dto: DuplicateTemplateDto) {
+    return this.templates.duplicateTemplate(id, dto.name);
+  }
+
+  @Get('templates/discover/:kind/versions')
+  discoverVersions(@Param('kind') kind: string) {
+    return this.discovery.getVersions(assertPresetKind(kind));
+  }
+
+  @Get('templates/discover/:kind/versions/:mcVersion/builds')
+  discoverBuilds(@Param('kind') kind: string, @Param('mcVersion') mcVersion: string) {
+    return this.discovery.getBuilds(assertPresetKind(kind), mcVersion);
+  }
 
   @Get('nests')
   listGroups() {
@@ -86,4 +116,9 @@ function parseBigIntParam(value: string): bigint {
   } catch {
     throw new NotFoundException('Variable not found');
   }
+}
+
+function assertPresetKind(value: string): PresetKind {
+  if ((PRESET_KINDS as readonly string[]).includes(value)) return value as PresetKind;
+  throw new BadRequestException(`Unknown software preset: ${value}`);
 }

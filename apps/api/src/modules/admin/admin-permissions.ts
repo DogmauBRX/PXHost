@@ -20,6 +20,11 @@ export const ADMIN_PERMISSIONS = [
   'clients.disable',
   'clients.password.reset',
   'clients.support',
+  // A stronger, more permanent action than `clients.disable` (blocking
+  // just cuts off login; this soft-deletes the account). Its own key
+  // rather than folded into `.disable` so an operator can grant "may
+  // block/unblock" without also handing out "may remove accounts".
+  'clients.delete',
   // Gates editing `adminPermissions` itself — deliberately its own key,
   // defaulted to root_admin only, so granting someone `clients.*` never
   // also hands them the ability to grant permissions to others.
@@ -88,6 +93,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly (AdminPermission 
     'clients.disable',
     'clients.password.reset',
     'clients.support',
+    'clients.delete',
     'nodes.view',
     'nodes.manage',
     'plans.view',

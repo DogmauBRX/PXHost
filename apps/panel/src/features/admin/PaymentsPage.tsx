@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Receipt, Search } from 'lucide-react';
-import { listOrders, getOrder, retryProvisioning, refundOrder } from './admin.api';
+import { listOrders, getOrder, retryProvisioning, refundOrder, archiveOrders } from './admin.api';
 import { ApiError } from '@/shared/api/client';
 import type { AdminOrder, OrderStatus, OrderProvisioningStatus } from '@/shared/api/types';
 import {
   Alert,
   Badge,
   Button,
+  ConfirmDialog,
   EmptyState,
   Field,
   Input,
@@ -81,6 +82,9 @@ export function PaymentsPage() {
   const [paymentMethod, setPaymentMethod] = useState('');
   const [page, setPage] = useState(0);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
 
   const params = {
     q: query || undefined,
@@ -94,6 +98,37 @@ export function PaymentsPage() {
     queryFn: () => listOrders(params),
     placeholderData: keepPreviousData,
   });
+
+  // A different page/filter shows a different set of ids — a selection
+  // carried over could silently archive rows the admin never looked at.
+  useEffect(() => {
+    setSelected(new Set());
+  }, [page, query, status, paymentMethod]);
+
+  const archiveMutation = useMutation({
+    mutationFn: () => archiveOrders([...selected]),
+    onSuccess: () => {
+      setArchiveError(null);
+      setConfirmArchive(false);
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
+    },
+    onError: (err) => setArchiveError(err instanceof ApiError ? err.message : 'Não foi possível arquivar os pedidos selecionados.'),
+  });
+
+  function toggleSelected(id: string) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    const ids = data?.items.map((o) => o.id) ?? [];
+    setSelected((s) => (s.size === ids.length ? new Set() : new Set(ids)));
+  }
 
   function applySearch() {
     setPage(0);
@@ -163,10 +198,28 @@ export function PaymentsPage() {
         <EmptyState icon={Receipt} title="Nenhum pedido encontrado" />
       ) : (
         <>
+          {selected.size > 0 && (
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-xs text-text-muted">{selected.size} selecionado(s)</span>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmArchive(true)}>
+                Arquivar selecionados
+              </Button>
+            </div>
+          )}
+
           <TableWrap>
             <Table>
               <THead>
                 <TR>
+                  <TH className="w-8">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 cursor-pointer rounded border-border"
+                      checked={selected.size > 0 && selected.size === data.items.length}
+                      onChange={toggleSelectAll}
+                      aria-label="Selecionar tudo"
+                    />
+                  </TH>
                   <TH>Cliente</TH>
                   <TH>Plano</TH>
                   <TH>Valor</TH>
@@ -179,6 +232,15 @@ export function PaymentsPage() {
               <TBody>
                 {data.items.map((order: AdminOrder) => (
                   <TR key={order.id} className="cursor-pointer" onClick={() => setDetailId(order.id)}>
+                    <TD onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 cursor-pointer rounded border-border"
+                        checked={selected.has(order.id)}
+                        onChange={() => toggleSelected(order.id)}
+                        aria-label={`Selecionar pedido de ${order.user.username}`}
+                      />
+                    </TD>
                     <TD>
                       <p className="font-medium text-text">{order.user.username}</p>
                       <p className="text-xs text-text-faint">{order.user.email}</p>
@@ -211,6 +273,24 @@ export function PaymentsPage() {
             </div>
           </div>
         </>
+      )}
+
+      <ConfirmDialog
+        open={confirmArchive}
+        title="Arquivar pedidos"
+        message={`Isso remove ${selected.size} pedido(s) desta lista. O histórico financeiro não é apagado — apenas fica oculto do painel.`}
+        confirmLabel="Arquivar"
+        loading={archiveMutation.isPending}
+        onConfirm={() => archiveMutation.mutate()}
+        onCancel={() => {
+          setConfirmArchive(false);
+          setArchiveError(null);
+        }}
+      />
+      {archiveError && (
+        <Alert tone="fail" className="mt-3" onDismiss={() => setArchiveError(null)}>
+          {archiveError}
+        </Alert>
       )}
 
       <OrderDetailModal

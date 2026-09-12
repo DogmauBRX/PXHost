@@ -27,6 +27,7 @@ describe('Files (e2e)', () => {
   let groupId: string;
   let templateId: string;
   let serverId: string;
+  let planId: string;
   const suffix = Date.now();
 
   function asAdmin<T>(fn: (tx: any) => Promise<T>): Promise<T> {
@@ -101,7 +102,7 @@ describe('Files (e2e)', () => {
       method: 'POST',
       payload: { name: `files-e2e-plan-${suffix}`, slug: `files-e2e-plan-${suffix}`, memoryMb: 256, diskMb: 512 },
     });
-    const planId = JSON.parse(planRes.body).id;
+    planId = JSON.parse(planRes.body).id;
 
     const createRes = await authedAdmin('/api/admin/servers', {
       method: 'POST',
@@ -113,6 +114,7 @@ describe('Files (e2e)', () => {
   afterAll(async () => {
     await asAdmin((tx) => tx.allocation.updateMany({ where: { node: { locationId } }, data: { isPrimary: false, serverId: null } }));
     await asAdmin((tx) => tx.server.deleteMany({ where: { nodeId } }));
+    await prisma.plan.updateMany({ where: { id: planId }, data: { deletedAt: new Date() } });
     await prisma.serverTemplate.deleteMany({ where: { id: templateId } });
     await prisma.templateGroup.deleteMany({ where: { id: groupId } });
     await prisma.node.deleteMany({ where: { id: nodeId } });

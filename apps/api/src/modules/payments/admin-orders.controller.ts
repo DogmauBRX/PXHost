@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/co
 import { OrdersService } from './orders.service';
 import { ListOrdersDto } from './dto/list-orders.dto';
 import { RefundOrderDto } from './dto/refund-order.dto';
+import { ArchiveOrdersDto } from './dto/archive-orders.dto';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { AdminPermissionGuard } from '../admin/guards/admin-permission.guard';
 import { RequireAdminPermission } from '../admin/decorators/require-admin-permission.decorator';
@@ -49,5 +50,11 @@ export class AdminOrdersController {
   @RequireAdminPermission('payments.manage')
   refund(@Param('id') id: string, @Body() dto: RefundOrderDto, @CurrentUser() user: AuthenticatedUser) {
     return this.orders.refundAsAdmin(id, dto.reason, user.id);
+  }
+
+  @Post('archive')
+  @RequireAdminPermission('payments.manage')
+  archive(@Body() dto: ArchiveOrdersDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.orders.archiveOrdersAsAdmin(dto.ids, user.id);
   }
 }
