@@ -45,12 +45,30 @@ export function OrderStatusView({ order, onRetry }: { order: Order; onRetry: () 
           <CheckCircle2 className="h-7 w-7 text-ok" />
         </div>
         <h1 className="text-xl font-semibold text-text">Pagamento confirmado!</h1>
-        <p className="mt-2 text-sm text-text-muted">Seu servidor está sendo preparado. Isso costuma levar só alguns instantes.</p>
-        <Link to="/client/subscription" className="mt-6 block">
-          <Button variant="primary" className="w-full">
-            Ver minha assinatura
-          </Button>
-        </Link>
+        <p className="mt-2 text-sm text-text-muted">
+          {order.serverId ? 'Seu servidor já está reservado — falta só escolher o software e a versão.' : 'Seu servidor está sendo preparado. Isso costuma levar só alguns instantes.'}
+        </p>
+        {/* `order.serverId` is set the instant provisioning finishes
+            (ProvisioningService.provisionOrder) — almost always true by
+            the time a customer's polling actually lands here, since
+            reservation has no agent round-trip to wait on (see
+            ServersService.createSetupPending's own doc comment). Two
+            separate <Link> elements, not one computed `to`/`params` pair
+            — the router's route-param typing is tied to the literal `to`
+            string at the call site, not to a value assembled at runtime. */}
+        {order.serverId ? (
+          <Link to="/client/servers/$serverId" params={{ serverId: order.serverId }} className="mt-6 block">
+            <Button variant="primary" className="w-full">
+              Configurar servidor
+            </Button>
+          </Link>
+        ) : (
+          <Link to="/client/subscription" className="mt-6 block">
+            <Button variant="primary" className="w-full">
+              Ver minha assinatura
+            </Button>
+          </Link>
+        )}
       </div>
     );
   }

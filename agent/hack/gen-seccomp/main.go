@@ -56,8 +56,20 @@ var denylist = map[string]bool{
 }
 
 type syscallEntry struct {
-	Names    []string        `json:"names"`
-	Action   string          `json:"action"`
+	Names  []string `json:"names"`
+	Action string   `json:"action"`
+	// Per-syscall override of the profile's defaultErrnoRet — upstream's
+	// clone3 ERRNO rule sets this to 38 (ENOSYS) specifically so glibc's
+	// clone()-fallback path (used by pthread_create, and so getaddrinfo's
+	// resolver thread) actually triggers; the bare default (EPERM) makes
+	// glibc treat the denial as a real failure instead of "unimplemented,
+	// fall back," breaking any container-side networking that spawns a
+	// thread. Missing this field (found live: every install script that
+	// reached its first curl call failed with "getaddrinfo() thread
+	// failed to start") is what silently dropped it on every regeneration
+	// — RawMessage'd like the other optional fields so an unrecognized
+	// shape never fails the whole run.
+	ErrnoRet json.RawMessage `json:"errnoRet,omitempty"`
 	Args     json.RawMessage `json:"args,omitempty"`
 	Comment  string          `json:"comment,omitempty"`
 	Includes json.RawMessage `json:"includes,omitempty"`

@@ -329,7 +329,7 @@ function TemplateFormFields({
               id="tpl-image-ref"
               value={values.imageRef}
               onChange={(e) => onChange({ imageRef: e.target.value })}
-              placeholder="ghcr.io/pxhost/yolks:java_21"
+              placeholder="ghcr.io/pterodactyl/yolks:java_21"
               className="font-mono"
             />
           </Field>
@@ -362,7 +362,7 @@ function TemplateFormFields({
               id="tpl-install-image"
               value={values.installImage}
               onChange={(e) => onChange({ installImage: e.target.value })}
-              placeholder="ghcr.io/pxhost/installers:debian"
+              placeholder="ghcr.io/parkervcp/installers:debian"
               className="font-mono"
             />
           </Field>

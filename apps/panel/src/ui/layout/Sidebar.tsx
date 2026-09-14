@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Link, useMatchRoute, useNavigate, useRouterState } from '@tanstack/react-router';
 import type { LinkProps } from '@tanstack/react-router';
-import { LogOut, Settings as SettingsIcon } from 'lucide-react';
+import { LogOut, Settings as SettingsIcon, ShieldCheck, User } from 'lucide-react';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { useUiStore } from '@/shared/stores/ui.store';
 import { logout } from '@/features/auth/auth.api';
@@ -38,9 +38,10 @@ interface SidebarProps {
   sections: readonly NavSection[];
   panelLabel: string;
   settingsTo: LinkProps['to'];
+  area: 'admin' | 'client';
 }
 
-export function Sidebar({ sections, panelLabel, settingsTo }: SidebarProps) {
+export function Sidebar({ sections, panelLabel, settingsTo, area }: SidebarProps) {
   const user = useAuthStore((s) => s.user);
   const clear = useAuthStore((s) => s.clear);
   const navigate = useNavigate();
@@ -86,6 +87,41 @@ export function Sidebar({ sections, panelLabel, settingsTo }: SidebarProps) {
           </div>
           <span className="relative pl-[3.25rem] text-[0.62rem] font-medium tracking-widest text-text-faint uppercase">{panelLabel}</span>
         </div>
+
+        {/* An admin browsing /client/* (the drill-down "view a customer's
+            server as they'd see it" flow — admin.servers.$serverId.tsx
+            reuses these exact same client pages/routes) has otherwise no
+            way to cross between the two short of editing the URL bar: this
+            shell renders whichever nav tree `area` says to, with no
+            cross-link between the two by design (AppShell's own doc
+            comment — "two genuinely separate trees"). This is the one
+            deliberate exception, in both directions:
+             - client -> admin is gated on the caller's REAL role
+               (`user.isAdmin`, always re-derived server-side on login —
+               see AuthenticatedUser's own doc comment), never on which
+               area happens to be rendering — a non-admin never sees it.
+             - admin -> client needs no such gate: reaching `area === 'admin'`
+               at all already means `requireAdmin`'s beforeLoad let this
+               request through, so any admin here may always look at the
+               client view too. */}
+        {area === 'client' && user?.isAdmin && (
+          <Link
+            to="/admin"
+            className="flex shrink-0 items-center gap-2 border-b border-border bg-accent-tint px-5 py-2 text-xs font-medium text-accent-strong transition-colors hover:bg-accent-tint/70"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+            Voltar ao Painel Admin
+          </Link>
+        )}
+        {area === 'admin' && (
+          <Link
+            to="/client"
+            className="flex shrink-0 items-center gap-2 border-b border-border bg-accent-tint px-5 py-2 text-xs font-medium text-accent-strong transition-colors hover:bg-accent-tint/70"
+          >
+            <User className="h-3.5 w-3.5" aria-hidden="true" />
+            Entrar no Painel Cliente
+          </Link>
+        )}
 
         {/* The rail is viewport-height and fixed; with three sections plus a
             footer it can genuinely overflow on a short laptop screen. This is

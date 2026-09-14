@@ -106,6 +106,34 @@ export interface ServerDetail extends ServerSummary {
   permissions: string[];
 }
 
+// GET /api/client/servers/:id/setup — the post-purchase setup screen's
+// only data source. `software` is deliberately narrow: never the
+// technical fields a template also carries (dockerImages, installScript,
+// SERVER_JARFILE/PAPER_BUILD/etc.) — those stay server-side, resolved by
+// `POST .../setup` from the chosen `id` + `version` alone. `versions`
+// comes from the template's own MINECRAFT_VERSION variable's `in:` rule
+// when curated (`versionsCurated: true`); otherwise it's a single-entry
+// array holding the variable's default (e.g. "latest"), signaling the
+// UI to render a free-text hint instead of a fixed dropdown.
+export interface ServerSetupSoftwareOption {
+  id: string;
+  name: string;
+  description: string | null;
+  iconUrl: string | null;
+  softwareKind: SoftwareKind | null;
+  group: { id: string; name: string; iconUrl: string | null };
+  versions: string[];
+  defaultVersion: string | null;
+  versionsCurated: boolean;
+}
+
+export interface ServerSetupInfo {
+  status: string;
+  name: string;
+  plan: { memoryMb: number; diskMb: number; cpuLimitPercent: number };
+  software: ServerSetupSoftwareOption[];
+}
+
 // Deliberately no disk fields — the agent's disk_bytes/disk_limit_bytes
 // are always 0 (see apps/api's AgentStatsFrame doc comment), so this type
 // simply doesn't carry them rather than tempting a UI to render a fake 0%.

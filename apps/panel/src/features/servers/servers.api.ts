@@ -1,5 +1,5 @@
 import { apiFetch } from '@/shared/api/client';
-import type { ConsoleTokenResponse, PowerAction, ServerDetail, ServerStatsSnapshot, ServerSummary } from '@/shared/api/types';
+import type { ConsoleTokenResponse, PowerAction, ServerDetail, ServerSetupInfo, ServerStatsSnapshot, ServerSummary } from '@/shared/api/types';
 
 export function listServers() {
   return apiFetch<ServerSummary[]>('/api/client/servers');
@@ -7,6 +7,24 @@ export function listServers() {
 
 export function getServer(id: string) {
   return apiFetch<ServerDetail>(`/api/client/servers/${id}`);
+}
+
+// ---- Post-purchase setup (ServerSetupPage/ServerInstallingPage) ----
+
+export function getServerSetup(id: string) {
+  return apiFetch<ServerSetupInfo>(`/api/client/servers/${id}/setup`);
+}
+
+export interface CompleteServerSetupInput {
+  name: string;
+  templateId: string;
+  variables?: Record<string, string>;
+}
+// The exact same call whether this is the FIRST setup or a retry after
+// install_failed — ServerSetupService.complete's CAS accepts both source
+// statuses, so there is deliberately no separate "retry" endpoint/function.
+export function completeServerSetup(id: string, input: CompleteServerSetupInput) {
+  return apiFetch<{ id: string; status: string }>(`/api/client/servers/${id}/setup`, { method: 'POST', body: JSON.stringify(input) });
 }
 
 export function sendPowerAction(id: string, action: PowerAction) {

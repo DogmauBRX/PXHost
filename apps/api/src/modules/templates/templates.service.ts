@@ -75,7 +75,7 @@ export class TemplatesService {
         dockerImages: dto.dockerImages as object,
         startupCommand: dto.startupCommand,
         stopCommand: dto.stopCommand ?? 'stop',
-        installImage: dto.installImage ?? 'ghcr.io/pxhost/installers:debian',
+        installImage: dto.installImage ?? 'ghcr.io/parkervcp/installers:debian',
         installEntrypoint: dto.installEntrypoint ?? 'bash',
         installScript: dto.installScript,
         softwareKind: dto.softwareKind,
@@ -119,10 +119,16 @@ export class TemplatesService {
 
     const variables = preset.variables.map((v) => {
       if (v.envVariable === preset.versionVariable) {
-        return { ...v, rules: withInList(v.rules, dto.minecraftVersions) };
+        // The preset's own `defaultValue` is the "latest" sentinel (see
+        // software-presets.ts) — meaningful only while `rules` is still
+        // free text. Once curated to `in:<list>`, "latest" stops being a
+        // legal value, so the default must become a real member of that
+        // same list — the client setup screen (`getSetupInfo`) trusts
+        // this column verbatim as the pre-selected version.
+        return { ...v, rules: withInList(v.rules, dto.minecraftVersions), defaultValue: dto.minecraftVersions[0] };
       }
       if (preset.buildVariable && v.envVariable === preset.buildVariable) {
-        return { ...v, rules: withInList(v.rules, dto.builds!) };
+        return { ...v, rules: withInList(v.rules, dto.builds!), defaultValue: dto.builds![0] };
       }
       return v;
     });

@@ -70,14 +70,21 @@ describe('Templates admin wizard (e2e)', () => {
     createdTemplateIds.push(body.id);
 
     expect(body.softwareKind).toBe('paper');
-    expect(body.dockerImages).toEqual({ 'Java 21': 'ghcr.io/pxhost/yolks:java_21' });
+    expect(body.dockerImages).toEqual({ 'Java 25': 'ghcr.io/pterodactyl/yolks:java_25' });
     expect(body.startupCommand).toContain('{{SERVER_MEMORY}}');
     expect(body.installScript).toContain('papermc.io');
 
     const versionVar = body.variables.find((v: { envVariable: string }) => v.envVariable === 'MINECRAFT_VERSION');
     expect(versionVar.rules).toBe('required|string|max:16|in:1.21.4,1.21.1,1.20.6');
+    // The preset's own default is the "latest" sentinel (software-presets.ts),
+    // which stops being a legal value the instant `rules` is curated to
+    // `in:<list>` — the wizard must swap it for a real list member, or the
+    // client setup screen (server-setup.service.ts's `getSetupInfo`) ends up
+    // offering a pre-selected version that fails its own validation.
+    expect(versionVar.defaultValue).toBe('1.21.4');
     const buildVar = body.variables.find((v: { envVariable: string }) => v.envVariable === 'PAPER_BUILD');
     expect(buildVar.rules).toBe('required|string|max:16|in:485,latest');
+    expect(buildVar.defaultValue).toBe('485');
     // SERVER_MEMORY stays plan-controlled — the wizard never exposes it, so
     // its rules are untouched by the version/build curation logic.
     const memoryVar = body.variables.find((v: { envVariable: string }) => v.envVariable === 'SERVER_MEMORY');

@@ -444,7 +444,7 @@ model ServerTemplate {
   configFiles       Json      @default("{}") @map("config_files")
   configStartup     Json      @default("{}") @map("config_startup")
   configLogs        Json      @default("{}") @map("config_logs")
-  installImage      String    @default("ghcr.io/pxhost/installers:debian") @map("install_image")
+  installImage      String    @default("ghcr.io/parkervcp/installers:debian") @map("install_image")
   installEntrypoint String    @default("bash") @map("install_entrypoint")
   installScript     String    @map("install_script")
   // The single canonical software signal (Paper/Fabric/Forge/...), used to

@@ -638,6 +638,7 @@
         "clone3"
       ],
       "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 38,
       "excludes": {
         "caps": [
           "CAP_SYS_ADMIN"

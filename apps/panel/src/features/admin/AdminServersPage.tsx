@@ -4,6 +4,7 @@ import { Link } from '@tanstack/react-router';
 import { History, Plus, ServerCog } from 'lucide-react';
 import {
   createAdminServer,
+  deleteAdminServer,
   initiateTransfer,
   listAdminServers,
   listNodes,
@@ -17,11 +18,13 @@ import {
 } from './admin.api';
 import { ApiError } from '@/shared/api/client';
 import type { CapacitySimulateResult } from '@/shared/api/types';
+import { serverStatusLabel } from '@/features/servers/status-labels';
 import {
   Alert,
   Button,
   Card,
   CardBody,
+  ConfirmDialog,
   EmptyState,
   Field,
   Input,
@@ -32,16 +35,6 @@ import {
   Select,
   StatusBadge,
 } from '@/ui/primitives';
-
-const STATUS_LABELS: Record<string, string> = {
-  installing: 'Instalando',
-  install_failed: 'Falha na instalação',
-  ready: 'Pronto',
-  suspended: 'Suspenso',
-  restoring_backup: 'Restaurando backup',
-  transferring: 'Transferindo',
-  deleting: 'Excluindo',
-};
 
 function TransferHistory({ serverId }: { serverId: string }) {
   const { data: transfers } = useQuery({
@@ -66,6 +59,17 @@ function TransferHistory({ serverId }: { serverId: string }) {
 // ---- create server (capacity plan Fase 5) ----
 
 const AUTO_NODE = ''; // Select's "automatic" option value — maps to `nodeId: undefined` in the request
+
+// Mirrors PublicPlansPage.tsx's own PERIODS labels — a plan's name alone
+// is ambiguous whenever the catalog has both a monthly and a quarterly
+// row sharing it (e.g. two "Básico" entries), which this dropdown
+// otherwise has no way to tell apart.
+const BILLING_PERIOD_LABEL: Record<string, string> = {
+  monthly: 'Mensal',
+  quarterly: 'Trimestral',
+  semiannual: 'Semestral',
+  annual: 'Anual',
+};
 
 function SimulatePreview({ result, loading }: { result: CapacitySimulateResult | null; loading: boolean }) {
   if (loading) return <p className="text-xs text-text-faint">Calculando…</p>;
@@ -223,7 +227,7 @@ function CreateServerModal({ open, onClose }: { open: boolean; onClose: () => vo
               <option value="">Selecione…</option>
               {plans?.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} ({p.memoryMb} MB)
+                  [{BILLING_PERIOD_LABEL[p.billingPeriod] ?? p.billingPeriod}] {p.name} ({p.memoryMb} MB)
                 </option>
               ))}
             </Select>
@@ -258,6 +262,9 @@ export function AdminServersPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function handleTransfer(serverId: string) {
     const targetNodeId = targetByServer[serverId];
@@ -304,6 +311,22 @@ export function AdminServersPage() {
     }
   }
 
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteAdminServer(deleteTarget.id);
+      setDeleteTarget(null);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'servers'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'capacity'] });
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : 'Não foi possível excluir o servidor.');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -341,10 +364,10 @@ export function AdminServersPage() {
                       >
                         {s.name}
                       </Link>
-                      <StatusBadge status={s.status} />
+                      <StatusBadge status={s.status} label={serverStatusLabel(s.status)} />
                     </div>
                     <p className="mt-0.5 font-mono text-xs text-text-faint">
-                      {s.shortId} · node: {s.node.name} · {STATUS_LABELS[s.status] ?? s.status}
+                      {s.shortId} · node: {s.node.name} · {serverStatusLabel(s.status)}
                     </p>
                     <p className="text-xs text-text-faint">Cliente: {s.owner ? `${s.owner.username} (${s.owner.email})` : '—'}</p>
                   </div>
@@ -385,6 +408,9 @@ export function AdminServersPage() {
                         Suspender
                       </Button>
                     )}
+                    <Button variant="ghost" size="sm" disabled={busyServer === s.id} onClick={() => setDeleteTarget({ id: s.id, name: s.name })}>
+                      Excluir
+                    </Button>
                   </div>
                   {expanded === s.id && (
                     <div className="w-full">
@@ -409,6 +435,26 @@ export function AdminServersPage() {
       />
 
       <CreateServerModal open={createOpen} onClose={() => setCreateOpen(false)} />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Excluir servidor"
+        message={`Isso apaga "${deleteTarget?.name ?? ''}" permanentemente — container, arquivos e bancos de dados. Não pode ser desfeito.`}
+        confirmLabel="Excluir"
+        tone="danger"
+        loading={deleting}
+        confirmPhrase={deleteTarget?.name}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={() => {
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
+      />
+      {deleteError && (
+        <Alert tone="fail" className="mt-3" onDismiss={() => setDeleteError(null)}>
+          {deleteError}
+        </Alert>
+      )}
     </>
   );
 }

@@ -1,8 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Gamepad2, MemoryStick, Server } from 'lucide-react';
+import { Gamepad2, MemoryStick, Server, Settings2 } from 'lucide-react';
 import { listServers } from './servers.api';
+import { serverStatusLabel } from './status-labels';
 import { Alert, EmptyState, LoadingRow, StatusBadge } from '@/ui/primitives';
+
+// A server still in the post-purchase setup flow has no template/software
+// chosen yet (`setup_pending`) or is mid-install (`installing`) — showing
+// its plan/allocation the way a `ready` card does would be misleading
+// (nothing is actually running). These three get the "needs attention"
+// treatment instead: an explicit CTA line telling the client what to do
+// next, replacing the template/allocation row a `ready` server shows.
+const NEEDS_SETUP_CTA: Record<string, string> = {
+  setup_pending: 'Configurar servidor',
+  install_failed: 'Tentar novamente',
+  installing: 'Preparando…',
+};
 
 const POWER_DOT: Record<string, string> = {
   running: 'bg-ok',
@@ -46,23 +59,30 @@ export function ServerList({ limit }: { limit?: number } = {}) {
                   <p className="mt-0.5 font-mono text-xs text-text-faint">{s.shortId}</p>
                 </div>
               </div>
-              <StatusBadge status={s.status} />
+              <StatusBadge status={s.status} label={serverStatusLabel(s.status)} />
             </div>
 
-            {(s.template || primaryAllocation) && (
-              <div className="flex items-center gap-3 text-xs text-text-muted">
-                {s.template && (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Gamepad2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    {s.template.name}
-                  </span>
-                )}
-                {primaryAllocation && (
-                  <span className="font-mono">
-                    {primaryAllocation.ip}:{primaryAllocation.port}
-                  </span>
-                )}
+            {NEEDS_SETUP_CTA[s.status] ? (
+              <div className="flex items-center gap-1.5 text-xs font-medium text-accent-strong">
+                <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                {NEEDS_SETUP_CTA[s.status]}
               </div>
+            ) : (
+              (s.template || primaryAllocation) && (
+                <div className="flex items-center gap-3 text-xs text-text-muted">
+                  {s.template && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Gamepad2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      {s.template.name}
+                    </span>
+                  )}
+                  {primaryAllocation && (
+                    <span className="font-mono">
+                      {primaryAllocation.ip}:{primaryAllocation.port}
+                    </span>
+                  )}
+                </div>
+              )
             )}
 
             <div className="flex items-center justify-between border-t border-border pt-3 text-xs text-text-muted">

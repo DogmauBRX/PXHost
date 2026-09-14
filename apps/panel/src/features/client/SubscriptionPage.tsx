@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { CalendarClock, Layers } from 'lucide-react';
+import { CalendarClock, Layers, Settings2 } from 'lucide-react';
 import { listMySubscriptions, cancelSubscription } from './subscriptions.api';
 import { listMyOrders } from '@/shared/api/orders.api';
+import { getServer } from '@/features/servers/servers.api';
 import type { Order, Subscription, SubscriptionStatus } from '@/shared/api/types';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, CardTitle, ConfirmDialog, EmptyState, LoadingRow, PageHeader } from '@/ui/primitives';
 import { formatBillingPeriod, formatPrice } from '@/shared/format/plan';
@@ -152,6 +153,26 @@ export function SubscriptionPage() {
   );
 }
 
+// The subscription-to-server link is only interesting for `setup_pending`/
+// `install_failed` (needs the customer's attention) — for every other
+// status the server's own card in `/client/servers` already covers it,
+// so this fetches just to decide whether "Configurar servidor" is worth
+// showing at all, not to render the server itself. Shares the exact
+// `['server', serverId]` query key ServerLayout/every server page already
+// use — no extra request once the customer actually opens the server.
+function ServerSetupCta({ serverId }: { serverId: string }) {
+  const { data: server } = useQuery({ queryKey: ['server', serverId], queryFn: () => getServer(serverId) });
+  if (!server || !['setup_pending', 'install_failed'].includes(server.status)) return null;
+  return (
+    <Link to="/client/servers/$serverId" params={{ serverId }}>
+      <Button variant="primary" className="gap-1.5">
+        <Settings2 className="h-4 w-4" aria-hidden="true" />
+        Configurar servidor
+      </Button>
+    </Link>
+  );
+}
+
 function SubscriptionCard({ sub, orderId, onCancel }: { sub: Subscription; orderId?: string; onCancel: () => void }) {
   return (
     <Card>
@@ -186,6 +207,7 @@ function SubscriptionCard({ sub, orderId, onCancel }: { sub: Subscription; order
               <Button variant="primary">Continuar pagamento</Button>
             </Link>
           )}
+          {sub.status === 'active' && sub.serverId && <ServerSetupCta serverId={sub.serverId} />}
           {CANCELABLE_STATUSES.includes(sub.status) && (
             <Button variant="secondary" onClick={onCancel}>
               Cancelar assinatura

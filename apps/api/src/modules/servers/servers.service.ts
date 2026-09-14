@@ -18,7 +18,7 @@ import { validateVariableValue } from './variable-rules';
 // schema column already defaults to DEFAULT_INSTALL_IMAGE, so this is
 // belt-and-suspenders for a row written before that default existed, not
 // a real fallback path either caller expects to hit.
-export const DEFAULT_INSTALL_IMAGE = 'ghcr.io/pxhost/installers:debian';
+export const DEFAULT_INSTALL_IMAGE = 'ghcr.io/parkervcp/installers:debian';
 export const DEFAULT_INSTALL_ENTRYPOINT = 'bash';
 
 /**

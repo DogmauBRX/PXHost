@@ -26,6 +26,34 @@ RestartSec=5
 # agent's job, not something a systemd sandbox directive can narrow).
 SupplementaryGroups=docker
 NoNewPrivileges=true
+# Every server gets its own host-side data dir, chowned to its OWN
+# sandboxed uid (srv.New, agent/internal/srv/server.go) so its install
+# and game containers — which run AS that uid, never as `gxhost` — can
+# actually read/write it. That deliberately leaves `gxhost` itself
+# (uid-wise a stranger to every one of those directories, each a
+# DIFFERENT uid out of node.json's whole uid_range) with no standard
+# permission-bit access of its own — these two capabilities are what let
+# it keep operating on that content anyway, matching the trust level it
+# already has via Docker socket access above (root-equivalent for the
+# whole host regardless):
+#   - CAP_CHOWN:       writeInstallScript hands each install script to
+#                       the server's uid before its installer container
+#                       (running as that uid) tries to read it; fsx's own
+#                       WriteFile/Mkdir do the same for every file/dir a
+#                       customer creates through the panel's file
+#                       manager. Missing this, both fail outright — a
+#                       silently-swallowed EPERM on the install script
+#                       (surfaced only as an opaque install exit code
+#                       126), a hard error on every file-manager write.
+#   - CAP_DAC_OVERRIDE: lets the agent's OWN direct reads/writes/lists
+#                       against fsx's jail (architecture doc 4.4) ignore
+#                       those same per-server-uid permission bits it just
+#                       set up FOR the containers — without it, the agent
+#                       can create a fresh file (owns it a moment) but
+#                       can never open an EXISTING one back, since every
+#                       server directory belongs to a uid `gxhost` has no
+#                       standard access to.
+AmbientCapabilities=CAP_CHOWN CAP_DAC_OVERRIDE
 
 [Install]
 WantedBy=multi-user.target

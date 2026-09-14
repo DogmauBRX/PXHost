@@ -4,6 +4,7 @@ import { ChevronLeft, User } from 'lucide-react';
 import { requireAdmin } from '@/app/guards';
 import { getAdminServer } from '@/features/admin/admin.api';
 import { getServer } from '@/features/servers/servers.api';
+import { serverStatusLabel } from '@/features/servers/status-labels';
 import { Card, CardBody, RouteTabs, StatusBadge, type RouteTab } from '@/ui/primitives';
 
 // The admin drill-down mirrors client.servers.$serverId.tsx's shape exactly
@@ -78,7 +79,7 @@ function ServerLayout() {
               </p>
             </div>
           </div>
-          <StatusBadge status={server.status} />
+          <StatusBadge status={server.status} label={serverStatusLabel(server.status)} />
         </div>
       )}
 

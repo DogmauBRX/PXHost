@@ -87,6 +87,21 @@ export class ServerSetupService {
     const software: SetupSoftwareOption[] = templates.map((t) => {
       const versionOption = t.options.find((o) => o.envVariable === 'MINECRAFT_VERSION');
       const versionsCurated = versionOption?.kind === 'choice';
+      const choices = versionsCurated ? (versionOption!.choices ?? []) : [];
+      // `defaultValue` is a free-text column ("latest" for every preset,
+      // resolved by the install script itself — see software-presets.ts)
+      // that predates per-template curated version lists. Once a template
+      // is curated (`rules` narrowed to `in:<list>`), "latest" is no
+      // longer a value `resolveDeclaredVariables` will accept, so it can
+      // never be trusted as this dropdown's selected value without first
+      // checking it's actually a member of that same list — otherwise the
+      // customer sees one version pre-selected (the browser's own
+      // first-<option> fallback for an unmatched `<select>` value) while
+      // the value that would actually be submitted is the stale "latest".
+      const defaultVersion =
+        versionsCurated && versionOption?.defaultValue && !choices.includes(versionOption.defaultValue)
+          ? (choices[0] ?? null)
+          : (versionOption?.defaultValue ?? null);
       return {
         id: t.id,
         name: t.name,
@@ -94,8 +109,8 @@ export class ServerSetupService {
         iconUrl: t.iconUrl,
         softwareKind: t.softwareKind,
         group: t.group,
-        versions: versionsCurated ? (versionOption!.choices ?? []) : versionOption ? [versionOption.defaultValue] : [],
-        defaultVersion: versionOption?.defaultValue ?? null,
+        versions: versionsCurated ? choices : versionOption ? [versionOption.defaultValue] : [],
+        defaultVersion,
         versionsCurated,
       };
     });

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { CryptoService } from '../../core/crypto/crypto.service';
 import { NodeBootstrapService } from './node-bootstrap.service';
@@ -116,8 +116,22 @@ export class AgentClient {
     return this.call(nodeId, 'POST', '/api/servers', req);
   }
 
+  /**
+   * A 404 here (`SERVER_NOT_FOUND`) means the agent's manager never
+   * registered this container in the first place — the exact shape of a
+   * server whose install failed at the docker-pull stage, before
+   * `manager.Register` ever ran. Nothing to tear down is not a failure:
+   * treated as a successful no-op, the same "already gone" idempotency
+   * every other delete/remove path in this codebase already gives a
+   * caller (e.g. AllocationsService, PlansService).
+   */
   async deleteServer(nodeId: string, serverUuid: string): Promise<void> {
-    await this.call(nodeId, 'DELETE', `/api/servers/${serverUuid}`, undefined);
+    try {
+      await this.call(nodeId, 'DELETE', `/api/servers/${serverUuid}`, undefined);
+    } catch (err) {
+      if (err instanceof NotFoundException) return;
+      throw err;
+    }
   }
 
   async power(nodeId: string, serverUuid: string, action: 'start' | 'stop' | 'restart' | 'kill'): Promise<{ state: string; previous: string }> {
@@ -327,11 +341,21 @@ export class AgentClient {
         if (res.status === 409) {
           throw new ConflictException(`Agent returned 409: ${text.slice(0, 500)}`);
         }
+        // Same reasoning as 409 above: "the agent has no record of this
+        // resource" (SERVER_NOT_FOUND, e.g. a create that failed before
+        // the agent's manager ever registered the container) is a
+        // semantically meaningful outcome a caller like deleteServer can
+        // act on — never collapse it into the generic 503 below, which
+        // would make an admin's delete of a server that failed to
+        // install at the pull stage fail forever with no recovery.
+        if (res.status === 404) {
+          throw new NotFoundException(`Agent returned 404: ${text.slice(0, 500)}`);
+        }
         throw new ServiceUnavailableException(`Agent returned ${res.status}: ${text.slice(0, 500)}`);
       }
       return text ? (JSON.parse(text) as T) : (undefined as T);
     } catch (err) {
-      if (err instanceof ServiceUnavailableException || err instanceof ConflictException) throw err;
+      if (err instanceof ServiceUnavailableException || err instanceof ConflictException || err instanceof NotFoundException) throw err;
       throw new ServiceUnavailableException(`Agent request failed: ${(err as Error).message}`);
     } finally {
       clearTimeout(timeout);

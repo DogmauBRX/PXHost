@@ -27,8 +27,17 @@ const STATUS_TONE: Record<string, Tone> = {
   offline: 'neutral',
   crashed: 'fail',
   suspended: 'fail',
+  setup_pending: 'warn',
 };
 
-export function StatusBadge({ status }: { status: string }) {
-  return <Badge tone={STATUS_TONE[status] ?? 'neutral'}>{status.replace(/_/g, ' ')}</Badge>;
+/**
+ * `label` is an optional override — pass `serverStatusLabel(status)`
+ * (features/servers/status-labels.ts) for a pt-BR label; omitted, this
+ * falls back to the raw status with underscores turned to spaces, same
+ * as before that helper existed. Kept optional (not required) so this
+ * primitives-layer component never has to import domain vocabulary
+ * itself, and every existing call site keeps compiling untouched.
+ */
+export function StatusBadge({ status, label }: { status: string; label?: string }) {
+  return <Badge tone={STATUS_TONE[status] ?? 'neutral'}>{label ?? status.replace(/_/g, ' ')}</Badge>;
 }

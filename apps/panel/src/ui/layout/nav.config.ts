@@ -13,7 +13,6 @@ import {
   ScrollText,
   Server,
   ServerCog,
-  Settings,
   ShieldCheck,
   User,
   Users,
@@ -71,7 +70,11 @@ export const ADMIN_NAV_SECTIONS: readonly NavSection[] = [
     id: 'sistema',
     label: 'Sistema',
     items: [
-      { label: 'Configurações', to: '/admin/settings', icon: Settings },
+      // 'Configurações' deliberately not repeated here — it already lives
+      // in the sidebar's own footer (Sidebar.tsx's `settingsTo` link, next
+      // to the account avatar), which points at this exact same
+      // '/admin/settings' route. Two links to the same page in the same
+      // sidebar was the actual redundancy, not a missing shortcut.
       { label: 'Aviso do site', to: '/admin/announcement', icon: Megaphone },
       { label: 'Logs', to: '/admin/logs', icon: ScrollText },
       { label: 'Sistema', to: '/admin/system', icon: ShieldCheck },

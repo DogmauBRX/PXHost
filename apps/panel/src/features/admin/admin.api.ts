@@ -261,6 +261,7 @@ export interface CreateAdminServerInput {
 }
 export const createAdminServer = (input: CreateAdminServerInput) =>
   apiFetch<{ id: string; shortId: string; status: string }>('/api/admin/servers', { method: 'POST', body: JSON.stringify(input) });
+export const deleteAdminServer = (id: string) => apiFetch<void>(`/api/admin/servers/${id}`, { method: 'DELETE' });
 
 // ---- Node-to-node transfer (roadmap M13) ----
 

@@ -70,16 +70,30 @@ type Server struct {
 }
 
 // New creates a server's in-memory handle AND its data directory
-// (<node.DataDir>/<uuid>), owned 0750 by the agent itself — this is
-// deliberately no longer left to Docker's own "auto-create a missing
-// bind-mount source" side effect (see the M5 agent README's own note
-// that this was fsx's job for "a later milestone" — this is that
-// milestone). The jail is opened against that directory immediately, so
-// it's ready before the container is ever created.
+// (<node.DataDir>/<uuid>) — this is deliberately no longer left to
+// Docker's own "auto-create a missing bind-mount source" side effect (see
+// the M5 agent README's own note that this was fsx's job for "a later
+// milestone" — this is that milestone). The jail is opened against that
+// directory immediately, so it's ready before the container is ever
+// created.
 func New(s spec.Server, node spec.Node) (*Server, error) {
 	dataDir := path.Join(node.DataDir, s.UUID)
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("srv: creating data dir %q: %w", dataDir, err)
+	}
+	// MkdirAll leaves this owned by the agent's own process uid, but it's
+	// bind-mounted into every install AND game container (spec.BuildDataMount)
+	// as THEIR working directory, running as the server's own sandboxed
+	// uid (s.UID) — not the agent's. Left unowned by that uid, 0750 gives
+	// it no access at all: `cd /mnt/server`, the first line of every
+	// install script, fails outright (surfaced upstream as an opaque
+	// "install script exited 1", nothing about permissions). Best-effort,
+	// same reasoning as writeInstallScript's own chown (install.go):
+	// requires root/CAP_CHOWN, which real Linux nodes grant the agent's
+	// systemd unit — fails harmlessly on non-Linux dev environments
+	// (Docker Desktop on Windows) where chown was never going to work.
+	if err := os.Chown(dataDir, s.UID, s.UID); err != nil {
+		_ = err
 	}
 	jail, err := fsx.Open(dataDir)
 	if err != nil {
@@ -122,6 +136,17 @@ func (s *Server) Create(ctx context.Context, dc dockerFull) error {
 	if s.ContainerID != "" {
 		return fmt.Errorf("srv: server %s already has a container (%s)", s.UUID, s.ContainerID)
 	}
+
+	// Best-effort: ContainerName is deterministic (`"gxhost-" + s.UUID`),
+	// so a container already registered under it can only ever be a
+	// leftover from an EARLIER failed create for this exact server —
+	// never another server's container. A retry after a failed install
+	// (the panel's setup-retry flow) re-registers this UUID from scratch,
+	// with no memory of that earlier attempt's container ID, so the
+	// in-memory guard above can't see it; only Docker's own name check
+	// can, and it refuses the create outright instead of overwriting.
+	// Ignoring the error covers the common case (nothing to remove yet).
+	_ = dc.RemoveContainer(ctx, s.ContainerName, true)
 
 	cfg, hostCfg, netCfg, err := spec.BuildContainerSpec(s.spec, s.node)
 	if err != nil {

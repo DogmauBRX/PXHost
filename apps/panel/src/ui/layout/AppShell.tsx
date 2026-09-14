@@ -35,7 +35,7 @@ export function AppShell({ children, area }: { children: ReactNode; area: 'admin
   // base color, so leaving this transparent is enough.
   return (
     <div className="min-h-screen">
-      <Sidebar sections={sections} panelLabel={panelLabel} settingsTo={settingsTo} />
+      <Sidebar sections={sections} panelLabel={panelLabel} settingsTo={settingsTo} area={area} />
       <div className="lg:pl-64">
         <Topbar />
         <AnnouncementBanner />

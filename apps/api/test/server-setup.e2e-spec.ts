@@ -1,3 +1,5 @@
+import * as http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { Test } from '@nestjs/testing';
 import { NestFastifyApplication, FastifyAdapter } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
@@ -38,6 +40,8 @@ describe('Server setup (e2e)', () => {
   let templateId: string;
   let privateTemplateId: string;
   let inactiveTemplateId: string;
+  let staleDefaultTemplateId: string;
+  let adminToken: string;
   const suffix = Date.now();
 
   function asAdmin(fn: (tx: any) => Promise<any>): Promise<any> {
@@ -48,6 +52,9 @@ describe('Server setup (e2e)', () => {
   }
   function asIntruder(url: string, opts: Record<string, unknown> = {}) {
     return app.inject({ url, headers: { authorization: `Bearer ${intruderToken}` }, ...opts });
+  }
+  function authedAdmin(url: string, opts: Record<string, unknown> = {}) {
+    return app.inject({ url, headers: { authorization: `Bearer ${adminToken}` }, ...opts });
   }
 
   beforeAll(async () => {
@@ -73,15 +80,11 @@ describe('Server setup (e2e)', () => {
     });
 
     const adminLogin = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: admin.email, password: 'SetupPass!234567' } });
-    const adminToken = JSON.parse(adminLogin.body).accessToken;
+    adminToken = JSON.parse(adminLogin.body).accessToken;
     const ownerLogin = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: owner.email, password: 'SetupPass!234567' } });
     ownerToken = JSON.parse(ownerLogin.body).accessToken;
     const intruderLogin = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: intruder.email, password: 'SetupPass!234567' } });
     intruderToken = JSON.parse(intruderLogin.body).accessToken;
-
-    function authedAdmin(url: string, opts: Record<string, unknown> = {}) {
-      return app.inject({ url, headers: { authorization: `Bearer ${adminToken}` }, ...opts });
-    }
 
     const loc = await prisma.location.create({ data: { shortCode: `setup-e2e-${suffix}`, name: 'Server Setup E2E' } });
     locationId = loc.id;
@@ -160,6 +163,39 @@ describe('Server setup (e2e)', () => {
       data: { groupId, name: `setup-e2e-inactive-${suffix}`, author: 'test', dockerImages: { x: 'y' }, startupCommand: 'x', installScript: 'x', isActive: false, isPublic: true },
     });
     inactiveTemplateId = inactiveTemplate.id;
+    // Reproduces the real production incident: a template whose
+    // MINECRAFT_VERSION `rules` were curated to an `in:<list>` but whose
+    // `defaultValue` was left at the pre-curation "latest" sentinel
+    // (software-presets.ts's own free-text default) — no longer a legal
+    // value once curated. `getSetupInfo` must never hand this stale value
+    // to the client as the pre-selected version.
+    const staleDefaultTemplate = await prisma.serverTemplate.create({
+      data: {
+        groupId,
+        name: `setup-e2e-stale-default-${suffix}`,
+        author: 'test',
+        dockerImages: { 'Java 21': 'ghcr.io/pterodactyl/yolks:java_21' },
+        startupCommand: 'java -jar server.jar',
+        installScript: '#!/bin/sh\n',
+        softwareKind: 'vanilla',
+        isActive: true,
+        isPublic: true,
+        variables: {
+          create: [
+            {
+              name: 'Minecraft Version',
+              envVariable: 'MINECRAFT_VERSION',
+              defaultValue: 'latest',
+              rules: 'required|string|max:16|in:1.21.4,1.21.1,1.20.6',
+              isUserViewable: true,
+              isUserEditable: true,
+              sortOrder: 0,
+            },
+          ],
+        },
+      },
+    });
+    staleDefaultTemplateId = staleDefaultTemplate.id;
 
     // PublicTemplatesService.list() caches in Redis for 60s, SHARED with
     // every other e2e file hitting the public templates endpoint in a
@@ -170,16 +206,41 @@ describe('Server setup (e2e)', () => {
   });
 
   afterAll(async () => {
-    await asAdmin((tx) => tx.allocation.updateMany({ where: { node: { locationId } }, data: { isPrimary: false, serverId: null } }));
-    await asAdmin((tx) => tx.server.deleteMany({ where: { nodeId } }));
-    await asAdmin((tx) => tx.subscription.deleteMany({ where: { planId } }));
-    await prisma.plan.updateMany({ where: { id: planId }, data: { deletedAt: new Date() } });
-    await prisma.templateVariable.deleteMany({ where: { templateId } });
-    await prisma.serverTemplate.deleteMany({ where: { id: { in: [templateId, privateTemplateId, inactiveTemplateId] } } });
-    await prisma.templateGroup.deleteMany({ where: { id: groupId } });
-    await prisma.node.deleteMany({ where: { id: nodeId } });
-    await prisma.location.deleteMany({ where: { id: locationId } });
-    await prisma.user.updateMany({ where: { email: { contains: 'setup-' } }, data: { deletedAt: new Date() } });
+    // Each step independently caught (checkout.e2e-spec.ts's own
+    // `cleanupSteps` convention) — found live: a single failing step
+    // (the FK-violating `serverTemplate.deleteMany` below, when a server
+    // from a Jest-timed-out test elsewhere in this file still referenced
+    // one of these templates) used to abort every step after it,
+    // leaving the template rows — `isPublic: true` on the Paper one —
+    // live in the REAL client-facing setup catalog until manually
+    // found and removed. One slow/timed-out test must never leak
+    // customer-visible data because cleanup gave up partway through.
+    const cleanupSteps: Array<() => Promise<unknown>> = [
+      () => asAdmin((tx) => tx.allocation.updateMany({ where: { node: { locationId } }, data: { isPrimary: false, serverId: null } })),
+      () => asAdmin((tx) => tx.server.deleteMany({ where: { nodeId } })),
+      // Defensive, not redundant: catches a server left behind on some
+      // OTHER (e.g. a test's own temporary bootstrapped) node that still
+      // points at one of these template ids — exactly what happened
+      // live. Deleting by templateId here, before the template rows
+      // themselves, is what makes the FK-violation scenario above
+      // impossible to repeat.
+      () =>
+        asAdmin((tx) =>
+          tx.server.deleteMany({ where: { templateId: { in: [templateId, privateTemplateId, inactiveTemplateId, staleDefaultTemplateId] } } }),
+        ),
+      () => asAdmin((tx) => tx.subscription.deleteMany({ where: { planId } })),
+      () => prisma.plan.updateMany({ where: { id: planId }, data: { deletedAt: new Date() } }),
+      () => prisma.templateVariable.deleteMany({ where: { templateId: { in: [templateId, staleDefaultTemplateId] } } }),
+      () => prisma.serverTemplate.deleteMany({ where: { id: { in: [templateId, privateTemplateId, inactiveTemplateId, staleDefaultTemplateId] } } }),
+      () => prisma.templateGroup.deleteMany({ where: { id: groupId } }),
+      () => prisma.node.deleteMany({ where: { id: nodeId } }),
+      () => prisma.location.deleteMany({ where: { id: locationId } }),
+      () => prisma.user.updateMany({ where: { email: { contains: 'setup-' } }, data: { deletedAt: new Date() } }),
+      () => app.get(PublicTemplatesService).invalidateCache(),
+    ];
+    for (const step of cleanupSteps) {
+      await step().catch((err) => console.error('server-setup.e2e-spec afterAll step failed (continuing):', err));
+    }
     await app.close();
   });
 
@@ -230,6 +291,18 @@ describe('Server setup (e2e)', () => {
     expect(body.software.some((s: any) => s.id === inactiveTemplateId)).toBe(false);
     expect(JSON.stringify(body)).not.toContain('docker');
     expect(JSON.stringify(body)).not.toContain('SERVER_MEMORY');
+  });
+
+  it('GET .../setup falls back to the first curated version when a template\'s stored default has drifted out of its own in: list', async () => {
+    const res = await asOwner(`/api/client/servers/${serverId}/setup`);
+    const body = JSON.parse(res.body);
+    const entry = body.software.find((s: any) => s.id === staleDefaultTemplateId);
+    expect(entry).toBeTruthy();
+    expect(entry.versionsCurated).toBe(true);
+    expect(entry.versions).toEqual(['1.21.4', '1.21.1', '1.20.6']);
+    // NOT 'latest' (the stale stored value) — a value the customer could
+    // actually submit successfully without touching the dropdown.
+    expect(entry.defaultVersion).toBe('1.21.4');
   });
 
   it('GET .../setup 404s for a non-owner (never confirms existence)', async () => {
@@ -393,4 +466,127 @@ describe('Server setup (e2e)', () => {
     const serversForThisSubscription = await asAdmin((tx) => tx.server.count({ where: { subscription: { id: subscription.id } } }));
     expect(serversForThisSubscription).toBe(1);
   });
+
+  // The only test in this file against a BOOTSTRAPPED node with a real
+  // (fake) HTTP agent behind it — every other test above deliberately
+  // uses the un-bootstrapped shared node so dispatch fails deterministically
+  // (see this file's own top doc comment). This one instead proves the
+  // FULL happy path the rest of the suite only ever gets partway through:
+  // setup_pending -> POST /setup (agent accepts) -> installing ->
+  // install-completed callback -> ready -> POST /power -> running.
+  it('the full happy path reaches ready and running: setup succeeds, install-completed flips it to ready, and the owner can start it', async () => {
+    const fakeAgent = http.createServer((req, res) => {
+      if (req.method === 'POST' && req.url === '/api/servers') {
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ state: 'installing' }));
+        return;
+      }
+      if (req.method === 'POST' && req.url?.endsWith('/power')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ state: 'running', previous: 'offline' }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) => fakeAgent.listen(0, '127.0.0.6', resolve));
+    try {
+      const port = (fakeAgent.address() as AddressInfo).port;
+      // Distinct loopback address per e2e file, same convention
+      // backups(.1)/databases(.2)/schedules(.3)/subusers(.4)/plans-
+      // apply(.5)/plan-apply-capacity(.7) already established — fqdn
+      // carries a real partial-unique index (WHERE deleted_at IS NULL).
+      await prisma.node.updateMany({ where: { fqdn: '127.0.0.6', deletedAt: null }, data: { deletedAt: new Date() } });
+      const loc = await prisma.location.create({ data: { shortCode: `setup-e2e-happy-${suffix}`, name: 'Server Setup Happy Path E2E' } });
+      const node = await prisma.node.create({
+        data: {
+          locationId: loc.id,
+          name: `setup-e2e-happy-node-${suffix}`,
+          fqdn: '127.0.0.6',
+          scheme: 'http',
+          daemonPort: port,
+          memoryTotalMb: 4096,
+          diskTotalMb: 40960,
+        },
+      });
+      try {
+        await authedAdmin(`/api/admin/nodes/${node.id}/allocations`, {
+          method: 'POST',
+          payload: { ip: '203.0.115.20', startPort: 27700, endPort: 27700 },
+        });
+        const tokenRes = await authedAdmin(`/api/admin/nodes/${node.id}/bootstrap-token`, { method: 'POST' });
+        const bootstrapToken = JSON.parse(tokenRes.body).token;
+        const bootstrapRes = await app.inject({
+          method: 'POST',
+          url: '/api/remote/nodes/bootstrap',
+          payload: { token: bootstrapToken, hostname: 'setup-e2e-happy-host' },
+        });
+        expect(bootstrapRes.statusCode).toBe(201);
+        const nodeToken = JSON.parse(bootstrapRes.body).nodeToken;
+
+        const created = await servers.createSetupPending({ ownerId, planId, nodeId: node.id });
+        expect(created.status).toBe('setup_pending');
+
+        const setupRes = await asOwner(`/api/client/servers/${created.id}/setup`, {
+          method: 'POST',
+          payload: { name: 'servidor-feliz', templateId, variables: { MINECRAFT_VERSION: '1.21.1' } },
+        });
+        // The agent accepted the create this time — no dispatch failure,
+        // so this is a real success, not the 503 the rest of the file's
+        // un-bootstrapped node always produces.
+        expect(setupRes.statusCode).toBe(201);
+        expect(JSON.parse(setupRes.body).status).toBe('installing');
+
+        const installingServer = await asAdmin((tx) => tx.server.findUniqueOrThrow({ where: { id: created.id } }));
+        expect(installingServer.status).toBe('installing');
+
+        // The agent's own callback — reportInstallResult has no status
+        // precondition, so this is the sole authority on reaching 'ready',
+        // exactly like a real install finishing would trigger it.
+        const installCompletedRes = await app.inject({
+          method: 'POST',
+          url: `/api/remote/servers/${created.id}/install-completed`,
+          headers: { authorization: `Bearer ${nodeToken}` },
+          payload: { successful: true },
+        });
+        expect(installCompletedRes.statusCode).toBe(201);
+
+        const readyServer = await asAdmin((tx) => tx.server.findUniqueOrThrow({ where: { id: created.id } }));
+        expect(readyServer.status).toBe('ready');
+        expect(readyServer.installedAt).not.toBeNull();
+
+        // 'ready' is no longer a pre-ready status — allowedForStatus stops
+        // denying control.start the instant setup_pending is behind it,
+        // and the fake agent's own /power handler is what proves this
+        // reaches a real dispatch, not just a permission check passing.
+        const powerRes = await asOwner(`/api/client/servers/${created.id}/power`, { method: 'POST', payload: { action: 'start' } });
+        expect(powerRes.statusCode).toBe(201); // ClientServersController's @Post has no @HttpCode override — Nest's own POST default
+        expect(JSON.parse(powerRes.body).state).toBe('running');
+      } finally {
+        await asAdmin((tx) => tx.allocation.updateMany({ where: { nodeId: node.id }, data: { isPrimary: false, serverId: null } }));
+        await asAdmin((tx) => tx.server.deleteMany({ where: { nodeId: node.id } }));
+        await prisma.node.deleteMany({ where: { id: node.id } });
+        await prisma.location.deleteMany({ where: { id: loc.id } });
+      }
+    } finally {
+      // `.close()` alone waits for every open connection to end on its
+      // own — a keep-alive socket AgentClient's `fetch()` left idle after
+      // the last request would otherwise stall this indefinitely (found
+      // live: a run of this exact test hung for hours instead of the
+      // usual few seconds). `closeAllConnections()` (Node 18.2+) forces
+      // them shut immediately; safe here since every request this test
+      // makes has already completed by this point.
+      fakeAgent.closeAllConnections();
+      await new Promise<void>((resolve) => fakeAgent.close(() => resolve()));
+    }
+    // Explicit timeout, above Jest's 5000ms default: this test makes ~7
+    // sequential HTTP round-trips (allocations, bootstrap-token,
+    // bootstrap, createSetupPending, POST /setup, install-completed,
+    // POST /power), each through the full Nest pipeline + Prisma — under
+    // the full suite's parallel-worker load this occasionally exceeded
+    // 5000ms and hit Jest's timeout. That failure mode is exactly what
+    // caused the FK-violation/leaked-template incident this file's
+    // afterAll now also guards against — a slow test must fail with a
+    // clear "exceeded timeout," never abort mid-cleanup.
+  }, 15000);
 });

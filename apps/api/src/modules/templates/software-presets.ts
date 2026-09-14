@@ -34,9 +34,18 @@ export interface TemplatePreset {
   buildVariable: string | null;
 }
 
-const JAVA_21_IMAGE = { 'Java 21': 'ghcr.io/pxhost/yolks:java_21' };
+// Java is backward compatible (a newer JRE runs older bytecode fine), so
+// one shared, reasonably current image covers every curated Minecraft
+// version below it — the alternative (picking an image per version) has
+// nowhere to live in this data model anyway (one dockerImages per
+// TEMPLATE, not per version choice). Bump this whenever a new Minecraft
+// release needs a newer classfile version than the current JRE here
+// supports (java_21 = classfile 65; a real customer install of
+// Minecraft 26.2 — classfile 69, i.e. Java 25 — failed outright with
+// UnsupportedClassVersionError before this was bumped to java_25).
+const JAVA_IMAGE = { 'Java 25': 'ghcr.io/pterodactyl/yolks:java_25' };
 const STANDARD_STARTUP_COMMAND = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui';
-const INSTALL_IMAGE = 'ghcr.io/pxhost/installers:debian';
+const INSTALL_IMAGE = 'ghcr.io/parkervcp/installers:debian';
 const INSTALL_ENTRYPOINT = 'bash';
 
 // Every preset's last declared variable — the one thing the client-facing
@@ -216,7 +225,15 @@ if [ "$NEOFORGE_VERSION" == "latest" ]; then
   if [ "$MINECRAFT_VERSION" == "latest" ]; then
     NEOFORGE_VERSION=$(echo "$VERSIONS" | sort -V | tail -n1)
   else
-    PREFIX=$(echo "$MINECRAFT_VERSION" | cut -d. -f2-)
+    # Only the old "1.x" Minecraft scheme drops a leading "1." to reach
+    # NeoForge's own prefix (1.21.4 -> 21.4); the newer bare-year scheme
+    # (26.1, 26.2, ...) already IS the NeoForge prefix as-is — stripping
+    # its first segment too would turn "26.2" into "2" and never match.
+    if [[ "$MINECRAFT_VERSION" == 1.* ]]; then
+      PREFIX=$(echo "$MINECRAFT_VERSION" | cut -d. -f2-)
+    else
+      PREFIX="$MINECRAFT_VERSION"
+    fi
     NEOFORGE_VERSION=$(echo "$VERSIONS" | grep "^\${PREFIX}\\." | sort -V | tail -n1)
   fi
 fi
@@ -268,7 +285,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   paper: {
     name: 'Paper',
     description: 'High-performance Paper server for Minecraft: Java Edition.',
-    dockerImages: JAVA_21_IMAGE,
+    dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: INSTALL_IMAGE,
@@ -296,7 +313,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   fabric: {
     name: 'Fabric',
     description: 'Modded Minecraft: Java Edition server running the Fabric mod loader.',
-    dockerImages: JAVA_21_IMAGE,
+    dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: INSTALL_IMAGE,
@@ -324,7 +341,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   vanilla: {
     name: 'Vanilla',
     description: 'Unmodified, official Minecraft: Java Edition server — no plugins or mods.',
-    dockerImages: JAVA_21_IMAGE,
+    dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: INSTALL_IMAGE,
@@ -342,7 +359,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   forge: {
     name: 'Forge',
     description: 'Modded Minecraft: Java Edition server running the Forge mod loader.',
-    dockerImages: JAVA_21_IMAGE,
+    dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: INSTALL_IMAGE,
@@ -370,7 +387,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   neoforge: {
     name: 'NeoForge',
     description: 'Modded Minecraft: Java Edition server running the NeoForge mod loader (the actively-maintained fork of Forge for modern versions).',
-    dockerImages: JAVA_21_IMAGE,
+    dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: INSTALL_IMAGE,
@@ -398,7 +415,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   purpur: {
     name: 'Purpur',
     description: 'Paper-based server with extra performance tuning and gameplay options — drop-in compatible with Paper plugins.',
-    dockerImages: JAVA_21_IMAGE,
+    dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: INSTALL_IMAGE,
