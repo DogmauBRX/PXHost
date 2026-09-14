@@ -53,7 +53,17 @@ NoNewPrivileges=true
 #                       can never open an EXISTING one back, since every
 #                       server directory belongs to a uid `gxhost` has no
 #                       standard access to.
-AmbientCapabilities=CAP_CHOWN CAP_DAC_OVERRIDE
+#   - CAP_FOWNER:       fsx.WriteFile's own ownership dance (architecture
+#                       doc 4.4: create 0600 as `gxhost`, fchown to the
+#                       server's uid, THEN fchmod to the real final mode)
+#                       chmods a file `gxhost` no longer owns the instant
+#                       after that fchown succeeds — chmod normally
+#                       requires being the file's owner (or CAP_FOWNER);
+#                       CAP_DAC_OVERRIDE only bypasses read/write/execute
+#                       checks, never that ownership requirement, so every
+#                       file-manager write still failed (on the chmod
+#                       step specifically) without this third capability.
+AmbientCapabilities=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
 
 [Install]
 WantedBy=multi-user.target

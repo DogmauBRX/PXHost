@@ -163,7 +163,7 @@ func (s *Server) handleUpdateVariables(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	env, err := buildEnvMap(uuid, req.DeclaredVars, req.Variables)
+	env, err := buildEnvMap(uuid, req.DeclaredVars, req.Variables, target.PrimaryPort())
 	if err != nil {
 		writeErrorResp(w, http.StatusUnprocessableEntity, "INVALID_VARIABLES", err.Error())
 		return

@@ -119,6 +119,20 @@ func containerName(uuid string) string {
 	return "gxhost-" + uuid
 }
 
+// PrimaryPort returns this server's primary allocation's port, or 0 if it
+// somehow has none — used to inject SERVER_PORT (routes_create_server.go's
+// buildEnvMap) back into a variables-only recreate (handleUpdateVariables),
+// which never gets a fresh allocations list of its own since only the
+// panel's create/setup path resends one.
+func (s *Server) PrimaryPort() int {
+	for _, a := range s.spec.Allocations {
+		if a.Primary {
+			return a.Port
+		}
+	}
+	return 0
+}
+
 // dockerFull is the Docker client type every lifecycle method takes. It is
 // also what satisfies console.Attacher and stats.StatsSource (both narrow
 // interfaces this package's docker client already implements structurally),

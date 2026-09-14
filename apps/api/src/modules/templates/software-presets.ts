@@ -91,6 +91,18 @@ function minecraftVersionVariable(description: string): TemplateVariableDto {
   };
 }
 
+// Every install script ends by pinning `server-port` in server.properties
+// to $SERVER_PORT (an agent-injected reserved env var — see the agent's
+// buildEnvMap doc comment, routes_create_server.go): Docker publishes
+// host port == container port, never NAT-remapped (game protocols embed
+// the port in their own responses), so the game process itself MUST
+// listen on that exact port. Minecraft only writes server.properties on
+// its own first launch, defaulting server-port to 25565 — silently
+// correct for whichever ONE allocation on a node happens to be 25565,
+// and "connection refused" for every other one, since nothing else ever
+// told it otherwise. Written before first launch, not after: the file
+// may not exist yet (fresh install) or may already have a stale value
+// from an earlier attempt (retry) — this handles both.
 const PAPER_INSTALL_SCRIPT = `#!/bin/bash
 set -euo pipefail
 cd /mnt/server
@@ -112,6 +124,11 @@ echo "Downloading Paper \${MINECRAFT_VERSION} build \${PAPER_BUILD}..."
 curl -sSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
 
 echo "eula=true" > eula.txt
+if grep -q '^server-port=' server.properties 2>/dev/null; then
+  sed -i "s/^server-port=.*/server-port=\${SERVER_PORT}/" server.properties
+else
+  echo "server-port=\${SERVER_PORT}" >> server.properties
+fi
 echo "Install complete."
 `;
 
@@ -141,6 +158,11 @@ if [ -f server.jar ] && [ "\${SERVER_JARFILE}" != "server.jar" ]; then
 fi
 
 echo "eula=true" > eula.txt
+if grep -q '^server-port=' server.properties 2>/dev/null; then
+  sed -i "s/^server-port=.*/server-port=\${SERVER_PORT}/" server.properties
+else
+  echo "server-port=\${SERVER_PORT}" >> server.properties
+fi
 echo "Install complete."
 `;
 
@@ -162,6 +184,11 @@ echo "Downloading vanilla Minecraft \${MINECRAFT_VERSION}..."
 curl -sSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
 
 echo "eula=true" > eula.txt
+if grep -q '^server-port=' server.properties 2>/dev/null; then
+  sed -i "s/^server-port=.*/server-port=\${SERVER_PORT}/" server.properties
+else
+  echo "server-port=\${SERVER_PORT}" >> server.properties
+fi
 echo "Install complete."
 `;
 
@@ -203,6 +230,11 @@ if [ -n "$FOUND_JAR" ] && [ "$FOUND_JAR" != "./\${SERVER_JARFILE}" ]; then
 fi
 
 echo "eula=true" > eula.txt
+if grep -q '^server-port=' server.properties 2>/dev/null; then
+  sed -i "s/^server-port=.*/server-port=\${SERVER_PORT}/" server.properties
+else
+  echo "server-port=\${SERVER_PORT}" >> server.properties
+fi
 echo "Install complete."
 `;
 
@@ -250,6 +282,11 @@ if [ -n "$FOUND_JAR" ] && [ "$FOUND_JAR" != "./\${SERVER_JARFILE}" ]; then
 fi
 
 echo "eula=true" > eula.txt
+if grep -q '^server-port=' server.properties 2>/dev/null; then
+  sed -i "s/^server-port=.*/server-port=\${SERVER_PORT}/" server.properties
+else
+  echo "server-port=\${SERVER_PORT}" >> server.properties
+fi
 echo "Install complete."
 `;
 
@@ -278,6 +315,11 @@ echo "Downloading Purpur \${MINECRAFT_VERSION} build \${PURPUR_BUILD}..."
 curl -sSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
 
 echo "eula=true" > eula.txt
+if grep -q '^server-port=' server.properties 2>/dev/null; then
+  sed -i "s/^server-port=.*/server-port=\${SERVER_PORT}/" server.properties
+else
+  echo "server-port=\${SERVER_PORT}" >> server.properties
+fi
 echo "Install complete."
 `;
 

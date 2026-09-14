@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gxhost/agent/internal/panel"
@@ -53,7 +54,7 @@ type agentAllocation struct {
 // exactly this same env/limits/allocations translation with none of
 // handleCreateServer's install-specific fields.
 func buildServerSpec(uuid string, uid int, image, imageDigest, startupTemplate, stopSignal string, declaredVars []string, variables map[string]string, limits agentLimits, allocations []agentAllocation) (spec.Server, error) {
-	envMap, err := buildEnvMap(uuid, declaredVars, variables)
+	envMap, err := buildEnvMap(uuid, declaredVars, variables, primaryAllocationPort(allocations))
 	if err != nil {
 		return spec.Server{}, err
 	}
@@ -182,13 +183,38 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// primaryAllocationPort returns the primary allocation's port, or 0 if
+// none is marked primary (buildServerSpec's caller always sends one, but
+// this stays defensive rather than panicking on malformed input — the
+// same reasoning as every other best-effort default in this file).
+func primaryAllocationPort(allocations []agentAllocation) int {
+	for _, a := range allocations {
+		if a.Primary {
+			return a.Port
+		}
+	}
+	return 0
+}
+
 // buildEnvMap turns the panel-supplied declared/variables pair into the
 // final env map, injecting the same reserved keys (SERVER_UUID, HOME,
-// USER, TZ, LANG, TERM) every server gets regardless of its template —
-// shared by both a fresh create and a variables-only recreate
+// USER, TZ, LANG, TERM, SERVER_PORT) every server gets regardless of its
+// template — shared by both a fresh create and a variables-only recreate
 // (routes_server.go's handleUpdateVariables) so the two paths can never
 // drift on what "the environment" means for a server.
-func buildEnvMap(uuid string, declaredVars []string, variables map[string]string) (map[string]string, error) {
+//
+// SERVER_PORT matters more than it looks: hostconfig.go's
+// buildPortBindings deliberately maps host port == container port
+// (never Docker-level NAT remapping — game protocols embed the port in
+// their own responses, which NAT-style remapping breaks). That only
+// works if the game process INSIDE the container actually listens on
+// that same port — nothing else tells it to. Every install script
+// writes this into its software's own port-config file (server.properties
+// for Minecraft) before the software's first launch; skipping this
+// silently "worked" for exactly one port per node (whichever happened to
+// match the software's own hardcoded default) and refused connections
+// on every other allocation.
+func buildEnvMap(uuid string, declaredVars []string, variables map[string]string, primaryPort int) (map[string]string, error) {
 	env, _, err := spec.BuildEnv(declaredVars, variables, map[string]string{
 		"SERVER_UUID": uuid,
 		"HOME":        "/home/container",
@@ -196,6 +222,7 @@ func buildEnvMap(uuid string, declaredVars []string, variables map[string]string
 		"TZ":          "UTC",
 		"LANG":        "C.UTF-8",
 		"TERM":        "xterm",
+		"SERVER_PORT": strconv.Itoa(primaryPort),
 	})
 	if err != nil {
 		return nil, err
