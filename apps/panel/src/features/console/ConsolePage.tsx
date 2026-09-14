@@ -203,8 +203,8 @@ export function ConsolePage({ serverId }: { serverId: string }) {
           <h1 className="text-xl font-semibold tracking-tight text-text">{server?.name ?? '…'}</h1>
           <StatusBadge status={displayState} />
           {liveUptimeMs != null && (
-            <span className="inline-flex items-center gap-1.5 text-xs text-text-muted">
-              <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="inline-flex items-center gap-2 text-lg font-medium text-text-muted">
+              <Clock className="h-5 w-5" aria-hidden="true" />
               Ativo há {formatUptime(liveUptimeMs)}
             </span>
           )}
