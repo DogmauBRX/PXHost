@@ -24,10 +24,9 @@ interface ResourceAdvisoryProps {
 export function ResourceAdvisory({ serverId, stats, software, requiredSamples }: ResourceAdvisoryProps) {
   const [dismissedTick, setDismissedTick] = useState(0);
 
-  const rawSeverity =
-    stats?.online && stats.state === 'running'
-      ? combineSeverity(memorySeverity(stats.memoryBytes, stats.memoryLimitBytes), cpuSeverity(stats.cpuPercent, stats.cpuLimitPercent))
-      : 'none';
+  const memSeverity = stats ? memorySeverity(stats.memoryBytes, stats.memoryLimitBytes) : 'none';
+  const cpuSev = stats ? cpuSeverity(stats.cpuPercent, stats.cpuLimitPercent) : 'none';
+  const rawSeverity = stats?.online && stats.state === 'running' ? combineSeverity(memSeverity, cpuSev) : 'none';
   const severity = useSustainedSeverity(rawSeverity, requiredSamples);
 
   // `dismissedTick` is never read below — it exists only so setting it
@@ -38,11 +37,23 @@ export function ResourceAdvisory({ serverId, stats, software, requiredSamples }:
 
   const isCritical = severity === 'critical';
   const memPercent = stats?.memoryBytes && stats.memoryLimitBytes ? Math.round((stats.memoryBytes / stats.memoryLimitBytes) * 100) : null;
+  const cpuPercent =
+    stats?.cpuPercent != null && stats.cpuLimitPercent ? Math.round((stats.cpuPercent / stats.cpuLimitPercent) * 100) : null;
+  // combineSeverity gives memory precedence when BOTH are high — the
+  // message follows the same precedence, so it always names whichever
+  // resource is actually responsible for the alert that's showing,
+  // instead of always blaming memory (the previous, only message this
+  // component ever had) even when a sustained CPU spike was the real
+  // cause and memory was nowhere near its own threshold.
+  const triggeredByMemory = memSeverity !== 'none';
 
   const suggestions: string[] = [];
   if (software?.addonNoun === 'mod') suggestions.push('reduzir a quantidade de mods ou remover mods pesados');
   else if (software?.addonNoun === 'plugin') suggestions.push('revisar seus plugins — desative os que não usa');
-  suggestions.push('reduzir a quantidade de jogadores simultâneos', 'aumentar a RAM alocada ao servidor');
+  suggestions.push(
+    'reduzir a quantidade de jogadores simultâneos',
+    triggeredByMemory ? 'aumentar a RAM alocada ao servidor' : 'aumentar o limite de CPU do plano',
+  );
 
   return (
     <Alert
@@ -54,7 +65,12 @@ export function ResourceAdvisory({ serverId, stats, software, requiredSamples }:
       }}
     >
       <p>
-        Seu servidor está utilizando {memPercent != null ? `${memPercent}%` : 'muito'} da memória disponível. Isso pode causar lentidão ou crashes.
+        {triggeredByMemory ? (
+          <>Seu servidor está utilizando {memPercent != null ? `${memPercent}%` : 'muito'} da memória disponível.</>
+        ) : (
+          <>Seu servidor está utilizando {cpuPercent != null ? `${cpuPercent}%` : 'muito'} do limite de CPU disponível.</>
+        )}{' '}
+        Isso pode causar lentidão ou crashes.
       </p>
       <p className="mt-1">Considere:</p>
       <ul className="mt-1 list-inside list-disc space-y-0.5">
