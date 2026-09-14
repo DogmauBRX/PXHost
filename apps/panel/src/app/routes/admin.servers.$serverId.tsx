@@ -34,8 +34,6 @@ const BASIC_TABS: readonly RouteTab[] = [
   { to: '/admin/servers/$serverId/variables', label: 'Configurações', group: 'basico' },
 ];
 const ADVANCED_TABS: readonly RouteTab[] = [
-  { to: '/admin/servers/$serverId/databases', label: 'Bancos de dados', group: 'avancado' },
-  { to: '/admin/servers/$serverId/schedules', label: 'Agendamentos', group: 'avancado' },
   { to: '/admin/servers/$serverId/subusers', label: 'Subusuários', group: 'avancado' },
   { to: '/admin/servers/$serverId/activity', label: 'Atividade', group: 'avancado' },
 ];
