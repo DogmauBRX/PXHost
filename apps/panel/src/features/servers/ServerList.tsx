@@ -85,8 +85,7 @@ export function ServerList({ limit }: { limit?: number } = {}) {
               )
             )}
 
-            <div className="flex items-center justify-between border-t border-border pt-3 text-xs text-text-muted">
-              <span>{s.node.name}</span>
+            <div className="flex items-center justify-end border-t border-border pt-3 text-xs text-text-muted">
               <span className="inline-flex items-center gap-1.5 font-mono tabular-nums">
                 <MemoryStick className="h-3.5 w-3.5" aria-hidden="true" />
                 {s.memoryMb} MB
