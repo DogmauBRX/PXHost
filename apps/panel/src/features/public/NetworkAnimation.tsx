@@ -123,7 +123,7 @@ export function NetworkAnimation() {
             className="absolute -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${node.xPct}%`, top: `${node.yPct}%` }}
           >
-            <div className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-surface/70 px-3 py-2 shadow-sm backdrop-blur-xl">
+            <div className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-surface/85 px-3 py-2 shadow-sm backdrop-blur-xl">
               <div className="relative">
                 <Server className="h-4 w-4 text-text-muted" />
                 <span className="network-status-dot absolute -top-1 -right-1 h-2 w-2 rounded-full" style={{ animationDelay: delay }} />

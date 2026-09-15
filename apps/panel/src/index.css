@@ -480,9 +480,16 @@ html[data-app-ready] body {
  * the whole hero, not just up close.
  */
 .network-panel {
-  background: color-mix(in srgb, var(--color-surface) 38%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+  /* No manual -webkit-backdrop-filter line: found live that writing both
+     properties by hand here (unlike Tailwind's own backdrop-blur-*
+     utility, which is untouched by this) made the build's own
+     autoprefixing drop the unprefixed property entirely from the
+     compiled CSS — only -webkit-backdrop-filter survived, which some
+     browsers' getComputedStyle never reports back even though the
+     effect nominally still applies. Standard property only; the build
+     tool adds whatever vendor prefix each target actually needs. */
+  backdrop-filter: blur(24px);
   border: 1px solid var(--color-border-strong);
   box-shadow:
     0 0 70px -15px color-mix(in srgb, var(--color-accent) 40%, transparent),
