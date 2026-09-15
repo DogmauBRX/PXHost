@@ -83,6 +83,12 @@ const PERMISSION_CATALOG: { key: string; groupKey: string; i18nKey: string; isDa
   { key: 'startup.read', groupKey: 'startup', i18nKey: 'permission.startup.read', sortOrder: 7 },
   { key: 'startup.update', groupKey: 'startup', i18nKey: 'permission.startup.update', isDangerous: true, sortOrder: 8 },
 
+  // Custom-hostname plan — setting/changing a server's public DNS
+  // identity (survival.gxhost.com.br). No separate `.read` key: the
+  // hostname is always visible as part of the server's own detail
+  // (server.read), same posture as e.g. plan/allocation info.
+  { key: 'hostname.update', groupKey: 'hostname', i18nKey: 'permission.hostname.update', isDangerous: true, sortOrder: 9 },
+
   { key: 'file.read', groupKey: 'file', i18nKey: 'permission.file.read', sortOrder: 10 },
   { key: 'file.write', groupKey: 'file', i18nKey: 'permission.file.write', sortOrder: 11 },
   { key: 'file.delete', groupKey: 'file', i18nKey: 'permission.file.delete', isDangerous: true, sortOrder: 12 },

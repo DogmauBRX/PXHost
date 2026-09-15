@@ -165,6 +165,48 @@ SRV (pra esconder a porta também, `mc-abc123.gxhost.com.br` sem `:porta`)
 `PUBLIC_GATEWAY_DNS_PROVIDER=cloudflare` (+ `PUBLIC_GATEWAY_DNS_API_TOKEN`
 + `PUBLIC_GATEWAY_DNS_ZONE_ID`) se realmente quiser essa automação.
 
+### 5.4. Hostname personalizado pelo cliente
+
+Com `PUBLIC_GATEWAY_HOSTNAME_ZONE` configurada, cada cliente pode escolher
+um subdomínio próprio direto sob o apex da zona — **não** aninhado em
+`.mc.` como o esquema acima — em **Configurações** na página do servidor:
+`survival` vira `survival.gxhost.com.br`. Diferente do esquema por
+`shortId` (que usa um único wildcard estático, seguro porque o `shortId`
+é permanente), um hostname escolhido pelo cliente pode ser trocado ou
+liberado e reaproveitado por outro cliente depois — por isso cada um
+ganha registros DNS próprios (A/AAAA + SRV), criados e removidos
+individualmente pelo reconciler, nunca um wildcard.
+
+- **Validação**: formato (minúsculas, números e hífen, sem começar/
+  terminar com hífen, 3–32 caracteres), lista de palavras reservadas
+  (`www`, `api`, `admin`, `mc`, `node01`, `node02`, etc. — ver
+  `apps/api/src/modules/gateway/hostname-policy.ts`), unicidade global
+  (constraint no banco — nenhum cliente pode usar o hostname de outro),
+  e, quando `PUBLIC_GATEWAY_DNS_PROVIDER=cloudflare` está ligado, uma
+  checagem ao vivo contra a zona real da Cloudflare (falha aberta: uma
+  instabilidade da API da Cloudflare nunca bloqueia o cliente salvar).
+- **Sem porta de verdade**: só quando `PUBLIC_GATEWAY_DNS_PROVIDER=cloudflare`
+  está ligado — é o registro SRV que faz isso funcionar. Com a automação
+  desligada, o hostname ainda é reservado e mostrado, mas com a porta
+  (`survival.gxhost.com.br:25566`), porque o SRV nunca foi publicado de
+  verdade.
+- **Trocar de node/porta**: o hostname do cliente nunca muda — só o alvo
+  (`target`/porta) do registro SRV é recalculado a cada reconciliação, o
+  mesmo mecanismo que já existe para o esquema por `shortId`.
+- **Segurança**: o gateway (`nginx stream`) continua roteando só por
+  PORTA, nunca por hostname — o cliente Minecraft resolve o SRV do lado
+  dele e conecta direto em `ip:porta`; o hostname nunca chega a ser
+  interpretado pelo proxy TCP. Isso já satisfaz "mapping hostname →
+  servidor explícito, sem roteamento por padrão previsível" sem nenhum
+  código novo no caminho do proxy.
+
+**Bug encontrado e corrigido ao construir isso** (afeta os dois esquemas,
+`shortId` e personalizado): excluir um servidor nunca removia o registro
+SRV dele — o reconciler só via a linha `removing` DEPOIS que o
+`ON DELETE CASCADE` já tinha apagado a `PublicRoute`. A limpeza de DNS
+agora acontece de forma síncrona em `GatewayService.markRemoving`, antes
+do hard-delete, não mais esperando o reconcile.
+
 ## 6. Ambiente de desenvolvimento / teste local
 
 Sem precisar mexer no roteador de casa nem ter uma VPS de verdade — só

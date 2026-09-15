@@ -20,6 +20,20 @@ export function deriveHostname(shortId: string, zone: string): string {
 }
 
 /**
+ * Custom-hostname plan — composes a customer-CHOSEN label directly under
+ * the zone apex ("survival" + "gxhost.com.br" -> "survival.gxhost.com.br"),
+ * deliberately NOT nested under `.mc.` like `deriveHostname` above: the
+ * customer's own examples are bare subdomains, and unlike `shortId` (
+ * permanent, never reused) this label can change or be released and
+ * reused by someone else — see hostname-policy.ts and GatewayService's
+ * own doc comments for why that needs per-record DNS lifecycle instead
+ * of the `.mc.` scheme's single static wildcard.
+ */
+export function deriveCustomHostname(label: string, zone: string): string {
+  return `${label.toLowerCase()}.${zone}`;
+}
+
+/**
  * `zone` is optional: with no `PUBLIC_GATEWAY_HOSTNAME_ZONE` configured
  * (the default), a server's public address falls back to the gateway's
  * own `publicHost:port` — no DNS involved at all. This is deliberate:

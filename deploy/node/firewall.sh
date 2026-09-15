@@ -88,11 +88,16 @@ nft add table ip nat
 nft add chain ip nat prerouting '{ type nat hook prerouting priority -100; }'
 nft add rule ip nat prerouting iif "$WG_IFACE" ip saddr "$GATEWAY_TUNNEL_IP" tcp dport "$GAME_PORT_RANGE" dnat to "$NODE_LAN_IP"
 
-# The DNAT above changes the destination address, so the kernel treats
-# the packet as FORWARDED (input's own interface isn't NODE_LAN_IP),
-# not delivered locally — this is the one rule that lets it actually
-# reach the container despite `forward`'s policy drop.
-nft add rule inet filter forward iif "$WG_IFACE" ip daddr "$NODE_LAN_IP" tcp dport "$GAME_PORT_RANGE" accept
+# WRONG CHAIN, found live 2026-09-15 (every real connection attempt
+# timed out — nginx's "upstream timed out... connecting to upstream"):
+# NODE_LAN_IP IS this host's own address, so after PREROUTING DNAT
+# rewrites the destination to it, Netfilter's SECOND routing decision
+# sees a LOCALLY-OWNED destination and reclassifies the packet as
+# INPUT-bound, never FORWARD — the exact opposite of this rule's own
+# comment above. `forward`'s policy drop was never even in the path;
+# `input`'s was, with no rule there to match, so every SYN just got
+# silently dropped. The rule belongs on `input`, matched the same way.
+nft add rule inet filter input iif "$WG_IFACE" ip daddr "$NODE_LAN_IP" tcp dport "$GAME_PORT_RANGE" accept
 
 echo "nftables rules applied: control-plane 8443 + game ${GAME_PORT_RANGE} accepted only from ${GATEWAY_TUNNEL_IP}, DNAT'd to ${NODE_LAN_IP}."
 echo "Verify: nft list ruleset — and confirm net.ipv4.ip_forward=1 (sysctl net.ipv4.ip_forward=1; add to /etc/sysctl.conf to persist)."

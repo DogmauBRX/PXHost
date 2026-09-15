@@ -5,7 +5,18 @@ import * as argon2 from 'argon2';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/core/prisma/prisma.service';
 import { GATEWAY_DRIVER, type DesiredRoute, type GatewayDriver } from '../src/modules/gateway/gateway-driver.interface';
+import { DNS_PROVIDER, type AddressRecordInput, type DnsProvider, type SrvRecordInput } from '../src/modules/gateway/dns/dns-provider.interface';
 import { GatewayService } from '../src/modules/gateway/gateway.service';
+
+// Custom-hostname plan's e2e tests need PUBLIC_GATEWAY_HOSTNAME_ZONE
+// configured (local dev's .env has no PUBLIC_GATEWAY_* vars at all —
+// this whole feature has only ever been exercised via ad-hoc DB rows in
+// this file). Set BEFORE the testing module compiles: @nestjs/config's
+// ConfigModule.forRoot() merges dotenv into process.env WITHOUT
+// overriding a key that's already set, so this value wins over the
+// (absent) .env entry. Each Jest test FILE runs in its own worker/module
+// registry, so this never leaks into other spec files.
+process.env.PUBLIC_GATEWAY_HOSTNAME_ZONE = 'gw-e2e-test.local';
 
 /**
  * Public-exposure plan — end-to-end proof that the gateway layer sits
@@ -28,12 +39,54 @@ class FakeGatewayDriver implements GatewayDriver {
   }
 }
 
+/** Custom-hostname plan — records every DNS call so tests can assert exact rename/cleanup sequences, same "inject a fake at the one seam" pattern as FakeGatewayDriver above. */
+class FakeDnsProvider implements DnsProvider {
+  srvEnsured: SrvRecordInput[] = [];
+  srvRemoved: string[] = [];
+  addressEnsured: AddressRecordInput[] = [];
+  addressRemoved: string[] = [];
+  unavailableHostnames = new Set<string>();
+  isHostnameAvailableShouldThrow = false;
+
+  async ensureSrv(input: SrvRecordInput): Promise<void> {
+    this.srvEnsured.push(input);
+  }
+
+  async removeSrv(hostname: string): Promise<void> {
+    this.srvRemoved.push(hostname);
+  }
+
+  async ensureAddressRecord(input: AddressRecordInput): Promise<void> {
+    this.addressEnsured.push(input);
+  }
+
+  async removeAddressRecord(hostname: string): Promise<void> {
+    this.addressRemoved.push(hostname);
+  }
+
+  async isHostnameAvailable(hostname: string): Promise<boolean> {
+    if (this.isHostnameAvailableShouldThrow) throw new Error('fake cloudflare outage');
+    return !this.unavailableHostnames.has(hostname);
+  }
+
+  reset(): void {
+    this.srvEnsured = [];
+    this.srvRemoved = [];
+    this.addressEnsured = [];
+    this.addressRemoved = [];
+    this.unavailableHostnames = new Set();
+    this.isHostnameAvailableShouldThrow = false;
+  }
+}
+
 describe('Public-exposure gateway (e2e)', () => {
   let app: NestFastifyApplication;
   let prisma: PrismaService;
   let gatewayService: GatewayService;
   let fakeDriver: FakeGatewayDriver;
+  let fakeDns: FakeDnsProvider;
   let adminToken: string;
+  let ownerToken: string;
   let ownerId: string;
   let locationId: string;
   let groupId: string;
@@ -49,11 +102,18 @@ describe('Public-exposure gateway (e2e)', () => {
     return app.inject({ url, headers: { authorization: `Bearer ${adminToken}` }, ...opts });
   }
 
+  function authedAsOwner(url: string, opts: Record<string, unknown> = {}) {
+    return app.inject({ url, headers: { authorization: `Bearer ${ownerToken}` }, ...opts });
+  }
+
   beforeAll(async () => {
     fakeDriver = new FakeGatewayDriver();
+    fakeDns = new FakeDnsProvider();
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(GATEWAY_DRIVER)
       .useValue(fakeDriver)
+      .overrideProvider(DNS_PROVIDER)
+      .useValue(fakeDns)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     await app.register(fastifyCookie as any);
@@ -77,6 +137,12 @@ describe('Public-exposure gateway (e2e)', () => {
       data: { email: `gw-owner-${suffix}@gxhost.local`, username: `gw-owner-${suffix}`, passwordHash, isActive: true },
     });
     ownerId = owner.id;
+    const ownerLogin = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: `gw-owner-${suffix}@gxhost.local`, password: 'AdminPass!234567' },
+    });
+    ownerToken = JSON.parse(ownerLogin.body).accessToken;
 
     const loc = await prisma.location.create({ data: { shortCode: `gw-e2e-${suffix}`, name: 'Gateway E2E Location' } });
     locationId = loc.id;
@@ -290,6 +356,156 @@ describe('Public-exposure gateway (e2e)', () => {
     await asAdmin((tx) => tx.server.delete({ where: { id: serverId } }));
 
     expect(await asAdmin((tx) => tx.publicRoute.findUnique({ where: { serverId } }))).toBeNull();
+  });
+
+  // ---- custom-hostname plan ----
+
+  it('setting a custom hostname stores the label, and reconcile publishes SRV + address record for the composed FQDN', async () => {
+    const nodeId = await makeNode('hostname-set', '10.10.9.11', 25670);
+    const planId = await makePlan(400);
+    const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'gw-e2e hostname set' } });
+    const serverId = JSON.parse(res.body).id as string;
+
+    const updated = await gatewayService.setCustomHostname(serverId, 'survival');
+    expect(updated.customHostname).toBe('survival');
+
+    fakeDns.reset();
+    fakeDriver.shouldFail = false;
+    const reconcileRes = await authed('/api/admin/gateways/reconcile', { method: 'POST' });
+    expect(reconcileRes.statusCode).toBe(201);
+
+    const fqdn = 'survival.gw-e2e-test.local';
+    expect(fakeDns.srvEnsured).toContainEqual(expect.objectContaining({ hostname: fqdn, target: '203.0.113.50' }));
+    expect(fakeDns.addressEnsured).toContainEqual(expect.objectContaining({ hostname: fqdn, ip: '203.0.113.50' }));
+
+    const route = await asAdmin((tx) => tx.publicRoute.findUniqueOrThrow({ where: { serverId } }));
+    expect(route.dnsSyncedHostname).toBe(fqdn);
+  });
+
+  it('renaming the hostname removes the OLD DNS records and publishes the new ones on the next reconcile', async () => {
+    const nodeId = await makeNode('hostname-rename', '10.10.9.12', 25671);
+    const planId = await makePlan(400);
+    const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'gw-e2e hostname rename' } });
+    const serverId = JSON.parse(res.body).id as string;
+
+    await gatewayService.setCustomHostname(serverId, 'oldname');
+    await authed('/api/admin/gateways/reconcile', { method: 'POST' }); // sync 'oldname' first
+
+    await gatewayService.setCustomHostname(serverId, 'newname');
+    fakeDns.reset();
+    await authed('/api/admin/gateways/reconcile', { method: 'POST' });
+
+    expect(fakeDns.srvRemoved).toContain('oldname.gw-e2e-test.local');
+    expect(fakeDns.addressRemoved).toContain('oldname.gw-e2e-test.local');
+    expect(fakeDns.srvEnsured).toContainEqual(expect.objectContaining({ hostname: 'newname.gw-e2e-test.local' }));
+
+    const route = await asAdmin((tx) => tx.publicRoute.findUniqueOrThrow({ where: { serverId } }));
+    expect(route.dnsSyncedHostname).toBe('newname.gw-e2e-test.local');
+  });
+
+  it('clearing the hostname removes its DNS and falls back to the shortId-derived scheme on the next reconcile', async () => {
+    const nodeId = await makeNode('hostname-clear', '10.10.9.13', 25672);
+    const planId = await makePlan(400);
+    const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'gw-e2e hostname clear' } });
+    const serverId = JSON.parse(res.body).id as string;
+    const shortId = (JSON.parse(res.body).shortId as string).toLowerCase();
+
+    await gatewayService.setCustomHostname(serverId, 'temporary');
+    await authed('/api/admin/gateways/reconcile', { method: 'POST' });
+
+    await gatewayService.setCustomHostname(serverId, null);
+    fakeDns.reset();
+    await authed('/api/admin/gateways/reconcile', { method: 'POST' });
+
+    expect(fakeDns.srvRemoved).toContain('temporary.gw-e2e-test.local');
+    const derivedFqdn = `${shortId}.mc.gw-e2e-test.local`;
+    expect(fakeDns.srvEnsured).toContainEqual(expect.objectContaining({ hostname: derivedFqdn }));
+
+    const route = await asAdmin((tx) => tx.publicRoute.findUniqueOrThrow({ where: { serverId } }));
+    expect(route.customHostname).toBeNull();
+    expect(route.dnsSyncedHostname).toBe(derivedFqdn);
+  });
+
+  // The actual regression test for the pre-existing bug found while
+  // building this feature: deleting a server never cleaned up its DNS
+  // record at all (the reconciler only ever saw the row AFTER it was
+  // already hard-deleted). Asserts the cleanup happens synchronously in
+  // markRemoving, with NO reconcile call in between.
+  it('deleting a server with a synced hostname removes its DNS immediately at markRemoving time, before any reconcile', async () => {
+    const nodeId = await makeNode('hostname-delete', '10.10.9.14', 25673);
+    const planId = await makePlan(400);
+    const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'gw-e2e hostname delete' } });
+    const serverId = JSON.parse(res.body).id as string;
+
+    await gatewayService.setCustomHostname(serverId, 'doomed');
+    await authed('/api/admin/gateways/reconcile', { method: 'POST' });
+    const synced = await asAdmin((tx) => tx.publicRoute.findUniqueOrThrow({ where: { serverId } }));
+    expect(synced.dnsSyncedHostname).toBe('doomed.gw-e2e-test.local');
+
+    fakeDns.reset();
+    await gatewayService.markRemoving(serverId); // no reconcile call after this
+
+    expect(fakeDns.srvRemoved).toContain('doomed.gw-e2e-test.local');
+    expect(fakeDns.addressRemoved).toContain('doomed.gw-e2e-test.local');
+
+    await asAdmin((tx) => tx.allocation.updateMany({ where: { serverId }, data: { isPrimary: false } }));
+    await asAdmin((tx) => tx.server.delete({ where: { id: serverId } }));
+  });
+
+  it('a live-availability check failure fails OPEN — the save still succeeds despite a simulated Cloudflare outage', async () => {
+    const nodeId = await makeNode('hostname-failopen', '10.10.9.15', 25674);
+    const planId = await makePlan(400);
+    const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'gw-e2e hostname failopen' } });
+    const serverId = JSON.parse(res.body).id as string;
+
+    fakeDns.isHostnameAvailableShouldThrow = true;
+    try {
+      const updated = await gatewayService.setCustomHostname(serverId, 'stillworks');
+      expect(updated.customHostname).toBe('stillworks');
+    } finally {
+      fakeDns.isHostnameAvailableShouldThrow = false;
+    }
+  });
+
+  it('rejects a reserved word via the real client HTTP endpoint (400)', async () => {
+    const nodeId = await makeNode('hostname-reserved', '10.10.9.16', 25675);
+    const planId = await makePlan(400);
+    const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'gw-e2e hostname reserved' } });
+    const serverId = JSON.parse(res.body).id as string;
+
+    const patch = await authedAsOwner(`/api/client/servers/${serverId}/hostname`, { method: 'PATCH', payload: { hostname: 'www' } });
+    expect(patch.statusCode).toBe(400);
+  });
+
+  it('rejects a hostname already claimed by another server via the real unique constraint (409)', async () => {
+    const nodeIdA = await makeNode('hostname-dupA', '10.10.9.17', 25676);
+    const nodeIdB = await makeNode('hostname-dupB', '10.10.9.18', 25677);
+    const planId = await makePlan(400);
+    const resA = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId: nodeIdA, templateId, planId, name: 'gw-e2e hostname dup A' } });
+    const resB = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId: nodeIdB, templateId, planId, name: 'gw-e2e hostname dup B' } });
+    const serverAId = JSON.parse(resA.body).id as string;
+    const serverBId = JSON.parse(resB.body).id as string;
+
+    const patchA = await authedAsOwner(`/api/client/servers/${serverAId}/hostname`, { method: 'PATCH', payload: { hostname: 'claimedfirst' } });
+    expect(patchA.statusCode).toBe(200);
+
+    const patchB = await authedAsOwner(`/api/client/servers/${serverBId}/hostname`, { method: 'PATCH', payload: { hostname: 'claimedfirst' } });
+    expect(patchB.statusCode).toBe(409);
+  });
+
+  it('rejects setting a hostname when the server has no PublicRoute yet (no active Gateway) (409)', async () => {
+    await asAdmin((tx) => tx.gateway.update({ where: { id: gatewayId }, data: { isActive: false } }));
+    try {
+      const nodeId = await makeNode('hostname-noroute', '10.10.9.19', 25678);
+      const planId = await makePlan(400);
+      const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'gw-e2e hostname no route' } });
+      const serverId = JSON.parse(res.body).id as string;
+
+      const patch = await authedAsOwner(`/api/client/servers/${serverId}/hostname`, { method: 'PATCH', payload: { hostname: 'nogatewayyet' } });
+      expect(patch.statusCode).toBe(409);
+    } finally {
+      await asAdmin((tx) => tx.gateway.update({ where: { id: gatewayId }, data: { isActive: true } }));
+    }
   });
 
   it('a server created with no active Gateway gets no PublicRoute at all (feature stays off)', async () => {

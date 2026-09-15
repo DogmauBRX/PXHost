@@ -43,6 +43,10 @@ const SUSPENDED_BLOCKED_KEYS = [
   // (startup.read passes via the generic `.read` rule) but not change
   // anything while suspended.
   'startup.update',
+  // Custom-hostname plan — same reasoning as startup.update: a suspended
+  // customer shouldn't be able to claim/change a public DNS identity
+  // while their service is suspended.
+  'hostname.update',
 ];
 
 // Post-purchase setup flow: a server that hasn't been configured yet
@@ -127,7 +131,7 @@ function fetchOwned(tx: Prisma.TransactionClient, serverId: string) {
       template: { select: { id: true, name: true, softwareKind: true } },
       plan: { select: PLAN_CLIENT_SELECT },
       allocations: { select: { ip: true, port: true, isPrimary: true } },
-      publicRoute: { select: { publicPort: true, state: true, gateway: { select: { publicHost: true } } } },
+      publicRoute: { select: { publicPort: true, state: true, customHostname: true, gateway: { select: { publicHost: true } } } },
     },
   });
 }
@@ -237,7 +241,7 @@ export class ServerAccessService {
           plan: { select: PLAN_CLIENT_SELECT },
           template: { select: { id: true, name: true, softwareKind: true } },
           allocations: { select: { ip: true, port: true, isPrimary: true } },
-          publicRoute: { select: { publicPort: true, state: true, gateway: { select: { publicHost: true } } } },
+          publicRoute: { select: { publicPort: true, state: true, customHostname: true, gateway: { select: { publicHost: true } } } },
         },
       }),
     );

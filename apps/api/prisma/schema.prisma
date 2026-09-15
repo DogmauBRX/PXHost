@@ -448,6 +448,22 @@ model PublicRoute {
   state      String    @default("pending")
   lastError  String?   @map("last_error")
   appliedAt  DateTime? @map("applied_at") @db.Timestamptz
+  // Custom-hostname plan — a customer-chosen LABEL only (e.g. "survival"),
+  // never the full FQDN; composed with PUBLIC_GATEWAY_HOSTNAME_ZONE at
+  // read/reconcile time via public-address.ts's deriveCustomHostname,
+  // same "store the identity, derive the string" split deriveHostname
+  // already uses for shortId. Nullable + globally UNIQUE (not per-owner
+  // — Postgres allows multiple NULLs under a unique index, same pattern
+  // Subscription.serverId already uses) so two different customers can
+  // never claim the same address, and a server with no custom hostname
+  // keeps using the shortId-derived `.mc.` scheme unchanged.
+  customHostname     String?   @unique @map("custom_hostname")
+  // Internal bookkeeping ONLY — never returned to a customer. The exact
+  // FQDN (custom or shortId-derived) DNS was last successfully synced
+  // for, so the reconciler can tell a rename/clear apart from "nothing
+  // changed" and remove the OLD record instead of leaking it forever.
+  // NULL = DNS has never been successfully synced for this route.
+  dnsSyncedHostname  String?   @map("dns_synced_hostname")
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 

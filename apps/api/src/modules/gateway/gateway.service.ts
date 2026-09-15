@@ -1,11 +1,11 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, type Gateway } from '@prisma/client';
+import { Prisma, type Gateway, type PublicRoute } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { GATEWAY_DRIVER, type DesiredRoute, type GatewayDriver } from './gateway-driver.interface';
 import { DNS_PROVIDER, type DnsProvider } from './dns/dns-provider.interface';
-import { deriveHostname } from './public-address';
+import { deriveCustomHostname, deriveHostname } from './public-address';
 import type { CreateGatewayDto, UpdateGatewayDto } from './dto/gateway.dto';
 
 const PORT_CREATE_ATTEMPTS = 50;
@@ -170,19 +170,75 @@ export class GatewayService {
 
   /**
    * Called from `ServersService.remove()`, right before the transaction
-   * that hard-deletes the server row. Purely a DB marker for
-   * observability (a row briefly visible as `removing` in an audit/admin
-   * view) — the actual removal from the gateway's config doesn't depend
-   * on this: `public_routes.server_id` has `ON DELETE CASCADE`, so the
-   * row disappears the instant the server does regardless of what this
-   * method does, and the NEXT periodic reconcile naturally renders a
-   * smaller desired set and closes the port. Never throws.
+   * that hard-deletes the server row. The gateway-config removal doesn't
+   * depend on this — `public_routes.server_id` has `ON DELETE CASCADE`,
+   * so the row disappears the instant the server does, and the NEXT
+   * periodic reconcile naturally renders a smaller desired set and
+   * closes the port — but DNS cleanup DOES depend on this being here:
+   * the row (and its `dnsSyncedHostname`) is gone by the time any
+   * reconcile could ever observe `state: 'removing'`, since this method
+   * runs synchronously one line before the hard-delete in the same
+   * request. This is the one real place a custom or derived hostname's
+   * SRV/A/AAAA records actually get torn down — found live 2026-09-15
+   * as a pre-existing gap (deleting a server never removed its SRV
+   * record at all). Never throws.
    */
   async markRemoving(serverId: string): Promise<void> {
     try {
-      await this.asAdmin((tx) => tx.publicRoute.updateMany({ where: { serverId }, data: { state: 'removing' } }));
+      const route = await this.asAdmin((tx) => tx.publicRoute.findUnique({ where: { serverId } }));
+      if (!route) return;
+      await this.asAdmin((tx) => tx.publicRoute.update({ where: { serverId }, data: { state: 'removing' } }));
+      if (route.dnsSyncedHostname) await this.removeDnsFor(route.dnsSyncedHostname);
     } catch (err) {
       this.logger.error(`markRemoving failed for server ${serverId}: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Custom-hostname plan — the customer-facing entry point (called by
+   * ServerHostnameService). `label === null` clears the reservation.
+   * Requires a `PublicRoute` to already exist (created by
+   * `ensureRouteForServer` at server-create time) — there's nothing to
+   * attach a hostname to otherwise. Unlike `ensureRouteForServer`/
+   * `markRemoving`, this DOES throw — it's a direct customer action, not
+   * a fire-and-forget infra hook, so the caller needs a real error to
+   * show.
+   */
+  async setCustomHostname(serverId: string, label: string | null): Promise<PublicRoute> {
+    const route = await this.asAdmin((tx) => tx.publicRoute.findUnique({ where: { serverId } }));
+    if (!route) throw new ConflictException('Este servidor ainda não tem uma exposição pública configurada');
+
+    if (label === null) {
+      const updated = await this.asAdmin((tx) => tx.publicRoute.update({ where: { serverId }, data: { customHostname: null } }));
+      this.enqueueReconcileBestEffort();
+      return updated;
+    }
+
+    const zone = this.config.get<string>('PUBLIC_GATEWAY_HOSTNAME_ZONE');
+    if (!zone) throw new ConflictException('Hostname personalizado requer um domínio configurado nesta instalação');
+
+    const fqdn = deriveCustomHostname(label, zone);
+    try {
+      const available = await this.dns.isHostnameAvailable(fqdn);
+      if (!available) throw new ConflictException('Este endereço já está em uso');
+    } catch (err) {
+      if (err instanceof ConflictException) throw err;
+      // Live-check failure (network/API) fails OPEN — an unrelated
+      // Cloudflare outage must never block a customer's save. The
+      // reserved-word list (checked by the caller) plus the DB's own
+      // unique constraint below are the real backstops.
+      this.logger.warn(`isHostnameAvailable failed for ${fqdn}, failing open: ${(err as Error).message}`);
+    }
+
+    try {
+      const updated = await this.asAdmin((tx) => tx.publicRoute.update({ where: { serverId }, data: { customHostname: label } }));
+      this.enqueueReconcileBestEffort();
+      return updated;
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('Este endereço já está em uso por outro servidor');
+      }
+      throw err;
     }
   }
 
@@ -270,6 +326,7 @@ export class GatewayService {
       includedIds.push(route.id);
     }
 
+
     if (includedIds.length === 0 && removingIds.length === 0 && skippedIds.length === 0) return;
 
     try {
@@ -300,21 +357,99 @@ export class GatewayService {
       await tx.gateway.update({ where: { id: gateway.id }, data: { lastAppliedAt: new Date(), lastError: null } });
     });
 
-    await this.syncDns(gateway, routes, includedIds);
+    await this.syncDns(gateway, routes, includedIds, removingIds);
   }
 
-  /** Best-effort SRV sync — see DnsProvider's own doc comment. Never allowed to affect a route's state; a customer can always fall back to `host:port`. */
-  private async syncDns(gateway: Gateway, routes: { id: string; publicPort: number; server: { shortId: string } }[], includedIds: string[]): Promise<void> {
+  /**
+   * DNS sync — best-effort, never allowed to affect a route's `state`
+   * (a customer can always fall back to `host:port`). Prefers
+   * `customHostname` (custom-hostname plan) over the shortId-derived
+   * `.mc.` scheme when set. Tracks `dnsSyncedHostname` per route so a
+   * RENAME (or a hostname being cleared) removes the OLD record instead
+   * of leaking it — `ensureSrv`/`ensureAddressRecord` alone would only
+   * ever create/update the NEW name, never clean up a name that's no
+   * longer desired. `removingIds` routes are already hard-deleted from
+   * the DB by the time this runs (see `reconcileGateway` above) — this
+   * loop still visits them, using the in-memory `routes` snapshot taken
+   * before the delete, as defense-in-depth for any future caller that
+   * sets `state: 'removing'` without also calling `markRemoving` (which
+   * is where this actually gets cleaned up today, synchronously, before
+   * the row disappears).
+   */
+  private async syncDns(
+    gateway: Gateway,
+    routes: (Pick<PublicRoute, 'id' | 'publicPort' | 'customHostname' | 'dnsSyncedHostname'> & { server: { shortId: string } })[],
+    includedIds: string[],
+    removingIds: string[],
+  ): Promise<void> {
     const zone = this.config.get<string>('PUBLIC_GATEWAY_HOSTNAME_ZONE');
-    if (!zone) return;
-    for (const route of routes) {
-      if (!includedIds.includes(route.id)) continue;
-      const hostname = deriveHostname(route.server.shortId, zone);
-      try {
-        await this.dns.ensureSrv({ hostname, target: gateway.publicHost, port: route.publicPort });
-      } catch (err) {
-        this.logger.error(`SRV sync failed for ${hostname}: ${(err as Error).message}`);
+    const byId = new Map(routes.map((r) => [r.id, r]));
+
+    for (const id of [...includedIds, ...removingIds]) {
+      const route = byId.get(id);
+      if (!route) continue;
+      const included = includedIds.includes(id);
+
+      if (!zone && !route.dnsSyncedHostname) continue; // never synced, nothing configured — nothing to do
+
+      const desiredHostname = included
+        ? route.customHostname
+          ? deriveCustomHostname(route.customHostname, zone ?? '')
+          : zone
+            ? deriveHostname(route.server.shortId, zone)
+            : null
+        : null;
+
+      if (desiredHostname === route.dnsSyncedHostname) {
+        if (included && desiredHostname) await this.ensureDnsFor(desiredHostname, gateway.publicHost, route.publicPort);
+        continue;
       }
+
+      // Target changed (rename, cleared, or newly set) — remove the OLD
+      // record first so a rename never leaves the previous name resolving.
+      if (route.dnsSyncedHostname) await this.removeDnsFor(route.dnsSyncedHostname);
+      if (!included) continue; // row already hard-deleted — nothing left to persist
+
+      let newSynced: string | null = null;
+      if (desiredHostname) {
+        const ok = await this.ensureDnsFor(desiredHostname, gateway.publicHost, route.publicPort);
+        if (ok) newSynced = desiredHostname;
+      }
+
+      try {
+        await this.asAdmin((tx) => tx.publicRoute.update({ where: { id: route.id }, data: { dnsSyncedHostname: newSynced } }));
+      } catch (err) {
+        this.logger.error(`failed to persist dnsSyncedHostname for route ${route.id}: ${(err as Error).message}`);
+      }
+    }
+  }
+
+  /** SRV is the functionally required record (it's what makes "no port" work); an address-record failure is logged but doesn't stop SRV from being considered synced. Returns whether SRV succeeded. */
+  private async ensureDnsFor(hostname: string, gatewayPublicHost: string, port: number): Promise<boolean> {
+    try {
+      await this.dns.ensureSrv({ hostname, target: gatewayPublicHost, port });
+    } catch (err) {
+      this.logger.error(`SRV sync failed for ${hostname}: ${(err as Error).message}`);
+      return false;
+    }
+    try {
+      await this.dns.ensureAddressRecord({ hostname, ip: gatewayPublicHost });
+    } catch (err) {
+      this.logger.error(`address record sync failed for ${hostname}: ${(err as Error).message}`);
+    }
+    return true;
+  }
+
+  private async removeDnsFor(hostname: string): Promise<void> {
+    try {
+      await this.dns.removeSrv(hostname);
+    } catch (err) {
+      this.logger.error(`removeSrv failed for ${hostname}: ${(err as Error).message}`);
+    }
+    try {
+      await this.dns.removeAddressRecord(hostname);
+    } catch (err) {
+      this.logger.error(`removeAddressRecord failed for ${hostname}: ${(err as Error).message}`);
     }
   }
 }

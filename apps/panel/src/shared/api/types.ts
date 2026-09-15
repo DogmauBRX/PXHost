@@ -102,6 +102,11 @@ export interface ServerSummary {
   // means "not exposed" — the UI falls back to allocations[].ip:port,
   // exactly today's behavior.
   publicAddress: string | null;
+  // Custom-hostname plan — the raw label the customer chose (e.g.
+  // "survival"), or null. Distinct from publicAddress, which is the
+  // fully-composed, display-ready string — this is what pre-fills the
+  // Configurações tab's input.
+  customHostname: string | null;
 }
 
 export interface ServerDetail extends ServerSummary {

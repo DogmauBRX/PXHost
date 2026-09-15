@@ -1,5 +1,5 @@
 import { describeSoftware } from '../templates/software';
-import { derivePublicAddress } from '../gateway/public-address';
+import { deriveCustomHostname, derivePublicAddress } from '../gateway/public-address';
 
 /**
  * Response shaping for client-facing server payloads — deliberately kept
@@ -15,7 +15,10 @@ interface ServerWithTemplate {
   // Public-exposure plan — present only when ServerAccessService's
   // include picked it up; null/undefined both mean "not exposed",
   // exactly today's every-server behavior when no Gateway is configured.
-  publicRoute?: { publicPort: number; state: string; gateway: { publicHost: string } } | null;
+  // customHostname (custom-hostname plan) is the raw label the customer
+  // chose, or null — separate from `publicAddress` below, which is the
+  // fully-composed, display-ready string.
+  publicRoute?: { publicPort: number; state: string; customHostname: string | null; gateway: { publicHost: string } } | null;
   [key: string]: unknown;
 }
 
@@ -27,14 +30,28 @@ interface ServerWithTemplate {
  * never a half-configured public one. `zone` comes from the caller
  * (PUBLIC_GATEWAY_HOSTNAME_ZONE) since this file has no ConfigService of
  * its own — see ClientServersService's call sites.
+ *
+ * Custom-hostname plan: when a customer has set `customHostname`, it's
+ * preferred over the shortId-derived `.mc.` scheme. The port is only
+ * dropped from the displayed address when `dnsAutomationActive` — SRV
+ * is what actually makes "no port" true, so a hostname reserved while
+ * DNS automation is off (or a deployment that never turned it on) still
+ * shows `hostname:port`, never implies a promise the SRV record can't
+ * keep.
  */
-export function toClientServerSummary<T extends ServerWithTemplate>(row: T, zone?: string | null) {
+export function toClientServerSummary<T extends ServerWithTemplate>(row: T, zone?: string | null, dnsAutomationActive = false) {
   const { publicRoute, ...rest } = row;
-  const publicAddress =
-    publicRoute && publicRoute.state === 'active'
-      ? derivePublicAddress(publicRoute.gateway.publicHost, row.shortId, publicRoute.publicPort, zone)
-      : null;
-  return { ...rest, software: describeSoftware(row.template?.softwareKind ?? null), publicAddress };
+  const customHostname = publicRoute?.customHostname ?? null;
+  let publicAddress: string | null = null;
+  if (publicRoute && publicRoute.state === 'active') {
+    if (customHostname && zone) {
+      const host = deriveCustomHostname(customHostname, zone);
+      publicAddress = dnsAutomationActive ? host : `${host}:${publicRoute.publicPort}`;
+    } else {
+      publicAddress = derivePublicAddress(publicRoute.gateway.publicHost, row.shortId, publicRoute.publicPort, zone);
+    }
+  }
+  return { ...rest, software: describeSoftware(row.template?.softwareKind ?? null), publicAddress, customHostname };
 }
 
 export function toClientServerDetail<T extends ServerWithTemplate>(
@@ -42,6 +59,7 @@ export function toClientServerDetail<T extends ServerWithTemplate>(
   role: 'owner' | 'subuser' | 'admin',
   permissions: string[],
   zone?: string | null,
+  dnsAutomationActive = false,
 ) {
-  return { ...toClientServerSummary(row, zone), role, permissions };
+  return { ...toClientServerSummary(row, zone, dnsAutomationActive), role, permissions };
 }
