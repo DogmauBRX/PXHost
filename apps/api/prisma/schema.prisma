@@ -204,6 +204,17 @@ model Node {
   cpuReservedPercent       Int       @default(0) @map("cpu_reserved_percent")
   cpuOverallocatePct       Int       @default(-1) @map("cpu_overallocate_pct")
   uploadSizeMb             Int       @default(256) @map("upload_size_mb")
+  // Placement policy — reserves this node for plans priced at or above
+  // this amount, in cents (same unit as Plan.priceCents). The point is
+  // "set once, forever correct": a pricier plan added LATER automatically
+  // prefers this node too, with no per-plan configuration — contrast
+  // PlanNode.priority/restriction, which is an explicit, auditable
+  // decision about one specific plan→node pair. NULL (every node's
+  // default) means no reservation, normal worst-fit scoring applies
+  // unchanged. The two are independent and both apply: a plan explicitly
+  // allowed onto this node via PlanNode still needs to clear this
+  // threshold too, if set — see NodeSchedulerService.selectNode.
+  reservedForPlansAbovePriceCents Int? @map("reserved_for_plans_above_price_cents")
   // Capacity plan (auto-derivation) — 'manual' is the only mode every
   // node created before this migration keeps behaving as: the DECLARED
   // columns above stay the ceiling, unchanged. 'auto' is opt-in per

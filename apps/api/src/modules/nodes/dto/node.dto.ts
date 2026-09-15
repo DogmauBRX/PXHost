@@ -120,6 +120,16 @@ export class CreateNodeDto {
   @Min(1)
   uploadSizeMb?: number;
 
+  // Placement policy — see Node.reservedForPlansAbovePriceCents's own
+  // schema comment. Optional and nullable like controlAddress/tunnelIp:
+  // meant to be set once WireGuard/hardware are in place, which may be
+  // after the node row already exists.
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reservedForPlansAbovePriceCents?: number;
+
   // Capacity plan (auto-derivation) — defaults to 'manual' (the column
   // default) when omitted, same as every node created before this
   // feature existed. An admin CAN create a node already in 'auto' mode;
@@ -177,6 +187,17 @@ export class UpdateNodeDto {
   @IsOptional()
   @IsIP()
   tunnelIp?: string;
+
+  // Placement policy — see Node.reservedForPlansAbovePriceCents's own
+  // schema comment. `null` explicitly clears the reservation (same
+  // convention as maintenanceScheduledAt); `undefined` leaves it
+  // untouched.
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  reservedForPlansAbovePriceCents?: number | null;
 
   @IsOptional()
   @Type(() => Number)

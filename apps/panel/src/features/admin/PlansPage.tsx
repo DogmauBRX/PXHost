@@ -1,7 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Layers, Plus } from 'lucide-react';
-import { applyPlan, createPlan, deletePlan, getPlanCapacity, getPlanDrift, listPlans, updatePlan, type CreatePlanInput } from './admin.api';
+import {
+  applyPlan,
+  createPlan,
+  deletePlan,
+  getPlanCapacity,
+  getPlanDrift,
+  getPlanNodes,
+  listNodes,
+  listPlans,
+  setPlanNodes,
+  updatePlan,
+  type CreatePlanInput,
+} from './admin.api';
 import { ApiError } from '@/shared/api/client';
 import type { AdminPlan, PlanApplyResult, PlanDriftReport } from '@/shared/api/types';
 import { discountPercent, formatPrice, formatRange } from '@/shared/format/plan';
@@ -590,6 +602,141 @@ function PlanDriftPanel({ planId }: { planId: string }) {
   );
 }
 
+// ---- node eligibility/priority (capacity plan Fase 4/5) ----
+
+interface NodeRowValue {
+  nodeId: string;
+  name: string;
+  allowed: boolean;
+  priority: string;
+}
+
+// The API accepts any integer (SetPlanNodesDto has no @Min/@Max — priority
+// is a relative "preferred first" score, not an absolute scale), but a
+// slider needs bounds. 0-10 comfortably covers every documented use case
+// (e.g. reserving the strongest node for the priciest plan) without
+// inviting arbitrarily large numbers that would just tie in practice.
+const PRIORITY_MIN = 0;
+const PRIORITY_MAX = 10;
+
+function clampPriority(value: string): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return PRIORITY_MIN;
+  return Math.min(PRIORITY_MAX, Math.max(PRIORITY_MIN, Math.round(n)));
+}
+
+function PlanNodesPanel({ planId }: { planId: string }) {
+  const [rows, setRows] = useState<NodeRowValue[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [nodes, assignments] = await Promise.all([listNodes(), getPlanNodes(planId)]);
+        if (cancelled) return;
+        const priorityByNodeId = new Map(assignments.map((a) => [a.nodeId, a.priority]));
+        setRows(
+          nodes.map((n) => ({
+            nodeId: n.id,
+            name: n.name,
+            allowed: priorityByNodeId.has(n.id),
+            priority: String(priorityByNodeId.get(n.id) ?? 0),
+          })),
+        );
+      } catch (err) {
+        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Não foi possível carregar os nodes.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [planId]);
+
+  function patchRow(nodeId: string, patch: Partial<NodeRowValue>) {
+    setSaved(false);
+    setRows((prev) => prev?.map((r) => (r.nodeId === nodeId ? { ...r, ...patch } : r)) ?? prev);
+  }
+
+  async function handleSave() {
+    if (!rows) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const nodes = rows.filter((r) => r.allowed).map((r) => ({ nodeId: r.nodeId, priority: clampPriority(r.priority) }));
+      await setPlanNodes(planId, nodes);
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Não foi possível salvar.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const anyAllowed = rows?.some((r) => r.allowed) ?? false;
+
+  return (
+    <div className="mt-4 space-y-3 border-t border-border pt-4">
+      <p className="text-xs text-text-faint">
+        Marque os nodes onde este plano pode ser instalado. Prioridade mais alta é preferido primeiro pelo agendador (ex.: reservar a máquina mais
+        forte para o plano mais caro) — em caso de empate, ou se nenhum node for marcado, qualquer node elegível pode receber o servidor.
+      </p>
+
+      {loading && <LoadingRow />}
+      {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
+
+      {rows && (
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <div key={r.nodeId} className="flex items-center gap-3 rounded-lg bg-surface-2 px-3 py-2">
+              <input
+                id={`plan-node-${r.nodeId}`}
+                type="checkbox"
+                checked={r.allowed}
+                onChange={(e) => patchRow(r.nodeId, { allowed: e.target.checked })}
+                className="h-4 w-4 rounded border-border-strong text-accent accent-accent"
+              />
+              <label htmlFor={`plan-node-${r.nodeId}`} className="flex-1 text-sm text-text">
+                {r.name}
+              </label>
+              <div className={`flex w-44 shrink-0 items-center gap-2 ${r.allowed ? '' : 'opacity-40'}`}>
+                <input
+                  type="range"
+                  min={PRIORITY_MIN}
+                  max={PRIORITY_MAX}
+                  step={1}
+                  value={clampPriority(r.priority)}
+                  onChange={(e) => patchRow(r.nodeId, { priority: e.target.value })}
+                  disabled={!r.allowed}
+                  aria-label={`Prioridade de ${r.name}`}
+                  className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-surface-2 accent-accent disabled:cursor-not-allowed"
+                />
+                <span className="w-4 shrink-0 text-right text-sm tabular-nums text-text">{clampPriority(r.priority)}</span>
+              </div>
+            </div>
+          ))}
+          {!anyAllowed && <p className="text-xs text-text-faint">Nenhum node marcado — o plano fica sem restrição, disponível em qualquer node elegível.</p>}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <Button variant="primary" size="sm" disabled={saving || !rows} onClick={() => void handleSave()}>
+          {saving ? 'Salvando…' : 'Salvar nodes'}
+        </Button>
+        {saved && <span className="text-xs text-ok">Salvo.</span>}
+      </div>
+    </div>
+  );
+}
+
 // ---- page ----
 
 export function PlansPage() {
@@ -599,6 +746,7 @@ export function PlansPage() {
   const occupancyById = new Map((occupancy ?? []).map((o) => [o.id, o]));
   const [formOpen, setFormOpen] = useState<{ mode: 'create' | 'edit'; plan: AdminPlan | null } | null>(null);
   const [driftOpenId, setDriftOpenId] = useState<string | null>(null);
+  const [nodesOpenId, setNodesOpenId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminPlan | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -701,12 +849,16 @@ export function PlansPage() {
                       <Button variant="ghost" size="sm" onClick={() => setDriftOpenId(driftOpenId === p.id ? null : p.id)}>
                         {driftOpenId === p.id ? 'Ocultar' : 'Aplicar'}
                       </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setNodesOpenId(nodesOpenId === p.id ? null : p.id)}>
+                        {nodesOpenId === p.id ? 'Ocultar nodes' : 'Nodes'}
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(p)}>
                         Excluir
                       </Button>
                     </div>
                   </div>
                   {driftOpenId === p.id && <PlanDriftPanel planId={p.id} />}
+                  {nodesOpenId === p.id && <PlanNodesPanel planId={p.id} />}
                 </CardBody>
               </Card>
             );

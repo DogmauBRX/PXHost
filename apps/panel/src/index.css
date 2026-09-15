@@ -480,7 +480,7 @@ html[data-app-ready] body {
  * the whole hero, not just up close.
  */
 .network-panel {
-  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 45%, transparent);
   /* No manual -webkit-backdrop-filter line: found live that writing both
      properties by hand here (unlike Tailwind's own backdrop-blur-*
      utility, which is untouched by this) made the build's own

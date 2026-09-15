@@ -75,6 +75,17 @@ export class NodeSchedulerService {
           continue;
         }
 
+        // Placement policy — independent of (and stricter than) the
+        // PlanNode restriction above: a node reserved for pricier plans
+        // is never a candidate for one that doesn't clear the threshold,
+        // no matter how much headroom it has. See Node
+        // .reservedForPlansAbovePriceCents's own schema comment for why
+        // this exists as a separate, automatic-for-future-plans rule.
+        if (node.reservedForPlansAbovePriceCents != null && plan.priceCents < node.reservedForPlansAbovePriceCents) {
+          candidates.push({ nodeId: node.id, name: node.name, eliminated: true, reason: 'Reservado para planos mais caros' });
+          continue;
+        }
+
         // Capacity plan (auto-derivation): resolves auto-vs-manual once,
         // then feeds the SAME shape nodeFitReasons/fitScore already
         // consumed — see resolveNodeCapacity's own doc comment. In auto

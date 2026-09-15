@@ -38,6 +38,20 @@ import {
 const HEALTH_LABELS: Record<string, string> = { online: 'Online', offline: 'Offline', degraded: 'Degradado', unknown: 'Desconhecido' };
 const HEALTH_TONE: Record<string, 'ok' | 'warn' | 'fail' | 'neutral'> = { online: 'ok', degraded: 'warn', offline: 'fail', unknown: 'neutral' };
 
+// Same Reais-string convention PlansPage's own price fields use — the
+// form edits R$, the API stores cents. Empty string = no reservation
+// (null on save), same as leaving controlAddress/tunnelIp blank above.
+function centsToReais(cents: number | null): string {
+  return cents == null ? '' : String(cents / 100).replace('.', ',');
+}
+
+function reaisToCents(v: string): number | null {
+  const t = v.trim();
+  if (!t) return null;
+  const n = Number(t.replace(',', '.'));
+  return Number.isFinite(n) ? Math.round(n * 100) : null;
+}
+
 function NodeAllocations({ nodeId }: { nodeId: string }) {
   const queryClient = useQueryClient();
   const { data: allocations } = useQuery({ queryKey: ['admin', 'allocations', nodeId], queryFn: () => listAllocations(nodeId) });
@@ -231,6 +245,7 @@ interface NodeFormValues {
   maintenanceScheduledAt: string;
   controlAddress: string;
   tunnelIp: string;
+  reservedForPlansAbovePriceReais: string;
   capacityMode: 'manual' | 'auto';
   memoryTotalMb: string;
   memoryReservedMb: string;
@@ -258,6 +273,7 @@ function nodeToForm(n: AdminNode): NodeFormValues {
     maintenanceScheduledAt: isoToDatetimeLocal(n.maintenanceScheduledAt),
     controlAddress: n.controlAddress ?? '',
     tunnelIp: n.tunnelIp ?? '',
+    reservedForPlansAbovePriceReais: centsToReais(n.reservedForPlansAbovePriceCents),
     capacityMode: n.capacityMode,
     memoryTotalMb: String(n.memoryTotalMb),
     memoryReservedMb: String(n.memoryReservedMb),
@@ -286,6 +302,7 @@ function formToInput(v: NodeFormValues): UpdateNodeInput {
     maintenanceScheduledAt: datetimeLocalToIso(v.maintenanceScheduledAt),
     controlAddress: v.controlAddress.trim() || undefined,
     tunnelIp: v.tunnelIp.trim() || undefined,
+    reservedForPlansAbovePriceCents: reaisToCents(v.reservedForPlansAbovePriceReais),
     capacityMode: v.capacityMode,
     memoryTotalMb: Number(v.memoryTotalMb) || 0,
     memoryReservedMb: Number(v.memoryReservedMb) || 0,
@@ -452,6 +469,18 @@ function NodeEditModal({ node, snapshot, onClose }: { node: AdminNode | null; sn
               hint="Necessário para expor servidores deste node publicamente por um gateway (público-exposure). Deixe em branco se o node não estiver atrás de CGNAT/roteador residencial."
             >
               <Input id="node-edit-tunnel-ip" value={values.tunnelIp} onChange={(e) => patch({ tunnelIp: e.target.value })} placeholder="10.10.0.2" />
+            </Field>
+            <Field
+              label="Servidor forte — reservar para planos a partir de (R$)"
+              htmlFor="node-edit-reserved-price"
+              hint="Só planos com preço igual ou maior que esse valor podem ser colocados aqui. Um plano mais caro criado depois já cai aqui automaticamente, sem precisar mexer neste node de novo. Deixe em branco para nenhuma reserva."
+            >
+              <Input
+                id="node-edit-reserved-price"
+                value={values.reservedForPlansAbovePriceReais}
+                onChange={(e) => patch({ reservedForPlansAbovePriceReais: e.target.value })}
+                placeholder="99,90"
+              />
             </Field>
             <Toggle checked={values.isPublic} onChange={(isPublic) => patch({ isPublic })} label="Público" description="Visível como destino de novos servidores." />
             <Toggle

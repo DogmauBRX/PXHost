@@ -320,6 +320,11 @@ export interface AdminNode {
   // reconciler reads directly. Null = this node is not reachable from
   // any gateway yet; its servers simply never get a public route.
   tunnelIp: string | null;
+  // Placement policy — reserves this node for plans priced at or above
+  // this amount (cents). Null = no reservation. Set once, applies
+  // automatically to any pricier plan added later — see the API's own
+  // Node.reservedForPlansAbovePriceCents schema comment.
+  reservedForPlansAbovePriceCents: number | null;
   daemonDataPath: string;
   memoryTotalMb: number;
   memoryReservedMb: number;
@@ -611,6 +616,17 @@ export interface AdminPlan {
   recommendedPluginsMin: number | null;
   recommendedPluginsMax: number | null;
   createdAt: string;
+}
+
+// Capacity plan Fase 4/5 — one row per node this plan is explicitly
+// allowed to schedule onto, ordered by `priority` (higher = preferred
+// by NodeSchedulerService.selectNode's fitScore). A plan with zero rows
+// is unrestricted — see PlansService.listAllowedNodes's own comment.
+export interface PlanNodeAssignment {
+  planId: string;
+  nodeId: string;
+  priority: number;
+  node: { id: string; name: string };
 }
 
 export interface PlanDriftChange {

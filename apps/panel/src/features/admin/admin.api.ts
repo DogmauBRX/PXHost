@@ -24,6 +24,7 @@ import type {
   PartitionInfo,
   PlanApplyResult,
   PlanDriftReport,
+  PlanNodeAssignment,
   PlanOccupancy,
   PresetKind,
   SoftwareKind,
@@ -81,6 +82,10 @@ export interface UpdateNodeInput {
   // tunnel. Same "set once WireGuard is wired up" posture as
   // controlAddress just above.
   tunnelIp?: string;
+  // Placement policy — reserves this node for plans priced at or above
+  // this amount (cents). `null` explicitly clears the reservation;
+  // `undefined` leaves it untouched.
+  reservedForPlansAbovePriceCents?: number | null;
   memoryTotalMb?: number;
   memoryReservedMb?: number;
   memoryOverallocatePct?: number;
@@ -242,6 +247,9 @@ export const updatePlan = (id: string, input: Partial<CreatePlanInput>) => apiFe
 export const getPlanDrift = (id: string) => apiFetch<PlanDriftReport>(`/api/admin/plans/${id}/drift`);
 export const applyPlan = (id: string) => apiFetch<PlanApplyResult>(`/api/admin/plans/${id}/apply`, { method: 'POST' });
 export const deletePlan = (id: string) => apiFetch<void>(`/api/admin/plans/${id}`, { method: 'DELETE' });
+export const getPlanNodes = (id: string) => apiFetch<PlanNodeAssignment[]>(`/api/admin/plans/${id}/nodes`);
+export const setPlanNodes = (id: string, nodes: { nodeId: string; priority?: number }[]) =>
+  apiFetch<void>(`/api/admin/plans/${id}/nodes`, { method: 'PUT', body: JSON.stringify({ nodes }) });
 
 // ---- Capacity (read-only — see apps/api/src/modules/capacity) ----
 

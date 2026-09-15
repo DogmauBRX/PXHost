@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import type { ComponentType, InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff } from 'lucide-react';
 
 /**
  * The single source of truth for what a form control looks like. Before
@@ -18,13 +19,34 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function Input({ invalid, icon: Icon, className = '', ...props }: InputProps) {
-  if (!Icon) {
+  const [revealed, setRevealed] = useState(false);
+  const isPassword = props.type === 'password';
+
+  if (!Icon && !isPassword) {
     return <input className={`${controlClasses} h-10 ${invalid ? invalidClasses : ''} ${className}`} {...props} />;
   }
+
+  const RevealIcon = revealed ? EyeOff : Eye;
+
   return (
     <div className="relative">
-      <Icon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-text-faint" aria-hidden="true" />
-      <input className={`${controlClasses} h-10 pl-9 ${invalid ? invalidClasses : ''} ${className}`} {...props} />
+      {Icon && <Icon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-text-faint" aria-hidden="true" />}
+      <input
+        className={`${controlClasses} h-10 ${Icon ? 'pl-9' : ''} ${isPassword ? 'pr-9' : ''} ${invalid ? invalidClasses : ''} ${className}`}
+        {...props}
+        type={isPassword && revealed ? 'text' : props.type}
+      />
+      {isPassword && (
+        <button
+          type="button"
+          onClick={() => setRevealed((v) => !v)}
+          className="absolute top-1/2 right-3 -translate-y-1/2 text-text-faint transition hover:text-text"
+          aria-label={revealed ? 'Ocultar senha' : 'Mostrar senha'}
+          tabIndex={-1}
+        >
+          <RevealIcon className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 }
