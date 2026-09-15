@@ -44,6 +44,18 @@ nft add rule inet filter input iif lo accept
 nft add rule inet filter input ct state established,related accept
 nft add rule inet filter forward ct state established,related accept
 
+# Docker containers need normal internet egress — installing/updating a
+# game server (e.g. Paper's install script hitting launchermeta.mojang.com),
+# pulling images, DNS lookups from inside a container, all forward through
+# this chain. `nft flush ruleset` above wipes whatever rule Docker itself
+# normally manages for this (there is no such rule until this script adds
+# one back) — found live 2026-09-15 as every fresh install failing with
+# "Failed to connect... Couldn't connect to server" the moment this script
+# ran on a node for the first time. Scoped to "neither side is the
+# WireGuard interface" so it can never be used to bypass the game-traffic
+# restriction below, which stays `iif "$WG_IFACE"`-scoped only.
+nft add rule inet filter forward oifname != "$WG_IFACE" iifname != "$WG_IFACE" accept
+
 # SSH — tighten to your admin IP(s) if possible instead of the world.
 nft add rule inet filter input tcp dport 22 accept
 
