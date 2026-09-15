@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ServerAccessService } from '../authorization/server-access.service';
 import type { AccessActor } from '../authorization/server-access.service';
 import { PermissionCatalogService } from '../authorization/permission-catalog.service';
@@ -78,11 +79,13 @@ export class ClientServersService {
     private readonly activity: ActivityService,
     private readonly permissionCatalog: PermissionCatalogService,
     private readonly redis: RedisService,
+    private readonly config: ConfigService,
   ) {}
 
   async list(userId: string) {
     const servers = await this.access.listAccessible(userId);
-    return servers.map(toClientServerSummary);
+    const zone = this.config.get<string>('PUBLIC_GATEWAY_HOSTNAME_ZONE');
+    return servers.map((s) => toClientServerSummary(s, zone));
   }
 
   /**
@@ -95,7 +98,8 @@ export class ClientServersService {
     const { server, role, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     const allKeys = await this.permissionCatalog.keys();
     const permissions = allKeys.filter((key) => can(key));
-    return toClientServerDetail(server, role, permissions);
+    const zone = this.config.get<string>('PUBLIC_GATEWAY_HOSTNAME_ZONE');
+    return toClientServerDetail(server, role, permissions, zone);
   }
 
   async power(actor: AccessActor, serverId: string, action: 'start' | 'stop' | 'restart' | 'kill') {

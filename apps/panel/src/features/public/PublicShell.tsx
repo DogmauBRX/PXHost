@@ -143,14 +143,22 @@ export function PublicShell({ children }: { children: ReactNode }) {
       <main>{children}</main>
 
       <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-4 py-10 text-center sm:px-6 lg:px-8">
-          <div className="flex items-center gap-2">
-            <Logo size={22} />
-            <Wordmark className="text-base" />
+        <div className="mx-auto flex max-w-6xl flex-col items-center gap-6 px-4 py-10 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:px-6 lg:px-8">
+          <div className="text-center sm:text-left">
+            <p className="text-xs font-medium text-text-muted">Douglas Carvalho da Silveira</p>
+            <p className="text-xs text-text-faint">CNPJ 68.987.329/0001-21</p>
+            <p className="text-xs text-text-faint">Microempreendedor Individual (MEI)</p>
           </div>
-          <p className="text-xs text-text-faint">© {new Date().getFullYear()} GXhost. Todos os direitos reservados.</p>
-          <p className="max-w-md text-xs text-text-faint">"Minecraft" é uma marca registrada de Mojang Synergies AB.</p>
-          <p className="max-w-md text-xs text-text-faint">A GXhost não é afiliada, endossada ou patrocinada pela Mojang ou pela Microsoft.</p>
+
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="flex items-center gap-2">
+              <Logo size={22} />
+              <Wordmark className="text-base" />
+            </div>
+            <p className="text-xs text-text-faint">© {new Date().getFullYear()} GXhost. Todos os direitos reservados.</p>
+            <p className="max-w-md text-xs text-text-faint">"Minecraft" é uma marca registrada de Mojang Synergies AB.</p>
+            <p className="max-w-md text-xs text-text-faint">A GXhost não é afiliada, endossada ou patrocinada pela Mojang ou pela Microsoft.</p>
+          </div>
         </div>
       </footer>
     </div>

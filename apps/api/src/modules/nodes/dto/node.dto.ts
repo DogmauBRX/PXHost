@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min, ValidateIf } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsIP, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min, ValidateIf } from 'class-validator';
 
 export class CreateNodeDto {
   @IsUUID()
@@ -36,6 +36,13 @@ export class CreateNodeDto {
   @IsString()
   @Matches(/^https?:\/\/[^\s/]+$/, { message: 'controlAddress must look like http(s)://host[:port]' })
   controlAddress?: string;
+
+  // Public-exposure plan — see Node.tunnelIp's schema comment. Like
+  // controlAddress, this is meant to be set once WireGuard is actually
+  // wired up, which may be after the node row already exists.
+  @IsOptional()
+  @IsIP()
+  tunnelIp?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -164,6 +171,12 @@ export class UpdateNodeDto {
   @IsString()
   @Matches(/^https?:\/\/[^\s/]+$/, { message: 'controlAddress must look like http(s)://host[:port]' })
   controlAddress?: string;
+
+  // Public-exposure plan — same "adjustable post-bootstrap" posture as
+  // controlAddress just above; see Node.tunnelIp's schema comment.
+  @IsOptional()
+  @IsIP()
+  tunnelIp?: string;
 
   @IsOptional()
   @Type(() => Number)

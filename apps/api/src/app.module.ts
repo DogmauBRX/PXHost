@@ -31,6 +31,7 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
 import { PublicModule } from './modules/public/public.module';
 import { SiteAnnouncementModule } from './modules/site-announcement/site-announcement.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { GatewayModule } from './modules/gateway/gateway.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
     PublicModule,
     SiteAnnouncementModule,
     PaymentsModule,
+    GatewayModule,
   ],
   providers: [
     // JwtAuthGuard is global: every route requires authentication unless

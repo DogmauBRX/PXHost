@@ -127,6 +127,7 @@ function fetchOwned(tx: Prisma.TransactionClient, serverId: string) {
       template: { select: { id: true, name: true, softwareKind: true } },
       plan: { select: PLAN_CLIENT_SELECT },
       allocations: { select: { ip: true, port: true, isPrimary: true } },
+      publicRoute: { select: { publicPort: true, state: true, gateway: { select: { publicHost: true } } } },
     },
   });
 }
@@ -236,6 +237,7 @@ export class ServerAccessService {
           plan: { select: PLAN_CLIENT_SELECT },
           template: { select: { id: true, name: true, softwareKind: true } },
           allocations: { select: { ip: true, port: true, isPrimary: true } },
+          publicRoute: { select: { publicPort: true, state: true, gateway: { select: { publicHost: true } } } },
         },
       }),
     );

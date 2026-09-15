@@ -15,9 +15,10 @@ import { ActivityModule } from '../activity/activity.module';
 import { CapacityModule } from '../capacity/capacity.module';
 import { SchedulerModule } from '../scheduler/scheduler.module';
 import { PublicModule } from '../public/public.module';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
-  imports: [NodesModule, AuditModule, AuthorizationModule, DatabasesModule, ActivityModule, CapacityModule, SchedulerModule, PublicModule],
+  imports: [NodesModule, AuditModule, AuthorizationModule, DatabasesModule, ActivityModule, CapacityModule, SchedulerModule, PublicModule, GatewayModule],
   providers: [ServersService, ClientServersService, ServerVariablesService, ServerSetupService],
   controllers: [ServersController, ClientServersController, ServerVariablesController, RemoteServersController],
   exports: [ServersService, ClientServersService],

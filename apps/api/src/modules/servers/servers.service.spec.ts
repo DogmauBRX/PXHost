@@ -20,7 +20,7 @@ describe('ServersService.dispatchToAgent', () => {
     };
     const agent = { createServer };
     const audit = { record: jest.fn(async () => undefined) };
-    const service = new ServersService(prisma as any, agent as any, audit as any, {} as any, {} as any, {} as any, {} as any);
+    const service = new ServersService(prisma as any, agent as any, audit as any, {} as any, {} as any, {} as any, {} as any, {} as any);
     return { service, updateMock, audit };
   }
 

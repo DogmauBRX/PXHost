@@ -4,6 +4,7 @@ import type {
   AdminNode,
   AdminPlan,
   AdminAuditLog,
+  AdminGateway,
   AdminServerDetail,
   AdminServerSummary,
   AdminOrder,
@@ -76,6 +77,10 @@ export interface UpdateNodeInput {
   // fqdn/scheme/daemonPort target. Meant to be set post-bootstrap, once
   // the node's private network is wired up — not on `CreateNodeInput`.
   controlAddress?: string;
+  // Public-exposure plan — this node's own address on the WireGuard
+  // tunnel. Same "set once WireGuard is wired up" posture as
+  // controlAddress just above.
+  tunnelIp?: string;
   memoryTotalMb?: number;
   memoryReservedMb?: number;
   memoryOverallocatePct?: number;
@@ -387,3 +392,20 @@ export interface UpdateSiteAnnouncementInput {
 }
 export const updateSiteAnnouncement = (input: UpdateSiteAnnouncementInput) =>
   apiFetch<SiteAnnouncement>('/api/admin/site-announcement', { method: 'PATCH', body: JSON.stringify(input) });
+
+// ---- Public-exposure gateways ----
+
+export interface CreateGatewayInput {
+  name: string;
+  publicHost: string;
+  tunnelIp: string;
+  controlUrl: string;
+}
+export type UpdateGatewayInput = Partial<CreateGatewayInput> & { isActive?: boolean };
+
+export const listGateways = () => apiFetch<AdminGateway[]>('/api/admin/gateways');
+export const createGateway = (input: CreateGatewayInput) => apiFetch<AdminGateway>('/api/admin/gateways', { method: 'POST', body: JSON.stringify(input) });
+export const updateGateway = (id: string, input: UpdateGatewayInput) =>
+  apiFetch<AdminGateway>(`/api/admin/gateways/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
+export const deleteGateway = (id: string) => apiFetch<void>(`/api/admin/gateways/${id}`, { method: 'DELETE' });
+export const reconcileGateways = () => apiFetch<{ reconciled: boolean }>('/api/admin/gateways/reconcile', { method: 'POST' });

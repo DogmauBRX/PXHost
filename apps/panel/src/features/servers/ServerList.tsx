@@ -44,6 +44,10 @@ export function ServerList({ limit }: { limit?: number } = {}) {
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {servers.map((s) => {
         const primaryAllocation = s.allocations.find((a) => a.isPrimary) ?? s.allocations[0];
+        // Public-exposure plan — a customer never needs to see the
+        // internal ip:port once a public one exists; falls back to it
+        // unchanged (same as before this feature) when there's none.
+        const displayAddress = s.publicAddress ?? (primaryAllocation ? `${primaryAllocation.ip}:${primaryAllocation.port}` : null);
         return (
           <Link
             key={s.id}
@@ -68,7 +72,7 @@ export function ServerList({ limit }: { limit?: number } = {}) {
                 {NEEDS_SETUP_CTA[s.status]}
               </div>
             ) : (
-              (s.template || primaryAllocation) && (
+              (s.template || displayAddress) && (
                 <div className="flex items-center gap-3 text-xs text-text-muted">
                   {s.template && (
                     <span className="inline-flex items-center gap-1.5">
@@ -76,11 +80,7 @@ export function ServerList({ limit }: { limit?: number } = {}) {
                       {s.template.name}
                     </span>
                   )}
-                  {primaryAllocation && (
-                    <span className="font-mono">
-                      {primaryAllocation.ip}:{primaryAllocation.port}
-                    </span>
-                  )}
+                  {displayAddress && <span className="font-mono">{displayAddress}</span>}
                 </div>
               )
             )}

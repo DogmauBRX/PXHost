@@ -230,6 +230,7 @@ interface NodeFormValues {
   // this form's two boundaries with the API's ISO-8601 string.
   maintenanceScheduledAt: string;
   controlAddress: string;
+  tunnelIp: string;
   capacityMode: 'manual' | 'auto';
   memoryTotalMb: string;
   memoryReservedMb: string;
@@ -256,6 +257,7 @@ function nodeToForm(n: AdminNode): NodeFormValues {
     maintenanceMode: n.maintenanceMode,
     maintenanceScheduledAt: isoToDatetimeLocal(n.maintenanceScheduledAt),
     controlAddress: n.controlAddress ?? '',
+    tunnelIp: n.tunnelIp ?? '',
     capacityMode: n.capacityMode,
     memoryTotalMb: String(n.memoryTotalMb),
     memoryReservedMb: String(n.memoryReservedMb),
@@ -283,6 +285,7 @@ function formToInput(v: NodeFormValues): UpdateNodeInput {
     maintenanceMode: v.maintenanceMode,
     maintenanceScheduledAt: datetimeLocalToIso(v.maintenanceScheduledAt),
     controlAddress: v.controlAddress.trim() || undefined,
+    tunnelIp: v.tunnelIp.trim() || undefined,
     capacityMode: v.capacityMode,
     memoryTotalMb: Number(v.memoryTotalMb) || 0,
     memoryReservedMb: Number(v.memoryReservedMb) || 0,
@@ -442,6 +445,13 @@ function NodeEditModal({ node, snapshot, onClose }: { node: AdminNode | null; sn
                 onChange={(e) => patch({ controlAddress: e.target.value })}
                 placeholder="http://10.10.0.2:8443"
               />
+            </Field>
+            <Field
+              label="IP no túnel WireGuard (opcional)"
+              htmlFor="node-edit-tunnel-ip"
+              hint="Necessário para expor servidores deste node publicamente por um gateway (público-exposure). Deixe em branco se o node não estiver atrás de CGNAT/roteador residencial."
+            >
+              <Input id="node-edit-tunnel-ip" value={values.tunnelIp} onChange={(e) => patch({ tunnelIp: e.target.value })} placeholder="10.10.0.2" />
             </Field>
             <Toggle checked={values.isPublic} onChange={(isPublic) => patch({ isPublic })} label="Público" description="Visível como destino de novos servidores." />
             <Toggle

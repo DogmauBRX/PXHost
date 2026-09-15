@@ -27,6 +27,10 @@ export interface AssistantContext {
     recommendedPluginsMax: number | null;
   } | null;
   primaryAllocation: { ip: string; port: number } | null;
+  // Public-exposure plan — set only once a gateway has actually
+  // confirmed this route ('active'). Null means "no public route (yet)",
+  // in which case server.connect falls back to primaryAllocation.
+  publicAddress: string | null;
   /** Every permission key this caller actually holds — a topic can tailor its wording (never its correctness) around what the caller can actually click through to. */
   permissions: string[];
 }

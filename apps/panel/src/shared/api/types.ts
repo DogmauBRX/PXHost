@@ -97,6 +97,11 @@ export interface ServerSummary {
   template: { id: string; name: string } | null;
   allocations: { ip: string; port: number; isPrimary: boolean }[];
   software: SoftwareInfo;
+  // Public-exposure plan — set only once a gateway has actually
+  // confirmed this route ('active'), never for pending/failed. Null
+  // means "not exposed" — the UI falls back to allocations[].ip:port,
+  // exactly today's behavior.
+  publicAddress: string | null;
 }
 
 export interface ServerDetail extends ServerSummary {
@@ -310,6 +315,11 @@ export interface AdminNode {
   // uses, the default for every node. Set this to a node's private
   // WireGuard address to keep the control plane off the public internet.
   controlAddress: string | null;
+  // Public-exposure plan — this node's own address on the WireGuard
+  // tunnel (e.g. "10.10.0.2"), as structured data the gateway
+  // reconciler reads directly. Null = this node is not reachable from
+  // any gateway yet; its servers simply never get a public route.
+  tunnelIp: string | null;
   daemonDataPath: string;
   memoryTotalMb: number;
   memoryReservedMb: number;
@@ -662,6 +672,20 @@ export interface AdminServerDetail {
   template: { id: string; name: string; author: string } | null;
   allocations: { ip: string; port: number; isPrimary: boolean }[];
   owner: { id: string; username: string; email: string } | null;
+  publicRoute: { publicPort: number; state: string; lastError: string | null; gateway: { id: string; name: string; publicHost: string } } | null;
+}
+
+// Public-exposure plan — GET/POST/PATCH/DELETE /api/admin/gateways.
+export interface AdminGateway {
+  id: string;
+  name: string;
+  publicHost: string;
+  tunnelIp: string;
+  controlUrl: string;
+  isActive: boolean;
+  lastAppliedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
 }
 
 export interface ServerTransfer {

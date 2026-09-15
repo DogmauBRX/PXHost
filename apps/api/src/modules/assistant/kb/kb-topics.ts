@@ -174,10 +174,15 @@ export const KB_TOPICS: KbTopic[] = [
     title: 'Como conecto no servidor / qual é o IP?',
     keywords: ['conectar no servidor', 'ip do servidor', 'endereco do servidor', 'porta do servidor', 'como entrar no servidor'],
     render: (ctx) => {
-      if (!ctx.primaryAllocation) {
+      if (!ctx.publicAddress && !ctx.primaryAllocation) {
         return [{ type: 'text', text: 'Este servidor ainda não tem um endereço alocado.' }];
       }
-      const address = ctx.primaryAllocation.port === 25565 ? ctx.primaryAllocation.ip : `${ctx.primaryAllocation.ip}:${ctx.primaryAllocation.port}`;
+      // Public-exposure plan: a real public address always wins over the
+      // internal ip:port a customer's own client could never reach
+      // anyway once the node sits behind CGNAT.
+      const address =
+        ctx.publicAddress ??
+        (ctx.primaryAllocation!.port === 25565 ? ctx.primaryAllocation!.ip : `${ctx.primaryAllocation!.ip}:${ctx.primaryAllocation!.port}`);
       return [
         { type: 'text', text: 'No Minecraft, vá em "Multiplayer" → "Add Server" e use o endereço abaixo.' },
         { type: 'kv', items: [{ label: 'Endereço', value: address }] },

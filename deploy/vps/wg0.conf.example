@@ -3,6 +3,15 @@
 # privatekey | wg pubkey > publickey`, then `systemctl enable --now
 # wg-quick@wg0`. The VPS never initiates the handshake (nodes do, via
 # PersistentKeepalive in their own config) so it needs no Endpoint here.
+#
+# Public-exposure plan (docs/PUBLIC-EXPOSURE.md): this SAME tunnel now
+# also carries game traffic — the gateway sidecar (apps/gateway) running
+# on this VPS connects out to a node's 10.10.0.x address on a game port,
+# which that node's own nftables DNATs to its real LAN IP (see
+# deploy/node/firewall.sh). Nothing here changes for that: no new
+# interface, no new subnet, this address (10.10.0.1) is exactly what
+# each node's firewall must allow BOTH 8443 and the game port range from
+# — see GATEWAY_TUNNEL_IP in firewall.sh.
 
 [Interface]
 Address = 10.10.0.1/24

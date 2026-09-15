@@ -7,6 +7,7 @@ import { CapacityService } from '../capacity/capacity.service';
 import { assertNodeFits, nodeAcceptsNewServers, resolveNodeCapacity } from '../capacity/capacity.math';
 import { deriveHealthStatus } from '../nodes/nodes.service';
 import { TransferQueueService } from './transfer-queue.service';
+import { GatewayService } from '../gateway/gateway.service';
 
 const ARCHIVE_TOKEN_TTL_SECONDS = 60 * 60; // 1h — generous for a large archive's fetch time, single-use regardless (jti burned on first GET)
 
@@ -32,6 +33,7 @@ export class TransfersService {
     private readonly capabilityToken: CapabilityTokenService,
     private readonly queue: TransferQueueService,
     private readonly capacity: CapacityService,
+    private readonly gateway: GatewayService,
   ) {}
 
   async initiate(serverId: string, targetNodeId: string, targetAllocationId: string | undefined, actorId: string) {
@@ -263,6 +265,13 @@ export class TransfersService {
         await tx.serverTransfer.update({ where: { id: transferId }, data: { status: 'success', completedAt: new Date() } });
       });
       await this.audit.record({ action: 'server.transfer.succeeded', targetType: 'server', targetId: transfer.serverId, metadata: { sourceNodeId: transfer.sourceNodeId, targetNodeId: transfer.targetNodeId } });
+
+      // Public-exposure plan: the PublicRoute row (if any) already exists
+      // and keeps its public port unchanged — only its TARGET (this
+      // server's now-current node/allocation) needs re-rendering, which
+      // reconcileOnce derives fresh every run. This just asks for that
+      // sooner than the periodic 30s tick would.
+      this.gateway.requestReconcileForTransfer();
 
       // Best-effort teardown of the now-superseded source copy — the
       // transfer already succeeded from the customer's point of view;

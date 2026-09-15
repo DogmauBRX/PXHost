@@ -62,6 +62,12 @@ export const ADMIN_PERMISSIONS = [
   // (retry-provisioning, refund) — `.view` alone never can.
   'payments.view',
   'payments.manage',
+  // Public-exposure plan — the VPS gateway(s) that terminate public game
+  // traffic. Own vocabulary for the same reason `nodes.*` is: a Gateway
+  // is infrastructure, but a DIFFERENT piece of infrastructure than a
+  // hosting node (no capacity, no allocations, no agent).
+  'gateway.view',
+  'gateway.manage',
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
@@ -106,6 +112,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly (AdminPermission 
     'subscriptions.manage',
     'payments.view',
     'payments.manage',
+    'gateway.view',
+    'gateway.manage',
   ],
   // The five `.view` keys preserve `support`'s CURRENT behavior — it
   // already passes AdminGuard and already reads nodes/plans/capacity/

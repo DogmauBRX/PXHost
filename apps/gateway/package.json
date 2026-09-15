@@ -1,0 +1,17 @@
+{
+  "name": "@gxhost/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GXhost public-exposure gateway sidecar (public-exposure plan) — a small control API that renders nginx's stream config from the desired route set GatewayService pushes it, and reloads nginx. Deliberately dependency-light: Node's own http/fs/child_process only.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "start:dev": "ts-node src/main.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}

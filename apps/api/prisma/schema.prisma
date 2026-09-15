@@ -168,6 +168,16 @@ model Node {
   // .baseURL falls back to scheme://fqdn:daemonPort exactly as it always
   // has, so this column changes nothing until an admin sets it.
   controlAddress           String?   @map("control_address")
+  // Public-exposure plan — the node's own address on the WireGuard tunnel
+  // (e.g. "10.10.0.2"), as structured data. `controlAddress` above already
+  // embeds this same IP inside a URL for the panel->agent control plane;
+  // this column exists so the gateway reconciler (GatewayService, which
+  // has no reason to parse a control-plane URL) can read it directly when
+  // rendering a PublicRoute's proxy target. NULL (every node's default)
+  // means "this node is not reachable from the gateway yet" — a server on
+  // such a node simply never gets a PublicRoute reconciled to 'active';
+  // nothing else in the app (capacity, provisioning, the agent) reads it.
+  tunnelIp                 String?   @db.Inet @map("tunnel_ip")
   sftpPort                 Int       @default(2022) @map("sftp_port")
   daemonDataPath           String    @default("/var/lib/pxhost/volumes") @map("daemon_data_path")
   behindProxy              Boolean   @default(false) @map("behind_proxy")
@@ -363,6 +373,82 @@ model Allocation {
 
   @@unique([nodeId, ip, port])
   @@map("allocations")
+}
+
+// Public-exposure plan — a VPS gateway that terminates public game traffic
+// and forwards it, over WireGuard, to the node that actually holds the
+// container (GatewayService/GatewayDriver, apps/api/src/modules/gateway).
+// Deliberately its own table rather than reusing Node: a gateway is not a
+// hosting node (no capacity, no allocations, no agent) and this repo's
+// nodes.* vocabulary already means something specific. Modeled as a table,
+// not a single env-configured row, so a second gateway is a data problem
+// (add a row) rather than a code problem (roadmap: HA / multi-region).
+model Gateway {
+  id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name          String
+  // The hostname/IP a customer's client actually connects to — what a
+  // PublicRoute's port is opened ON. Never a private/tunnel address.
+  publicHost    String    @map("public_host")
+  // This gateway's OWN address on the WireGuard tunnel (e.g. "10.10.0.1")
+  // — the source a node's firewall must allow game/control traffic FROM.
+  // Purely informational today (nothing dials it); documented here so the
+  // firewall rules in deploy/node/firewall.sh have one place that names
+  // where that IP comes from.
+  tunnelIp      String    @db.Inet @map("tunnel_ip")
+  // Base URL of this gateway's own control API (the small sidecar in
+  // apps/gateway, NOT the WireGuard/nginx data path) — what
+  // HttpGatewayDriver calls to push/fetch desired routes. e.g.
+  // "http://10.10.0.1:9443".
+  controlUrl    String    @map("control_url")
+  isActive      Boolean   @default(true) @map("is_active")
+  lastAppliedAt DateTime? @map("last_applied_at") @db.Timestamptz
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+
+  routes PublicRoute[]
+
+  @@map("gateways")
+}
+
+// One row per exposed server (public-exposure plan). Deliberately keyed on
+// Server, not Allocation: the public port must survive a node transfer
+// (TransfersService.handleResult swaps which Allocation a server owns, but
+// the customer's public endpoint should not silently change), and the
+// actual proxy TARGET (node.tunnelIp + the server's current primary
+// allocation ip/port) is derived at reconcile time, never stored here —
+// storing it would let this row drift from the allocation it's supposed to
+// mirror. `state` is this row's own lifecycle, independent of the
+// server's: a gateway outage leaves `state='failed'` while the server
+// itself stays perfectly healthy (GatewayReconcileProcessor's doc comment).
+model PublicRoute {
+  id         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  gatewayId  String    @map("gateway_id") @db.Uuid
+  serverId   String    @unique @map("server_id") @db.Uuid
+  publicPort Int       @map("public_port")
+  protocol   String    @default("tcp")
+  // pending: created, not yet pushed to the gateway.
+  // active: last reconcile confirmed the gateway has this exact route.
+  // failed: last reconcile attempt errored — lastError explains why; the
+  //   server and its allocation are completely untouched by this.
+  // removing: server deleted (or route superseded) — the reconciler drops
+  //   it from the gateway's desired set, then deletes this row for real.
+  state      String    @default("pending")
+  lastError  String?   @map("last_error")
+  appliedAt  DateTime? @map("applied_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  gateway Gateway @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+  server  Server  @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  // A gateway can only ever bind one public port once — the real backstop
+  // against two servers ending up with the same public endpoint, the same
+  // role @@unique([nodeId, ip, port]) plays for internal Allocations above.
+  @@unique([gatewayId, publicPort])
+  @@index([state])
+  @@map("public_routes")
 }
 
 model Mount {
@@ -704,6 +790,11 @@ model Server {
   // it. NULL for every server created outside the checkout flow
   // (admin-created directly, or created before this milestone).
   order         Order?
+  // Public-exposure plan — see PublicRoute's own doc comment for why this
+  // is keyed on Server rather than Allocation. Optional: a server with no
+  // row here (the default) is simply never exposed publicly, exactly
+  // today's behavior.
+  publicRoute   PublicRoute?
 
   @@map("servers")
 }

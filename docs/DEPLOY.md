@@ -18,6 +18,22 @@ bodies at 100MB, which would break large uploads/backup downloads if
 routed through it — nodes are DNS-only (grey-clouded) there for exactly
 this reason.
 
+> **Node has no public IP (CGNAT/residential)?** Everything below through
+> §3 step 4 (Caddy + its own DNS record) assumes the node CAN get a public
+> hostname pointed at it, because the browser talks to the agent directly
+> for console/file/backup traffic. A node behind CGNAT (no port forwarding
+> possible) simply **skips Caddy and its DNS record** — it only needs the
+> WireGuard spoke (§3 steps 2–3, 5–10; `controlAddress` is how the panel
+> already reaches such a node today, unrelated to public IPs) — but then
+> the browser-direct console/file/backup paths in §4 won't work for that
+> node, since nothing terminates public TLS for it. Exposing a Minecraft
+> **server's own game port** on a CGNAT node (so a player connects from the
+> internet with no VPN and no router port forwarding) is a *separate,
+> additive* concern from this whole document — see
+> [`docs/PUBLIC-EXPOSURE.md`](./PUBLIC-EXPOSURE.md), which reuses the same
+> WireGuard tunnel set up here but adds a VPS-side TCP gateway instead of
+> relying on the node having any public address of its own.
+
 ## 1. DNS (Cloudflare)
 
 | Record | Type | Proxy | Points to |

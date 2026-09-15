@@ -42,6 +42,38 @@ NestJS API  ---- PostgreSQL (RLS-scoped)
 
 Multi-node from day one: one Panel/API, N independent nodes, each running its own agent, registered via a single-use bootstrap token and its own mTLS client certificate.
 
+### 1.1 Public game-traffic exposure (VPS gateway + WireGuard)
+
+Everything above gets a node's *control plane* reachable (agent API, browser
+console/file/backup WSS — §3.4/§3.5) even behind CGNAT, because the node
+always dials **out** to the panel/VPS. It says nothing about a **player**
+reaching the Minecraft server itself: `Allocation.ip:port` is the node's own
+LAN address, meaningless from the public internet on a residential
+connection with no port forwarding. §3.5's `relayMode` sketch never
+implemented this either — it's a WS-relay idea for the control plane, not
+game traffic.
+
+```
+Player --TCP:25566--> VPS public IP --nginx stream--> WireGuard 10.10.0.x --> Node --> Docker (game container)
+```
+
+An additive layer (`apps/api/src/modules/gateway/`, `apps/gateway/`) solves
+this with the **same WireGuard tunnel** §3.4 already sets up for the control
+plane: a `Gateway` row (a VPS running the `apps/gateway` sidecar — nginx
+`stream` doing pure TCP forwarding, never a Minecraft-aware proxy like
+Velocity/BungeeCord) exposes one public port per server, forwarding it to
+that server's node over the tunnel. `PublicRoute` (keyed on `Server`, not
+`Allocation` — survives a node transfer) is reconciled from current DB state
+on a 30s BullMQ timer (`GatewayReconcileProcessor`), so a dropped gateway
+connection, a stale config, or a missed event all self-correct on the next
+tick instead of needing bespoke recovery code. `GatewayDriver` is the one DI
+seam (mirrors `PAYMENT_PROVIDER`): today's `HttpGatewayDriver` talks to
+nginx and does **not** preserve a player's real IP (Minecraft sees the
+tunnel's address); an nftables-DNAT driver that would preserve it is a
+documented future swap behind the same interface, not a redesign. Full
+runbook, firewall rules, hostname/DNS scheme, and the real-IP migration path:
+[`docs/PUBLIC-EXPOSURE.md`](./PUBLIC-EXPOSURE.md).
+
 ---
 
 ## 2. Domain Model & PostgreSQL Schema
@@ -521,6 +553,7 @@ Node Agent goes first per the user's explicit requirement — it de-risks the ha
 | M13 | Hardening & operations | All | Live node-to-node transfer with no data loss; token rotation; log partition automation |
 | M14 | Billing hooks | API | Delivered, then removed — a generic idempotent webhook suspended/restored a server by `serverId` on an external payment event; superseded entirely by the fuller payments integration in M15 and deleted rather than kept alongside it (see `apps/api/README.md`'s M14 section for the historical record) |
 | M15 | Commercial site: public catalog + subscriptions + payments (Mercado Pago) | API, Panel | Delivered. Visitor browses plans and vagas-aware availability with no auth, signs up (behind `ALLOW_PUBLIC_REGISTRATION`), checks out via Mercado Pago (Pix ou cartão); the subscription activates automatically on payment confirmation via webhook, which also auto-provisions the server — no admin step in the happy path. Overdue payment suspends after a grace period and reactivates on recovery; customer can self-cancel (immediate or at period end); admin can refund from `/admin/payments`. See §2.6.1 and `docs/payments/mercadopago.md` |
+| M16 | Public game-traffic exposure (VPS gateway + WireGuard) | API, `apps/gateway` | Delivered. A CGNAT/residential node's server gets a public `host:port` with zero router port forwarding and zero client-side VPN — `Server.create/remove/transfer` gain three thin, fire-and-forget hooks into a new `gateway` module; a BullMQ reconciler pushes the full desired route set to an nginx-stream sidecar over the existing control-plane WireGuard tunnel. See §1.1 and `docs/PUBLIC-EXPOSURE.md` |
 
 \* = required for the minimal end-to-end vertical slice (M1-M6).
 

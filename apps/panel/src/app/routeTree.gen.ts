@@ -18,6 +18,7 @@ import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAnnouncementRouteImport } from './routes/admin.announcement'
+import { Route as AdminGatewaysRouteImport } from './routes/admin.gateways'
 import { Route as AdminLocationsRouteImport } from './routes/admin.locations'
 import { Route as AdminLogsRouteImport } from './routes/admin.logs'
 import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
@@ -105,6 +106,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const AdminAnnouncementRoute = AdminAnnouncementRouteImport.update({
   id: '/announcement',
   path: '/announcement',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminGatewaysRoute = AdminGatewaysRouteImport.update({
+  id: '/gateways',
+  path: '/gateways',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminLocationsRoute = AdminLocationsRouteImport.update({
@@ -350,6 +356,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin/announcement': typeof AdminAnnouncementRoute
+  '/admin/gateways': typeof AdminGatewaysRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/payments': typeof AdminPaymentsRoute
@@ -402,6 +409,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin/announcement': typeof AdminAnnouncementRoute
+  '/admin/gateways': typeof AdminGatewaysRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/payments': typeof AdminPaymentsRoute
@@ -455,6 +463,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/admin/announcement': typeof AdminAnnouncementRoute
+  '/admin/gateways': typeof AdminGatewaysRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/payments': typeof AdminPaymentsRoute
@@ -511,6 +520,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/admin/announcement'
+    | '/admin/gateways'
     | '/admin/locations'
     | '/admin/logs'
     | '/admin/payments'
@@ -563,6 +573,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/admin/announcement'
+    | '/admin/gateways'
     | '/admin/locations'
     | '/admin/logs'
     | '/admin/payments'
@@ -615,6 +626,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/admin/announcement'
+    | '/admin/gateways'
     | '/admin/locations'
     | '/admin/logs'
     | '/admin/payments'
@@ -737,6 +749,13 @@ declare module '@tanstack/react-router' {
       path: '/announcement'
       fullPath: '/admin/announcement'
       preLoaderRoute: typeof AdminAnnouncementRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/gateways': {
+      id: '/admin/gateways'
+      path: '/gateways'
+      fullPath: '/admin/gateways'
+      preLoaderRoute: typeof AdminGatewaysRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/locations': {
@@ -1072,6 +1091,7 @@ const AdminServersServerIdRouteWithChildren =
 
 interface AdminRouteChildren {
   AdminAnnouncementRoute: typeof AdminAnnouncementRoute
+  AdminGatewaysRoute: typeof AdminGatewaysRoute
   AdminLocationsRoute: typeof AdminLocationsRoute
   AdminLogsRoute: typeof AdminLogsRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
@@ -1090,6 +1110,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAnnouncementRoute: AdminAnnouncementRoute,
+  AdminGatewaysRoute: AdminGatewaysRoute,
   AdminLocationsRoute: AdminLocationsRoute,
   AdminLogsRoute: AdminLogsRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,

@@ -21,6 +21,7 @@ function makeContext(overrides: Partial<AssistantContext> = {}): AssistantContex
       recommendedPluginsMax: 80,
     },
     primaryAllocation: { ip: '203.0.113.10', port: 25565 },
+    publicAddress: null,
     permissions: [
       'server.read', 'startup.read', 'startup.update', 'file.read', 'file.write', 'file.delete',
       'backup.read', 'backup.create', 'backup.restore', 'control.console', 'control.start', 'control.stop',

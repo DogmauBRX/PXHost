@@ -71,7 +71,7 @@ export const envSchema = z.object({
   // refuse-at-use-time below: a customer-facing assistant that 500s on every
   // message is worse than one that quietly answers from the catalog.
   ASSISTANT_PROVIDER: z.enum(['kb', 'llm']).default('kb'),
-  ASSISTANT_LLM_API_KEY: z.string().min(1).optional(),
+  ASSISTANT_LLM_API_KEY: optionalSecret(),
 
   // Client account management, Fase 1 — generic SMTP for password-reset
   // emails, no specific provider baked in. All optional, same posture as
@@ -81,7 +81,7 @@ export const envSchema = z.object({
   // forgot-password endpoint must always return 200 regardless of mail
   // outcome (anti-enumeration) — a "refuse" posture would have nowhere
   // safe to surface.
-  MAIL_HOST: z.string().min(1).optional(),
+  MAIL_HOST: optionalSecret(),
   MAIL_PORT: z.coerce.number().int().positive().optional(),
   MAIL_USERNAME: z.string().optional(),
   MAIL_PASSWORD: z.string().optional(),
@@ -149,7 +149,7 @@ export const envSchema = z.object({
   // because nobody has set up a Cloudflare account yet. The site key
   // (public, safe in a browser bundle) is a SEPARATE var in the panel's
   // own build — VITE_TURNSTILE_SITE_KEY, apps/panel/.env — never here.
-  TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
+  TURNSTILE_SECRET_KEY: optionalSecret(),
 
   // Grace window between a subscription's currentPeriodEndsAt and the
   // server actually being suspended for non-payment (payments plan's
@@ -159,6 +159,39 @@ export const envSchema = z.object({
   // survives an abandoned checkout before the billing-cycle job expires
   // it — see Order.expiresAt's own doc comment in schema.prisma.
   CHECKOUT_ORDER_TTL_MINUTES: z.coerce.number().int().positive().default(1440),
+
+  // Public-exposure plan (VPS gateway over WireGuard). Deliberately NO
+  // PUBLIC_GATEWAY_HOST/PUBLIC_GATEWAY_IP/PUBLIC_GATEWAY_CONTROL_URL vars
+  // here — a gateway is a `Gateway` DB row (apps/api/src/modules/gateway),
+  // not a single env-configured target, because the whole point is
+  // supporting more than one later without a code change. With zero
+  // `Gateway` rows (every environment's default, including every
+  // dev/test one), GatewayService.ensureRouteForServer no-ops and every
+  // existing behavior — the customer sees plain ip:port — is unchanged.
+  //
+  // The shared bearer secret HttpGatewayDriver presents to a gateway's
+  // own control sidecar (apps/gateway) — refuse-at-use-time like
+  // MERCADOPAGO_ACCESS_TOKEN above, never boot-fail: a dev/test
+  // deployment with no gateway configured must still start.
+  PUBLIC_GATEWAY_TOKEN: optionalSecret(),
+  // The public-port pool GatewayService.createRouteWithFreePort walks
+  // when a server's own internal port is already taken on that gateway
+  // (two nodes can and do share the same internal allocation range).
+  PUBLIC_GATEWAY_PORT_RANGE: z
+    .string()
+    .regex(/^\d{1,5}-\d{1,5}$/, 'PUBLIC_GATEWAY_PORT_RANGE must look like "25565-25664"')
+    .default('25565-25664'),
+  // Optional DNS zone for the `<shortId>.mc.<zone>` hostname pattern
+  // (public-address.ts). Unset (the default) means every server's
+  // public address is the gateway's own `publicHost:port` instead — no
+  // domain required to use this feature at all.
+  PUBLIC_GATEWAY_HOSTNAME_ZONE: optionalSecret(),
+  // Which DnsProvider GatewayModule binds — 'none' (default) never
+  // touches DNS; 'cloudflare' additionally requires the two vars below.
+  // See docs/PUBLIC-EXPOSURE.md §"SRV opcional" before turning this on.
+  PUBLIC_GATEWAY_DNS_PROVIDER: z.enum(['none', 'cloudflare']).default('none'),
+  PUBLIC_GATEWAY_DNS_API_TOKEN: optionalSecret(),
+  PUBLIC_GATEWAY_DNS_ZONE_ID: optionalSecret(),
 });
 
 export type Env = z.infer<typeof envSchema>;

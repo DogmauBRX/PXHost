@@ -73,7 +73,7 @@ services:
     build:
       context: ./apps/api
     restart: unless-stopped
-    command: ["node", "dist/worker.js"]
+    command: ["node", "dist/src/worker.js"]
     env_file: .env
     depends_on:
       postgres:
@@ -87,6 +87,29 @@ services:
       args:
         VITE_API_URL: https://api.gxhost.com.br
     restart: unless-stopped
+
+  # Public-exposure plan (docs/PUBLIC-EXPOSURE.md) — the VPS-side gateway
+  # sidecar. `network_mode: host`, not the default compose bridge: nginx
+  # inside it binds a dynamic, per-server public port (whatever
+  # PUBLIC_GATEWAY_PORT_RANGE is, e.g. 25565-25664) — declaring 100
+  # individual `ports:` mappings ahead of time would be impractical, and
+  # host networking is what lets it bind any of them directly, including
+  # on the WireGuard hub's own address (10.10.0.1) so `api`/`worker`
+  # (regular bridge-networked containers, same as they already do to
+  # reach a node's 10.10.0.x:8443) can call its control API. Optional:
+  # a deployment not using this feature simply never sets
+  # PUBLIC_GATEWAY_TOKEN and never registers a Gateway row — this
+  # service can be left out of `docker compose up` entirely with zero
+  # effect on anything else.
+  gateway:
+    build:
+      context: ./apps/gateway
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      GATEWAY_TOKEN: ${PUBLIC_GATEWAY_TOKEN}
+      GATEWAY_LISTEN_PORT: "9443"
+      GATEWAY_NGINX_CONF_PATH: /etc/nginx/gxhost-routes.conf
 
   caddy:
     image: caddy:2-alpine

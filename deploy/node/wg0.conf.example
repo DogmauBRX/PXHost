@@ -2,9 +2,20 @@
 # Node 01/R620; Node 02/Dual Xeon is identical with Address = 10.10.0.3/24
 # and its own key pair). Install as /etc/wireguard/wg0.conf, then
 # `systemctl enable --now wg-quick@wg0`. PersistentKeepalive keeps the
-# tunnel alive through any NAT between the node and the VPS — without it
-# the VPS-initiated control-plane calls (AgentClientService, via
-# node.controlAddress) can silently stop reaching a NATed node.
+# tunnel alive through any NAT/CGNAT between the node and the VPS —
+# without it the VPS-initiated control-plane calls (AgentClientService,
+# via node.controlAddress) AND, since the public-exposure plan
+# (docs/PUBLIC-EXPOSURE.md), the gateway's game-traffic connections can
+# both silently stop reaching a NATed node. This is also exactly what
+# makes a residential/CGNAT node work at all: the node dials OUT to the
+# VPS's public IP below, never the other way around — nothing on the
+# node's own router needs to be forwarded.
+#
+# Setting this node's own `tunnelIp` in the admin panel (Nodes > Editar)
+# to this exact Address (minus the /24) is what turns this tunnel from
+# "control-plane only" into "also carries this node's game traffic" —
+# leaving it unset keeps every server on this node exactly as
+# un-exposed as before the public-exposure plan existed.
 
 [Interface]
 Address = 10.10.0.2/24

@@ -10,6 +10,7 @@ import {
   MapPin,
   Package,
   Receipt,
+  Router,
   ScrollText,
   Server,
   ServerCog,
@@ -53,6 +54,7 @@ export const ADMIN_NAV_SECTIONS: readonly NavSection[] = [
       { label: 'Servidores', to: '/admin/servers', icon: ServerCog },
       { label: 'Nodes', to: '/admin/nodes', icon: HardDrive },
       { label: 'Locations', to: '/admin/locations', icon: MapPin },
+      { label: 'Gateways', to: '/admin/gateways', icon: Router },
     ],
   },
   {

@@ -113,6 +113,7 @@ export class NodesService {
           scheme: dto.scheme ?? 'https',
           daemonPort: dto.daemonPort ?? 8443,
           controlAddress: dto.controlAddress,
+          tunnelIp: dto.tunnelIp,
           sftpPort: dto.sftpPort ?? 2022,
           memoryTotalMb: dto.memoryTotalMb,
           memoryReservedMb: dto.memoryReservedMb ?? 0,
@@ -204,6 +205,7 @@ export class NodesService {
     if (dto.maintenanceMode !== undefined) data.maintenanceMode = dto.maintenanceMode;
     if (dto.maintenanceScheduledAt !== undefined) data.maintenanceScheduledAt = dto.maintenanceScheduledAt === null ? null : new Date(dto.maintenanceScheduledAt);
     if (dto.controlAddress !== undefined) data.controlAddress = dto.controlAddress;
+    if (dto.tunnelIp !== undefined) data.tunnelIp = dto.tunnelIp;
     if (dto.memoryTotalMb !== undefined) data.memoryTotalMb = dto.memoryTotalMb;
     if (dto.memoryReservedMb !== undefined) data.memoryReservedMb = dto.memoryReservedMb;
     if (dto.memoryOverallocatePct !== undefined) data.memoryOverallocatePct = dto.memoryOverallocatePct;

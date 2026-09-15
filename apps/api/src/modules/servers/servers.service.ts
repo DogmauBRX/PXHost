@@ -9,6 +9,7 @@ import { CapacityService } from '../capacity/capacity.service';
 import { assertNodeFits, assertSlots, nodeAcceptsNewServers, resolveNodeCapacity } from '../capacity/capacity.math';
 import { deriveHealthStatus } from '../nodes/nodes.service';
 import { NodeSchedulerService, SchedulerCandidate } from '../scheduler/node-scheduler.service';
+import { GatewayService } from '../gateway/gateway.service';
 import { CreateServerDto, CreateSetupPendingServerInput } from './dto/server.dto';
 import { generateShortId } from './short-id';
 import { validateVariableValue } from './variable-rules';
@@ -53,6 +54,7 @@ export class ServersService {
     private readonly activity: ActivityService,
     private readonly capacity: CapacityService,
     private readonly scheduler: NodeSchedulerService,
+    private readonly gateway: GatewayService,
   ) {}
 
   /**
@@ -95,6 +97,7 @@ export class ServersService {
           template: true,
           plan: true,
           allocations: true,
+          publicRoute: { include: { gateway: { select: { id: true, name: true, publicHost: true } } } },
           variables: { include: { variable: true } },
           owner: { select: { id: true, username: true, email: true } },
         },
@@ -409,6 +412,14 @@ export class ServersService {
       },
     });
 
+    // Public-exposure plan: the allocation is already reserved at this
+    // point regardless of templateContext, so the public port is too —
+    // a 'setup_pending' server gets its public endpoint immediately,
+    // the same way it already gets its internal ip:port immediately.
+    // Best-effort, never throws (see GatewayService's own doc comment):
+    // a misconfigured/offline gateway must never fail a server create.
+    await this.gateway.ensureRouteForServer(created.server.id);
+
     if (!templateContext) {
       // No template chosen yet — nothing to dispatch. This is the entire
       // reason CPU/RAM stay at zero for a 'setup_pending' server: the
@@ -528,6 +539,13 @@ export class ServersService {
     await this.agent.deleteServer(server.node.id, server.id);
 
     const { droppedCount, failures } = await this.databases.deleteAllForServer(server.id);
+
+    // Public-exposure plan: a pure DB marker for observability only —
+    // public_routes.server_id cascades on server.delete below regardless
+    // of this call's outcome, see GatewayService.markRemoving's own doc
+    // comment for why that's sufficient (the next periodic reconcile
+    // closes the port on the gateway side).
+    await this.gateway.markRemoving(server.id);
 
     await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
       await tx.allocation.updateMany({ where: { serverId: server.id }, data: { isPrimary: false } });

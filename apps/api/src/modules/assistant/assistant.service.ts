@@ -6,6 +6,7 @@ import { PermissionCatalogService } from '../authorization/permission-catalog.se
 import { RedisService } from '../../core/redis/redis.service';
 import { describeSoftware } from '../templates/software';
 import { KnowledgeBaseProvider } from './kb/kb-provider';
+import { derivePublicAddress } from '../gateway/public-address';
 import type { AssistantContext, AssistantMessage, AssistantProvider, AssistantReply, AssistantSuggestion } from './assistant.types';
 
 const RATE_LIMIT_PER_MINUTE = 20;
@@ -74,6 +75,10 @@ export class AssistantService {
           }
         : null,
       primaryAllocation: primary ? { ip: primary.ip, port: primary.port } : null,
+      publicAddress:
+        server.publicRoute && server.publicRoute.state === 'active'
+          ? derivePublicAddress(server.publicRoute.gateway.publicHost, server.shortId, server.publicRoute.publicPort, this.config.get<string>('PUBLIC_GATEWAY_HOSTNAME_ZONE'))
+          : null,
       permissions,
     };
   }
