@@ -13,5 +13,8 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, 'src') },
   },
-  server: { port: 5173, host: '127.0.0.1' },
+  // '0.0.0.0' (not the previous '127.0.0.1') so a phone/tablet on the
+  // same LAN can reach this dev server too — matching apps/api/src/main.ts,
+  // which already binds 0.0.0.0 for exactly this reason.
+  server: { port: 5173, host: '0.0.0.0' },
 });

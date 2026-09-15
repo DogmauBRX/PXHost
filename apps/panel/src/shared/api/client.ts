@@ -1,7 +1,15 @@
 import { useAuthStore } from '../stores/auth.store';
 import type { LoginResponse } from './types';
 
-export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+// VITE_API_URL wins when set (production build, or a deliberate local
+// override). Unset, this falls back to the CURRENT page's own hostname
+// on port 3000 — not a hardcoded "localhost" — so opening the panel
+// from a phone/tablet's browser via this machine's LAN IP (e.g.
+// http://192.168.1.101:5173) reaches the API at that same IP, not
+// "localhost" resolved on the PHONE itself (which would just be the
+// phone, not this dev machine). This also means the panel keeps working
+// after this machine's IP changes (DHCP), with no env edit needed.
+export const API_URL = import.meta.env.VITE_API_URL ?? `${window.location.protocol}//${window.location.hostname}:3000`;
 
 export class ApiError extends Error {
   status: number;
