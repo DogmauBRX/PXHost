@@ -8,5 +8,20 @@
 	root * /srv
 	encode gzip
 	try_files {path} /index.html
+
+	# Without this, index.html (which is what NAMES the current hashed
+	# /assets/*.js|css bundle) has no explicit Cache-Control at all, so a
+	# plain reload can serve a browser-cached copy without even asking
+	# the server — found live: a deployed CSS change genuinely not
+	# reaching a real visitor's tab until a hard refresh (Ctrl+Shift+R)
+	# forced revalidation. Every /assets/* file's name changes with its
+	# content (Vite's build hash), so THOSE are safe to cache far more
+	# aggressively than index.html ever should be — the more specific
+	# @assets rule below overrides this default for exactly those paths.
+	header Cache-Control "no-cache"
+
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
 	file_server
 }
