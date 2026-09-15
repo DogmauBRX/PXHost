@@ -61,15 +61,26 @@ for each node's Caddy to solve the DNS-01 ACME challenge — see
    once you have them (step 3 under Node setup), then
    `systemctl enable --now wg-quick@wg0`.
 5. Bring up the datastores first, run migrations + seed, THEN start
-   everything else:
+   everything else. The `api` service's **runtime** image deliberately has
+   no `prisma` CLI/`pnpm` (devDependencies-only tools, stripped for a
+   slim production image — see `apps/api/Dockerfile`'s `runtime` stage
+   comment), so `docker compose run --rm api pnpm exec prisma ...` fails
+   with `Cannot find module '/app/pnpm'` (found live on the first real
+   production migration, 2026-09-15). Build a one-off image from the
+   Dockerfile's `build` stage instead, which has everything:
    ```bash
    docker compose -f docker-compose.prod.yml up -d postgres redis mariadb
-   docker compose -f docker-compose.prod.yml run --rm api pnpm exec prisma migrate deploy
+   docker build --target build -t gxhost-api-migrate:latest apps/api
+   docker run --rm --network gxhost_default --env-file .env gxhost-api-migrate:latest pnpm exec prisma migrate deploy
    # Rotate app_user's password now — see .env.production.example's comment
    # — then update DATABASE_URL in .env before continuing.
-   docker compose -f docker-compose.prod.yml run --rm api pnpm exec prisma db seed
+   docker run --rm --network gxhost_default --env-file .env gxhost-api-migrate:latest pnpm exec prisma db seed
+   docker rmi gxhost-api-migrate:latest
    docker compose -f docker-compose.prod.yml up -d
    ```
+   `gxhost_default` is the Compose network Docker names after this
+   directory (`<dirname>_default`) — if you deployed under a different
+   directory name, confirm the real one with `docker network ls` first.
 6. Confirm: `curl https://api.gxhost.com.br/healthz` and `/readyz` both
    report `database`/`redis` healthy; `https://gxhost.com.br` loads the
    panel.
@@ -157,7 +168,18 @@ for each node's Caddy to solve the DNS-01 ACME challenge — see
   doc comment); `pxagent rotate-token` is available for a manual/offline
   rotation too.
 - **Redeploying after a code change:** `docker compose -f
-  docker-compose.prod.yml build api worker panel && docker compose -f
-  docker-compose.prod.yml up -d`. Run `prisma migrate deploy` (the same
-  one-shot `run --rm api ...` as initial setup) BEFORE swapping the
-  running containers if the change includes a migration.
+  docker-compose.prod.yml build api worker panel`. If that build shows
+  every layer as `CACHED` — including `COPY src ./src` — despite the
+  source having actually changed (found live 2026-09-15, cause not fully
+  pinned down), it silently re-tagged the old image; force a real
+  rebuild with `docker compose -f docker-compose.prod.yml build --no-cache
+  api worker panel` and confirm with `docker inspect gxhost-api:latest
+  --format '{{.Created}}'` before continuing. If the change includes a
+  migration, run it BEFORE swapping the running containers, using the
+  **build**-stage image from §2 step 5 above — `docker build --target
+  build -t gxhost-api-migrate:latest apps/api && docker run --rm
+  --network gxhost_default --env-file .env gxhost-api-migrate:latest
+  pnpm exec prisma migrate deploy && docker rmi gxhost-api-migrate:latest`
+  — never `docker compose run --rm api pnpm exec prisma migrate deploy`
+  (that's the runtime image; see §2 step 5's note on why it fails). Only
+  then: `docker compose -f docker-compose.prod.yml up -d`.
