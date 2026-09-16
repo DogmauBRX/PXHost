@@ -375,7 +375,11 @@ describe('Public-exposure gateway (e2e)', () => {
     expect(reconcileRes.statusCode).toBe(201);
 
     const fqdn = 'survival.gw-e2e-test.local';
-    expect(fakeDns.srvEnsured).toContainEqual(expect.objectContaining({ hostname: fqdn, target: '203.0.113.50' }));
+    // target must be the hostname itself, never the gateway's raw IP —
+    // Cloudflare (and the SRV spec) rejects a literal address there
+    // ("SRV target must be a hostname"); the same fqdn is what the
+    // address-record assertion right below resolves to that IP.
+    expect(fakeDns.srvEnsured).toContainEqual(expect.objectContaining({ hostname: fqdn, target: fqdn }));
     expect(fakeDns.addressEnsured).toContainEqual(expect.objectContaining({ hostname: fqdn, ip: '203.0.113.50' }));
 
     const route = await asAdmin((tx) => tx.publicRoute.findUniqueOrThrow({ where: { serverId } }));

@@ -424,18 +424,33 @@ export class GatewayService {
     }
   }
 
-  /** SRV is the functionally required record (it's what makes "no port" work); an address-record failure is logged but doesn't stop SRV from being considered synced. Returns whether SRV succeeded. */
+  /**
+   * Address record FIRST, then SRV — not just ordering for its own sake.
+   * An SRV record's `target` must itself be a hostname per the DNS spec
+   * (Cloudflare enforces this: a literal IP there fails outright with
+   * "SRV target must be a hostname", found live — every route on a
+   * fresh gateway retried and failed this every ~30s, forever, and a
+   * bare `return false` in the old SRV-first ordering meant the address
+   * record was never even attempted either, so NEITHER record ever
+   * existed for a customer to fall back to). `target: hostname` — the
+   * SAME hostname this method's own address record points at the
+   * gateway's IP — is what makes it a valid, resolvable target instead
+   * of a raw address. SRV is still the functionally required record
+   * (it's what makes "no port" work); an address-record failure is
+   * logged but doesn't stop SRV from being attempted. Returns whether
+   * SRV succeeded.
+   */
   private async ensureDnsFor(hostname: string, gatewayPublicHost: string, port: number): Promise<boolean> {
-    try {
-      await this.dns.ensureSrv({ hostname, target: gatewayPublicHost, port });
-    } catch (err) {
-      this.logger.error(`SRV sync failed for ${hostname}: ${(err as Error).message}`);
-      return false;
-    }
     try {
       await this.dns.ensureAddressRecord({ hostname, ip: gatewayPublicHost });
     } catch (err) {
       this.logger.error(`address record sync failed for ${hostname}: ${(err as Error).message}`);
+    }
+    try {
+      await this.dns.ensureSrv({ hostname, target: hostname, port });
+    } catch (err) {
+      this.logger.error(`SRV sync failed for ${hostname}: ${(err as Error).message}`);
+      return false;
     }
     return true;
   }

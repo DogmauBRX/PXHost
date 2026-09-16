@@ -149,15 +149,17 @@ export function Sidebar({ sections, panelLabel, settingsTo, area }: SidebarProps
               <p className="truncate text-xs text-text-muted">{user?.email ?? ''}</p>
             </div>
           </div>
-          <div className="mt-1 flex gap-1">
-            <Link
-              to={settingsTo}
-              onClick={closeSidebar}
-              className="flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-2 hover:text-text"
-            >
-              <SettingsIcon className="h-4 w-4" aria-hidden="true" />
-              Configurações
-            </Link>
+          <div className={`mt-1 flex gap-1 ${area === 'client' ? 'justify-end' : ''}`}>
+            {area === 'admin' && (
+              <Link
+                to={settingsTo}
+                onClick={closeSidebar}
+                className="flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-2 hover:text-text"
+              >
+                <SettingsIcon className="h-4 w-4" aria-hidden="true" />
+                Configurações
+              </Link>
+            )}
             <button
               type="button"
               onClick={() => void handleLogout()}
