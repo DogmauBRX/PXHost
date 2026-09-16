@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import type { Terminal as XTerm } from '@xterm/xterm';
-import { Clock, RefreshCw } from 'lucide-react';
+import { Clock, RefreshCw, Settings2 } from 'lucide-react';
 import { getServer, getServerDiskUsage } from '@/features/servers/servers.api';
 import { useServerSocket } from '@/shared/realtime/useServerSocket';
 import { formatBytes } from '@/shared/format/datetime';
@@ -214,6 +215,22 @@ export function ConsolePage({ serverId }: { serverId: string }) {
           {CONN_LABEL[connectionState]}
         </span>
       </div>
+
+      {server?.publicAddress && (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-text-muted">
+          <span>
+            Endereço do servidor: <span className="font-mono font-medium text-text">{server.publicAddress}</span>
+          </span>
+          <Link
+            to="/client/servers/$serverId/variables"
+            params={{ serverId }}
+            className="inline-flex items-center gap-1 text-xs font-medium text-accent-strong hover:underline"
+          >
+            <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+            {server.customHostname ? 'Alterar endereço personalizado' : 'Escolher endereço personalizado'}
+          </Link>
+        </div>
+      )}
 
       <PowerControls state={displayState} permissions={permissions} onAction={sendPower} />
 
