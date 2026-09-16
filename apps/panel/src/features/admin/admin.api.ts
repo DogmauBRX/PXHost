@@ -199,6 +199,13 @@ export const createTemplateFromPreset = (input: CreateTemplateFromPresetInput) =
 export const duplicateTemplate = (id: string, name: string) =>
   apiFetch<AdminTemplate>(`/api/admin/eggs/${id}/duplicate`, { method: 'POST', body: JSON.stringify({ name }) });
 
+// Curates an already-existing template's Minecraft-version list with a
+// fresh live fetch (TemplatesService.refreshMinecraftVersions) — for
+// templates created before ever being curated (every prisma/seed.ts
+// default, in practice), so their Configurações tab starts showing a
+// dropdown instead of free text.
+export const refreshTemplateVersions = (id: string) => apiFetch<AdminTemplate>(`/api/admin/eggs/${id}/refresh-versions`, { method: 'POST' });
+
 // Never throws on a discovery miss — the wizard's own fallback is a free-text
 // field, so a network hiccup here degrades the suggestion list, never blocks
 // creating a template. See SoftwareDiscoveryService's own doc comment.

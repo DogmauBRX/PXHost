@@ -29,9 +29,9 @@ export class SoftwareDiscoveryService {
   async getVersions(kind: PresetKind): Promise<string[]> {
     switch (kind) {
       case 'paper':
-        return this.cached('paper:versions', () => this.fetchProjectVersions('https://api.papermc.io/v2/projects/paper'));
+        return this.cached('paper:versions', () => this.fetchPaperVersions());
       case 'purpur':
-        return this.cached('purpur:versions', () => this.fetchProjectVersions('https://api.purpurmc.org/v2/purpur'));
+        return this.cached('purpur:versions', () => this.fetchPurpurVersions());
       case 'fabric':
         return this.cached('fabric:versions', () => this.fetchFabricGameVersions());
       case 'vanilla':
@@ -47,7 +47,7 @@ export class SoftwareDiscoveryService {
   async getBuilds(kind: PresetKind, mcVersion: string): Promise<string[]> {
     switch (kind) {
       case 'paper':
-        return this.cached(`paper:builds:${mcVersion}`, () => this.fetchProjectBuilds('https://api.papermc.io/v2/projects/paper', mcVersion));
+        return this.cached(`paper:builds:${mcVersion}`, () => this.fetchPaperBuilds(mcVersion));
       case 'purpur':
         return this.cached(`purpur:builds:${mcVersion}`, () => this.fetchPurpurBuilds(mcVersion));
       case 'fabric':
@@ -97,18 +97,36 @@ export class SoftwareDiscoveryService {
     }
   }
 
-  // ---- Paper / Purpur (identical "/v2/<project>[/<version>]" shape) ----
+  // ---- Paper (migrated off the sunset api.papermc.io/v2 — found live
+  // 2026-09-16 returning {"ok":false,"error":"sunset"} for every call,
+  // meaning `getVersions('paper')`/`getBuilds('paper', ...)` had been
+  // silently degrading to `[]` this whole time, per this class's own
+  // "never throw" posture. fill.papermc.io/v3 is the real successor.) ----
 
-  private async fetchProjectVersions(baseUrl: string): Promise<string[]> {
-    const data = (await this.fetchJson(baseUrl)) as { versions?: unknown };
-    const versions = Array.isArray(data.versions) ? data.versions.filter((v): v is string => typeof v === 'string') : [];
-    return versions.reverse(); // API lists oldest-first; newest-first reads better as wizard suggestions
+  private async fetchPaperVersions(): Promise<string[]> {
+    // {"project":{...},"versions":{"1.21":["1.21.4","1.21.3",...],"1.20":[...],...}}
+    // — grouped by minor version, groups AND entries within a group are
+    // already newest-first, so flattening preserves that ordering.
+    const data = (await this.fetchJson('https://fill.papermc.io/v3/projects/paper')) as { versions?: unknown };
+    if (!data.versions || typeof data.versions !== 'object') return [];
+    return Object.values(data.versions as Record<string, unknown>)
+      .flatMap((group) => (Array.isArray(group) ? group : []))
+      .filter((v): v is string => typeof v === 'string');
   }
 
-  private async fetchProjectBuilds(baseUrl: string, mcVersion: string): Promise<string[]> {
-    const data = (await this.fetchJson(`${baseUrl}/versions/${encodeURIComponent(mcVersion)}`)) as { builds?: unknown };
-    const builds = Array.isArray(data.builds) ? data.builds.map((b) => String(b)) : [];
-    return builds.reverse();
+  private async fetchPaperBuilds(mcVersion: string): Promise<string[]> {
+    // [{"id":232,"time":...,"channel":"STABLE",...}, ...] — newest-first already.
+    const data = await this.fetchJson(`https://fill.papermc.io/v3/projects/paper/versions/${encodeURIComponent(mcVersion)}/builds`);
+    if (!Array.isArray(data)) return [];
+    return data.filter((b): b is { id: number } => typeof b?.id === 'number').map((b) => String(b.id));
+  }
+
+  // ---- Purpur (still on the original "/v2/purpur[/<version>]" API) ----
+
+  private async fetchPurpurVersions(): Promise<string[]> {
+    const data = (await this.fetchJson('https://api.purpurmc.org/v2/purpur')) as { versions?: unknown };
+    const versions = Array.isArray(data.versions) ? data.versions.filter((v): v is string => typeof v === 'string') : [];
+    return versions.reverse(); // API lists oldest-first; newest-first reads better as wizard suggestions
   }
 
   private async fetchPurpurBuilds(mcVersion: string): Promise<string[]> {

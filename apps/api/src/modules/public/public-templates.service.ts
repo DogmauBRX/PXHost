@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { RedisService } from '../../core/redis/redis.service';
+import { deriveVariableOptionShape, type VariableOptionKind } from '../servers/variable-rules';
 
 const CACHE_KEY = 'public:templates:v1';
 const CACHE_TTL_SECONDS = 60;
 
-export type PublicTemplateOptionKind = 'text' | 'integer' | 'boolean' | 'choice';
+export type PublicTemplateOptionKind = VariableOptionKind;
 
 export interface PublicTemplateOption {
   envVariable: string;
@@ -97,42 +98,11 @@ export class PublicTemplatesService {
         name: v.name,
         description: v.description,
         defaultValue: v.defaultValue,
-        ...deriveOptionShape(v.rules),
+        ...deriveVariableOptionShape(v.rules),
       })),
     }));
 
     await this.redis.client.set(CACHE_KEY, JSON.stringify(result), 'EX', CACHE_TTL_SECONDS).catch(() => undefined);
     return result;
   }
-}
-
-/**
- * Reads the exact same Laravel-style rule tokens `variable-rules.ts`
- * validates against (`required`, `integer`, `boolean`, `min:N`, `max:N`,
- * `in:a,b,c`) and turns them into a form-field shape. Unrecognized tokens
- * are ignored here too, mirroring that file's own "never brick a template
- * over a rule written for a future validator version" posture.
- */
-function deriveOptionShape(rules: string): Pick<PublicTemplateOption, 'kind' | 'required' | 'min' | 'max' | 'choices'> {
-  const tokens = rules.split('|').map((t) => t.trim()).filter(Boolean);
-  const required = tokens.includes('required');
-
-  const inToken = tokens.find((t) => t.startsWith('in:'));
-  if (inToken) {
-    return { kind: 'choice', required, choices: inToken.slice('in:'.length).split(',') };
-  }
-  if (tokens.includes('boolean')) {
-    return { kind: 'boolean', required };
-  }
-  if (tokens.includes('integer')) {
-    const min = tokens.find((t) => t.startsWith('min:'));
-    const max = tokens.find((t) => t.startsWith('max:'));
-    return {
-      kind: 'integer',
-      required,
-      min: min ? Number(min.slice('min:'.length)) : undefined,
-      max: max ? Number(max.slice('max:'.length)) : undefined,
-    };
-  }
-  return { kind: 'text', required };
 }

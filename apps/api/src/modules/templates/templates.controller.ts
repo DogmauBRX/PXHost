@@ -47,6 +47,12 @@ export class TemplatesController {
     return this.templates.duplicateTemplate(id, dto.name);
   }
 
+  /** Curates an already-existing template's Minecraft-version list with a fresh live fetch — see TemplatesService.refreshMinecraftVersions's own doc comment for why only the version field, not build/loader. */
+  @Post('eggs/:id/refresh-versions')
+  refreshVersions(@Param('id') id: string) {
+    return this.templates.refreshMinecraftVersions(id);
+  }
+
   @Get('templates/discover/:kind/versions')
   discoverVersions(@Param('kind') kind: string) {
     return this.discovery.getVersions(assertPresetKind(kind));

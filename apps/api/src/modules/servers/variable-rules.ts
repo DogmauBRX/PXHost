@@ -5,6 +5,52 @@
 // are ignored rather than rejected: a rule an admin wrote for a future
 // version of this validator should never brick every server using that
 // template in the meantime.
+
+export type VariableOptionKind = 'text' | 'integer' | 'boolean' | 'choice';
+
+export interface VariableOptionShape {
+  kind: VariableOptionKind;
+  required: boolean;
+  min?: number;
+  max?: number;
+  choices?: string[];
+}
+
+/**
+ * Reads the exact same Laravel-style rule tokens `validateVariableValue`
+ * below validates against (`required`, `integer`, `boolean`, `min:N`,
+ * `max:N`, `in:a,b,c`) and turns them into a form-field shape — one
+ * source of truth for "what kind of input does this rules string
+ * describe," shared by the pre-purchase checkout catalog
+ * (public-templates.service.ts) and the post-purchase Configurações tab
+ * (server-variables.service.ts), so the two can never disagree about
+ * whether a field renders as a dropdown. Unrecognized tokens are
+ * ignored here too, mirroring `validateVariableValue`'s own "never brick
+ * a template over a rule written for a future validator version" posture.
+ */
+export function deriveVariableOptionShape(rules: string): VariableOptionShape {
+  const tokens = rules.split('|').map((t) => t.trim()).filter(Boolean);
+  const required = tokens.includes('required');
+
+  const inToken = tokens.find((t) => t.startsWith('in:'));
+  if (inToken) {
+    return { kind: 'choice', required, choices: inToken.slice('in:'.length).split(',') };
+  }
+  if (tokens.includes('boolean')) {
+    return { kind: 'boolean', required };
+  }
+  if (tokens.includes('integer')) {
+    const min = tokens.find((t) => t.startsWith('min:'));
+    const max = tokens.find((t) => t.startsWith('max:'));
+    return {
+      kind: 'integer',
+      required,
+      min: min ? Number(min.slice('min:'.length)) : undefined,
+      max: max ? Number(max.slice('max:'.length)) : undefined,
+    };
+  }
+  return { kind: 'text', required };
+}
 export function validateVariableValue(value: string, rules: string): string | null {
   const tokens = rules.split('|').map((t) => t.trim()).filter(Boolean);
   const nullable = tokens.includes('nullable');

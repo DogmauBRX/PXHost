@@ -9,7 +9,8 @@ import {
   UpdateTemplateVariableDto,
 } from './dto/template.dto';
 import { PublicTemplatesService } from '../public/public-templates.service';
-import { SOFTWARE_PRESETS } from './software-presets';
+import { SoftwareDiscoveryService } from './software-discovery.service';
+import { SOFTWARE_PRESETS, type PresetKind } from './software-presets';
 
 @Injectable()
 export class TemplatesService {
@@ -21,6 +22,7 @@ export class TemplatesService {
     // unpublishing, deactivating, or editing a customer-facing variable —
     // invalidates it rather than making customers wait out the TTL.
     private readonly publicTemplates: PublicTemplatesService,
+    private readonly discovery: SoftwareDiscoveryService,
   ) {}
 
   // ---- groups ("nests") ----
@@ -258,6 +260,56 @@ export class TemplatesService {
         isUserViewable: dto.isUserViewable,
         isUserEditable: dto.isUserEditable,
         sortOrder: dto.sortOrder,
+      },
+    });
+    await this.publicTemplates.invalidateCache();
+    return updated;
+  }
+
+  /**
+   * Curates an EXISTING template's version variable with a fresh live
+   * list, the same `in:<list>` mechanism `createFromPreset`'s
+   * `withInList` writes at creation time — but usable any time after,
+   * for templates that were seeded/created before ever being curated
+   * (every `prisma/seed.ts`-seeded default template, in practice: their
+   * `MINECRAFT_VERSION` rules ship as plain `required|string|max:16`,
+   * so the Configurações tab shows free text instead of a dropdown until
+   * this runs at least once). Only the top-level Minecraft-version field
+   * is refreshed here — the build/loader field (Paper Build, Fabric
+   * Loader Version, etc.) is deliberately left alone, since a real value
+   * list for it depends on WHICH Minecraft version is picked
+   * (`SoftwareDiscoveryService.getBuilds` takes an `mcVersion` argument),
+   * which doesn't fit a single "refresh" action the way the wizard's own
+   * two-step version-then-build flow does.
+   */
+  async refreshMinecraftVersions(templateId: string) {
+    const template = await this.getTemplate(templateId);
+    if (!template.softwareKind || !(template.softwareKind in SOFTWARE_PRESETS)) {
+      throw new ConflictException('Este template não declara um softwareKind reconhecido — não há de onde descobrir versões automaticamente');
+    }
+    const softwareKind = template.softwareKind as PresetKind;
+
+    const versions = await this.discovery.getVersions(softwareKind);
+    if (versions.length === 0) {
+      throw new ConflictException('Não foi possível obter a lista de versões agora — tente novamente em instantes');
+    }
+
+    const versionVariable = SOFTWARE_PRESETS[softwareKind].versionVariable;
+    const variable = template.variables.find((v) => v.envVariable === versionVariable);
+    if (!variable) {
+      throw new NotFoundException(`Este template não tem uma variável ${versionVariable} para curar`);
+    }
+
+    const updated = await this.prisma.templateVariable.update({
+      where: { id: variable.id },
+      data: {
+        rules: withInList(variable.rules, versions),
+        // Keep the current default if it's still a real option; only
+        // fall back to the newest fetched version if it isn't (e.g. the
+        // very first curation of a template whose default was the
+        // free-text "latest" sentinel, which stops being valid the
+        // moment `rules` gains an `in:` list).
+        defaultValue: versions.includes(variable.defaultValue) ? variable.defaultValue : versions[0],
       },
     });
     await this.publicTemplates.invalidateCache();

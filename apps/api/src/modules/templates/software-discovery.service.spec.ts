@@ -33,10 +33,19 @@ describe('SoftwareDiscoveryService', () => {
     global.fetch = jest.fn();
   });
 
-  it('returns Paper versions newest-first from the project endpoint', async () => {
-    mockFetchOnce({ versions: ['1.20.6', '1.21.1', '1.21.4'] });
+  it('returns Paper versions newest-first, flattened from fill.papermc.io\'s per-minor-version grouping', async () => {
+    mockFetchOnce({ project: { id: 'paper' }, versions: { '1.21': ['1.21.4', '1.21.1'], '1.20': ['1.20.6'] } });
     const versions = await service.getVersions('paper');
     expect(versions).toEqual(['1.21.4', '1.21.1', '1.20.6']);
+  });
+
+  it('Paper builds map the fill.papermc.io build objects down to their numeric id, newest-first', async () => {
+    mockFetchOnce([
+      { id: 232, channel: 'STABLE' },
+      { id: 231, channel: 'STABLE' },
+    ]);
+    const builds = await service.getBuilds('paper', '1.21.4');
+    expect(builds).toEqual(['232', '231']);
   });
 
   it('degrades to [] — never throws — when the upstream API is down', async () => {
@@ -55,7 +64,7 @@ describe('SoftwareDiscoveryService', () => {
   });
 
   it('caches a successful result — a second call for the same kind never calls fetch again', async () => {
-    mockFetchOnce({ versions: ['1.21.4'] });
+    mockFetchOnce({ project: { id: 'paper' }, versions: { '1.21': ['1.21.4'] } });
     await service.getVersions('paper');
     await service.getVersions('paper');
     expect(global.fetch).toHaveBeenCalledTimes(1);

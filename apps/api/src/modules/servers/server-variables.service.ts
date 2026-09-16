@@ -5,7 +5,7 @@ import type { AccessActor } from '../authorization/server-access.service';
 import { AgentClient } from '../nodes/agent-client.service';
 import { AuditService } from '../audit/audit.service';
 import { ActivityService } from '../activity/activity.service';
-import { validateVariableValue } from './variable-rules';
+import { deriveVariableOptionShape, validateVariableValue, type VariableOptionKind } from './variable-rules';
 
 export interface ClientVariable {
   id: string;
@@ -16,6 +16,15 @@ export interface ClientVariable {
   defaultValue: string;
   rules: string;
   isEditable: boolean;
+  // Derived from `rules` (deriveVariableOptionShape) — lets the panel
+  // render a dropdown instead of free text whenever an admin has
+  // curated a value list (`in:a,b,c`, e.g. via the "criação rápida"
+  // wizard or TemplatesService.refreshMinecraftVersions), same shape the
+  // pre-purchase checkout catalog already exposes for the same reason.
+  kind: VariableOptionKind;
+  choices?: string[];
+  min?: number;
+  max?: number;
 }
 
 @Injectable()
@@ -53,6 +62,7 @@ export class ServerVariablesService {
       defaultValue: tv.defaultValue,
       rules: tv.rules,
       isEditable: tv.isUserEditable,
+      ...deriveVariableOptionShape(tv.rules),
     }));
   }
 

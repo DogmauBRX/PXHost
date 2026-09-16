@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, Package, Plus, Search } from 'lucide-react';
+import { Copy, Package, Plus, RefreshCw, Search } from 'lucide-react';
 import {
   addTemplateVariable,
   createTemplate,
@@ -8,6 +8,7 @@ import {
   duplicateTemplate,
   listTemplateGroups,
   listTemplates,
+  refreshTemplateVersions,
   removeTemplate,
   removeTemplateVariable,
   updateTemplate,
@@ -629,6 +630,21 @@ export function TemplatesPage() {
     }
   }
 
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  async function handleRefreshVersions(t: AdminTemplate) {
+    setRefreshingId(t.id);
+    setRefreshError(null);
+    try {
+      await refreshTemplateVersions(t.id);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'templates'] });
+    } catch (err) {
+      setRefreshError(err instanceof ApiError ? err.message : `Não foi possível atualizar as versões de "${t.name}".`);
+    } finally {
+      setRefreshingId(null);
+    }
+  }
+
   const [toggleError, setToggleError] = useState<string | null>(null);
   async function handleToggle(t: AdminTemplate, patch: { isActive?: boolean; isPublic?: boolean }) {
     setToggleError(null);
@@ -715,6 +731,7 @@ export function TemplatesPage() {
       {deleteError && <Alert className="mb-6">{deleteError}</Alert>}
       {duplicateError && <Alert className="mb-6">{duplicateError}</Alert>}
       {toggleError && <Alert className="mb-6">{toggleError}</Alert>}
+      {refreshError && <Alert className="mb-6" onDismiss={() => setRefreshError(null)}>{refreshError}</Alert>}
       {isError && <Alert className="mb-6">Não foi possível carregar os templates.</Alert>}
 
       {isLoading ? (
@@ -759,11 +776,22 @@ export function TemplatesPage() {
                       {t.softwareKind ? <Badge tone="ok">{SOFTWARE_LABEL[t.softwareKind]}</Badge> : <Badge tone="warn">não definido</Badge>}
                     </TD>
                     <TD>
-                      <div className="flex max-w-[220px] flex-wrap gap-1">
+                      <div className="flex max-w-[220px] flex-wrap items-center gap-1">
                         {versions.length > 0 ? (
                           versions.map((v) => <Badge key={v}>{v}</Badge>)
                         ) : (
-                          <span className="text-xs text-text-faint">—</span>
+                          <span className="text-xs text-text-faint">Texto livre</span>
+                        )}
+                        {t.softwareKind && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={refreshingId === t.id}
+                            onClick={() => void handleRefreshVersions(t)}
+                            title="Buscar versões reais disponíveis"
+                          >
+                            <RefreshCw className={`h-3.5 w-3.5 ${refreshingId === t.id ? 'animate-spin' : ''}`} aria-hidden="true" />
+                          </Button>
                         )}
                       </div>
                     </TD>

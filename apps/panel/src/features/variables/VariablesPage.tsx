@@ -5,7 +5,7 @@ import { listServerVariables, updateServerVariables } from './variables.api';
 import { updateServerHostname } from './hostname.api';
 import { getServer, getServerStats } from '@/features/servers/servers.api';
 import { ApiError } from '@/shared/api/client';
-import { Alert, Button, Field, Input, LoadingRow, PageHeader } from '@/ui/primitives';
+import { Alert, Button, Field, Input, LoadingRow, PageHeader, Select } from '@/ui/primitives';
 
 // Custom-hostname plan — kept separate from the zone the server actually
 // resolves under, which the panel never needs to know (the API composes
@@ -177,16 +177,36 @@ export function VariablesPage({ serverId }: { serverId: string }) {
         <p className="text-sm text-text-muted">Este servidor não tem variáveis configuráveis.</p>
       ) : (
         <div className="flex flex-col gap-4">
-          {variables.map((v) => (
-            <Field key={v.id} label={v.name} htmlFor={`var-${v.id}`} hint={v.description ?? undefined}>
-              <Input
-                id={`var-${v.id}`}
-                value={drafts[v.envVariable] ?? v.value}
-                disabled={!canEdit || !v.isEditable || running}
-                onChange={(e) => handleChange(v.envVariable, e.target.value)}
-              />
-            </Field>
-          ))}
+          {variables.map((v) => {
+            const currentValue = drafts[v.envVariable] ?? v.value;
+            return (
+              <Field key={v.id} label={v.name} htmlFor={`var-${v.id}`} hint={v.description ?? undefined}>
+                {v.kind === 'choice' && v.choices ? (
+                  <Select
+                    id={`var-${v.id}`}
+                    value={currentValue}
+                    disabled={!canEdit || !v.isEditable || running}
+                    onChange={(e) => handleChange(v.envVariable, e.target.value)}
+                  >
+                    {/* The stored value might predate this field being curated to a fixed list — keep it selectable rather than silently swapping it out from under the customer. */}
+                    {!v.choices.includes(currentValue) && <option value={currentValue}>{currentValue}</option>}
+                    {v.choices.map((choice) => (
+                      <option key={choice} value={choice}>
+                        {choice}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input
+                    id={`var-${v.id}`}
+                    value={currentValue}
+                    disabled={!canEdit || !v.isEditable || running}
+                    onChange={(e) => handleChange(v.envVariable, e.target.value)}
+                  />
+                )}
+              </Field>
+            );
+          })}
         </div>
       )}
     </>
