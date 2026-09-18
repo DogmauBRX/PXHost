@@ -173,42 +173,51 @@ export function VariablesPage({ serverId }: { serverId: string }) {
 
       <HostnameSettings serverId={serverId} canEdit={server?.permissions.includes('hostname.update') ?? false} />
 
-      {!variables || variables.length === 0 ? (
-        <p className="text-sm text-text-muted">Este servidor não tem variáveis configuráveis.</p>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {variables.map((v) => {
-            const currentValue = drafts[v.envVariable] ?? v.value;
-            return (
-              <Field key={v.id} label={v.name} htmlFor={`var-${v.id}`} hint={v.description ?? undefined}>
-                {v.kind === 'choice' && v.choices ? (
-                  <Select
-                    id={`var-${v.id}`}
-                    value={currentValue}
-                    disabled={!canEdit || !v.isEditable || running}
-                    onChange={(e) => handleChange(v.envVariable, e.target.value)}
-                  >
-                    {/* The stored value might predate this field being curated to a fixed list — keep it selectable rather than silently swapping it out from under the customer. */}
-                    {!v.choices.includes(currentValue) && <option value={currentValue}>{currentValue}</option>}
-                    {v.choices.map((choice) => (
-                      <option key={choice} value={choice}>
-                        {choice}
-                      </option>
-                    ))}
-                  </Select>
-                ) : (
-                  <Input
-                    id={`var-${v.id}`}
-                    value={currentValue}
-                    disabled={!canEdit || !v.isEditable || running}
-                    onChange={(e) => handleChange(v.envVariable, e.target.value)}
-                  />
-                )}
-              </Field>
-            );
-          })}
-        </div>
-      )}
+      {/* Non-editable variables (e.g. SERVER_MEMORY, set by the plan) are
+          never rendered here — a disabled field the customer can't act on
+          either way isn't useful in a settings form; it's plumbing, not a
+          setting. Still returned by the API (isUserViewable alone gates
+          that), just not shown on THIS screen. */}
+      {(() => {
+        const editableVariables = variables?.filter((v) => v.isEditable) ?? [];
+        if (editableVariables.length === 0) {
+          return <p className="text-sm text-text-muted">Este servidor não tem variáveis configuráveis.</p>;
+        }
+        return (
+          <div className="flex flex-col gap-4">
+            {editableVariables.map((v) => {
+              const currentValue = drafts[v.envVariable] ?? v.value;
+              return (
+                <Field key={v.id} label={v.name} htmlFor={`var-${v.id}`} hint={v.description ?? undefined}>
+                  {v.kind === 'choice' && v.choices ? (
+                    <Select
+                      id={`var-${v.id}`}
+                      value={currentValue}
+                      disabled={!canEdit || running}
+                      onChange={(e) => handleChange(v.envVariable, e.target.value)}
+                    >
+                      {/* The stored value might predate this field being curated to a fixed list — keep it selectable rather than silently swapping it out from under the customer. */}
+                      {!v.choices.includes(currentValue) && <option value={currentValue}>{currentValue}</option>}
+                      {v.choices.map((choice) => (
+                        <option key={choice} value={choice}>
+                          {choice}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input
+                      id={`var-${v.id}`}
+                      value={currentValue}
+                      disabled={!canEdit || running}
+                      onChange={(e) => handleChange(v.envVariable, e.target.value)}
+                    />
+                  )}
+                </Field>
+              );
+            })}
+          </div>
+        );
+      })()}
     </>
   );
 }
