@@ -15,7 +15,7 @@ import {
   type CreatePlanInput,
 } from './admin.api';
 import { ApiError } from '@/shared/api/client';
-import type { AdminPlan, PlanApplyResult, PlanDriftReport } from '@/shared/api/types';
+import type { AdminPlan, PlanApplyResult, PlanDriftReport, PlanOccupancy } from '@/shared/api/types';
 import { discountPercent, formatPrice, formatRange } from '@/shared/format/plan';
 import {
   Alert,
@@ -737,6 +737,103 @@ function PlanNodesPanel({ planId }: { planId: string }) {
   );
 }
 
+// ---- billing-period grouping ----
+
+// Matches CreatePlanDto's own @IsIn — the only 4 values Plan.billingPeriod
+// can ever hold (apps/api/src/modules/plans/dto/plan.dto.ts). Fixed
+// display order (shortest cycle first) rather than whatever order the API
+// happens to return plans in.
+const BILLING_PERIOD_ORDER = ['monthly', 'quarterly', 'semiannual', 'annual'] as const;
+const BILLING_PERIOD_LABEL: Record<string, string> = {
+  monthly: 'Mensal',
+  quarterly: 'Trimestral',
+  semiannual: 'Semestral',
+  annual: 'Anual',
+};
+
+function groupPlansByBillingPeriod(plans: AdminPlan[]): { period: string; plans: AdminPlan[] }[] {
+  const byPeriod = new Map<string, AdminPlan[]>();
+  for (const p of plans) {
+    const list = byPeriod.get(p.billingPeriod);
+    if (list) list.push(p);
+    else byPeriod.set(p.billingPeriod, [p]);
+  }
+  // Known periods first, in the fixed order above; anything unexpected
+  // (there shouldn't be any, given the DTO's @IsIn) still renders instead
+  // of silently disappearing, just at the end.
+  const known = BILLING_PERIOD_ORDER.filter((period) => byPeriod.has(period)).map((period) => ({ period, plans: byPeriod.get(period)! }));
+  const unknown = [...byPeriod.entries()].filter(([period]) => !(BILLING_PERIOD_ORDER as readonly string[]).includes(period)).map(([period, list]) => ({ period, plans: list }));
+  return [...known, ...unknown];
+}
+
+interface PlanCardProps {
+  plan: AdminPlan;
+  occ?: PlanOccupancy;
+  driftOpen: boolean;
+  nodesOpen: boolean;
+  onToggleDrift: () => void;
+  onToggleNodes: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+function PlanCard({ plan: p, occ, driftOpen, nodesOpen, onToggleDrift, onToggleNodes, onEdit, onDelete }: PlanCardProps) {
+  const players = formatRange(p.recommendedPlayersMin, p.recommendedPlayersMax);
+  const mods = formatRange(p.recommendedModsMin, p.recommendedModsMax);
+  // Capacity plan (auto-derivation) §6/§11 — `effectiveSlots` is
+  // min(capacidade real dos nodes, maxSlots) whenever occ is loaded; `null`
+  // means genuinely unlimited (no maxSlots AND every eligible node
+  // unlimited). The physical number is called out separately only when
+  // it's the TIGHTER of the two — i.e. the admin's commercial ceiling is
+  // unrealistic.
+  const physicalTighter = occ && p.maxSlots != null && occ.derivedSlots != null && occ.derivedSlots < p.maxSlots;
+  return (
+    <Card>
+      <CardBody>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium text-text">{p.name}</p>
+              {!p.isPublic && <Badge tone="neutral">privado</Badge>}
+              {p.isFeatured && <Badge tone="ok">{p.highlightLabel ?? 'destaque'}</Badge>}
+              {discountPercent(p.priceCents, p.compareAtPriceCents) != null && (
+                <Badge tone="warn">{discountPercent(p.priceCents, p.compareAtPriceCents)}% off</Badge>
+              )}
+              {occ && (
+                <Badge tone={occ.effectiveSlots != null && occ.occupied >= occ.effectiveSlots ? 'fail' : physicalTighter ? 'warn' : 'neutral'}>
+                  {occ.occupied} / {occ.effectiveSlots ?? '∞'} vaga{occ.effectiveSlots === 1 ? '' : 's'}
+                </Badge>
+              )}
+              {physicalTighter && <Badge tone="warn">capacidade física: {occ!.derivedSlots}</Badge>}
+            </div>
+            <p className="mt-0.5 font-mono text-xs text-text-faint">
+              {p.slug} · {p.memoryMb} MB RAM · {formatPrice(p.priceCents, p.currency)}/mês
+              {players && ` · 👥 ${players}`}
+              {mods && ` · 🧩 ${mods}`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={onEdit}>
+              Editar
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onToggleDrift}>
+              {driftOpen ? 'Ocultar' : 'Aplicar'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onToggleNodes}>
+              {nodesOpen ? 'Ocultar nodes' : 'Nodes'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onDelete}>
+              Excluir
+            </Button>
+          </div>
+        </div>
+        {driftOpen && <PlanDriftPanel planId={p.id} />}
+        {nodesOpen && <PlanNodesPanel planId={p.id} />}
+      </CardBody>
+    </Card>
+  );
+}
+
 // ---- page ----
 
 export function PlansPage() {
@@ -803,66 +900,27 @@ export function PlansPage() {
           }
         />
       ) : (
-        <div className="space-y-3">
-          {plans.map((p) => {
-            const players = formatRange(p.recommendedPlayersMin, p.recommendedPlayersMax);
-            const mods = formatRange(p.recommendedModsMin, p.recommendedModsMax);
-            const occ = occupancyById.get(p.id);
-            // Capacity plan (auto-derivation) §6/§11 — `effectiveSlots` is
-            // min(capacidade real dos nodes, maxSlots) whenever occ is
-            // loaded; `null` means genuinely unlimited (no maxSlots AND
-            // every eligible node unlimited). The physical number is
-            // called out separately only when it's the TIGHTER of the
-            // two — i.e. the admin's commercial ceiling is unrealistic.
-            const physicalTighter = occ && p.maxSlots != null && occ.derivedSlots != null && occ.derivedSlots < p.maxSlots;
-            return (
-              <Card key={p.id}>
-                <CardBody>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium text-text">{p.name}</p>
-                        {!p.isPublic && <Badge tone="neutral">privado</Badge>}
-                        {p.isFeatured && <Badge tone="ok">{p.highlightLabel ?? 'destaque'}</Badge>}
-                        {discountPercent(p.priceCents, p.compareAtPriceCents) != null && (
-                          <Badge tone="warn">{discountPercent(p.priceCents, p.compareAtPriceCents)}% off</Badge>
-                        )}
-                        {occ && (
-                          <Badge tone={occ.effectiveSlots != null && occ.occupied >= occ.effectiveSlots ? 'fail' : physicalTighter ? 'warn' : 'neutral'}>
-                            {occ.occupied} / {occ.effectiveSlots ?? '∞'} vaga{occ.effectiveSlots === 1 ? '' : 's'}
-                          </Badge>
-                        )}
-                        {physicalTighter && (
-                          <Badge tone="warn">capacidade física: {occ!.derivedSlots}</Badge>
-                        )}
-                      </div>
-                      <p className="mt-0.5 font-mono text-xs text-text-faint">
-                        {p.slug} · {p.memoryMb} MB RAM · {formatPrice(p.priceCents, p.currency)}/mês
-                        {players && ` · 👥 ${players}`}
-                        {mods && ` · 🧩 ${mods}`}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => setFormOpen({ mode: 'edit', plan: p })}>
-                        Editar
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDriftOpenId(driftOpenId === p.id ? null : p.id)}>
-                        {driftOpenId === p.id ? 'Ocultar' : 'Aplicar'}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setNodesOpenId(nodesOpenId === p.id ? null : p.id)}>
-                        {nodesOpenId === p.id ? 'Ocultar nodes' : 'Nodes'}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(p)}>
-                        Excluir
-                      </Button>
-                    </div>
-                  </div>
-                  {driftOpenId === p.id && <PlanDriftPanel planId={p.id} />}
-                  {nodesOpenId === p.id && <PlanNodesPanel planId={p.id} />}
-                </CardBody>
-              </Card>
-            );
-          })}
+        <div className="space-y-8">
+          {groupPlansByBillingPeriod(plans).map(({ period, plans: groupPlans }) => (
+            <div key={period}>
+              <h2 className="mb-3 text-xs font-semibold tracking-wide text-text-faint uppercase">{BILLING_PERIOD_LABEL[period] ?? period}</h2>
+              <div className="space-y-3">
+                {groupPlans.map((p) => (
+                  <PlanCard
+                    key={p.id}
+                    plan={p}
+                    occ={occupancyById.get(p.id)}
+                    driftOpen={driftOpenId === p.id}
+                    nodesOpen={nodesOpenId === p.id}
+                    onToggleDrift={() => setDriftOpenId(driftOpenId === p.id ? null : p.id)}
+                    onToggleNodes={() => setNodesOpenId(nodesOpenId === p.id ? null : p.id)}
+                    onEdit={() => setFormOpen({ mode: 'edit', plan: p })}
+                    onDelete={() => setDeleteTarget(p)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
