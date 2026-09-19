@@ -151,6 +151,26 @@ describe('Servers: create transaction + capacity race (e2e)', () => {
     expect(allocation!.isPrimary).toBe(true);
   });
 
+  it('omitting templateId leaves the server setup_pending, same path the customer checkout uses', async () => {
+    const nodeId = await makeNode('no-template', 1024, 3);
+    const planId = await makePlan(400);
+
+    const res = await authed('/api/admin/servers', {
+      method: 'POST',
+      payload: { ownerId, nodeId, planId, name: 'e2e no-template server' },
+    });
+    expect(res.statusCode).toBe(202);
+    const body = JSON.parse(res.body);
+    expect(body.status).toBe('setup_pending');
+
+    const server = await asAdmin((tx) => tx.server.findFirstOrThrow({ where: { id: body.id } }));
+    expect(server.templateId).toBeNull();
+    expect(server.dockerImage).toBeNull();
+    // The allocation is still reserved immediately, exactly like a templated create.
+    const allocation = await asAdmin((tx) => tx.allocation.findFirst({ where: { serverId: server.id } }));
+    expect(allocation).not.toBeNull();
+  });
+
   it('a plan/node/template still referenced by a server cannot be deleted (in-use guard)', async () => {
     const nodeId = await makeNode('inuse', 1024, 3);
     const planId = await makePlan(400);

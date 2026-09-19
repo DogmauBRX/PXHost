@@ -9,7 +9,6 @@ import {
   listAdminServers,
   listNodes,
   listPlans,
-  listTemplates,
   listUsers,
   listTransfers,
   simulateCapacity,
@@ -94,7 +93,6 @@ function SimulatePreview({ result, loading }: { result: CapacitySimulateResult |
 
 function CreateServerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { data: templates } = useQuery({ queryKey: ['admin', 'templates'], queryFn: () => listTemplates() });
   const { data: plans } = useQuery({ queryKey: ['admin', 'plans'], queryFn: listPlans });
   const { data: nodes } = useQuery({ queryKey: ['admin', 'nodes'], queryFn: listNodes });
 
@@ -105,7 +103,6 @@ function CreateServerModal({ open, onClose }: { open: boolean; onClose: () => vo
   });
 
   const [ownerId, setOwnerId] = useState('');
-  const [templateId, setTemplateId] = useState('');
   const [planId, setPlanId] = useState('');
   const [nodeId, setNodeId] = useState(AUTO_NODE);
   const [name, setName] = useState('');
@@ -119,7 +116,6 @@ function CreateServerModal({ open, onClose }: { open: boolean; onClose: () => vo
     if (!open) return;
     setOwnerId('');
     setOwnerQuery('');
-    setTemplateId('');
     setPlanId('');
     setNodeId(AUTO_NODE);
     setName('');
@@ -147,7 +143,7 @@ function CreateServerModal({ open, onClose }: { open: boolean; onClose: () => vo
     return () => clearTimeout(timer);
   }, [open, planId, nodeId]);
 
-  const canSubmit = ownerId && templateId && planId && name.trim();
+  const canSubmit = ownerId && planId && name.trim();
 
   async function handleCreate() {
     if (!canSubmit) return;
@@ -156,7 +152,6 @@ function CreateServerModal({ open, onClose }: { open: boolean; onClose: () => vo
     try {
       await createAdminServer({
         ownerId,
-        templateId,
         planId,
         name: name.trim(),
         nodeId: nodeId || undefined,
@@ -211,28 +206,16 @@ function CreateServerModal({ open, onClose }: { open: boolean; onClose: () => vo
           </Select>
         </Field>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Template" htmlFor="cs-template" required>
-            <Select id="cs-template" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-              <option value="">Selecione…</option>
-              {templates?.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Plano" htmlFor="cs-plan" required>
-            <Select id="cs-plan" value={planId} onChange={(e) => setPlanId(e.target.value)}>
-              <option value="">Selecione…</option>
-              {plans?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  [{BILLING_PERIOD_LABEL[p.billingPeriod] ?? p.billingPeriod}] {p.name} ({p.memoryMb} MB)
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
+        <Field label="Plano" htmlFor="cs-plan" required hint="O cliente escolhe o template/versão assim que o servidor estiver alocado no node.">
+          <Select id="cs-plan" value={planId} onChange={(e) => setPlanId(e.target.value)}>
+            <option value="">Selecione…</option>
+            {plans?.map((p) => (
+              <option key={p.id} value={p.id}>
+                [{BILLING_PERIOD_LABEL[p.billingPeriod] ?? p.billingPeriod}] {p.name} ({p.memoryMb} MB)
+              </option>
+            ))}
+          </Select>
+        </Field>
 
         <Field label="Node" htmlFor="cs-node" hint="Automático escolhe o node com mais folga usando o scheduler.">
           <Select id="cs-node" value={nodeId} onChange={(e) => setNodeId(e.target.value)}>

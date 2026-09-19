@@ -11,8 +11,12 @@ export class CreateServerDto {
   @IsUUID()
   nodeId?: string;
 
+  // Omitted ⇒ same 'setup_pending' path createSetupPending uses for
+  // checkout: the server reserves its node/plan slot but installs
+  // nothing until the owner picks a template via ServerSetupService.complete.
+  @IsOptional()
   @IsUUID()
-  templateId!: string;
+  templateId?: string;
 
   @IsUUID()
   planId!: string;

@@ -275,7 +275,9 @@ export interface CreateAdminServerInput {
   ownerId: string;
   // Capacity plan Fase 5: omitted ⇒ automatic node selection (NodeSchedulerService).
   nodeId?: string;
-  templateId: string;
+  // Omitted ⇒ server starts 'setup_pending' — the owner picks the
+  // template later via the post-purchase setup flow, once allocated.
+  templateId?: string;
   planId: string;
   name: string;
 }

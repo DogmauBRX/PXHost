@@ -126,24 +126,33 @@ export class ServersService {
     const owner = await this.prisma.user.findFirst({ where: { id: dto.ownerId, deletedAt: null } });
     if (!owner) throw new NotFoundException('Owner not found');
 
-    const template = await this.prisma.serverTemplate.findFirst({ where: { id: dto.templateId, deletedAt: null } });
-    if (!template) throw new NotFoundException('Template not found');
-    // `isActive` existed on the column since the template CRUD shipped but
-    // nothing ever read it — an admin toggling a template off believed
-    // (wrongly) that it stopped new servers from using it. Enforced here,
-    // once, for every creation path (admin panel and, soon, the customer
-    // checkout) rather than duplicated per-caller.
-    if (!template.isActive) throw new ConflictException('Template is not active');
+    // `dto.templateId` omitted ⇒ same 'setup_pending' path
+    // createSetupPending uses for checkout: the admin reserves the
+    // slot/allocation now, the owner picks software later via
+    // ServerSetupService.complete (see createOnNode's own doc comment
+    // for how `templateContext: null` flows through it).
+    let templateContext: { template: ServerTemplate; dockerImage: string } | null = null;
+    if (dto.templateId) {
+      const template = await this.prisma.serverTemplate.findFirst({ where: { id: dto.templateId, deletedAt: null } });
+      if (!template) throw new NotFoundException('Template not found');
+      // `isActive` existed on the column since the template CRUD shipped but
+      // nothing ever read it — an admin toggling a template off believed
+      // (wrongly) that it stopped new servers from using it. Enforced here,
+      // once, for every creation path (admin panel and, soon, the customer
+      // checkout) rather than duplicated per-caller.
+      if (!template.isActive) throw new ConflictException('Template is not active');
+
+      const images = template.dockerImages as Record<string, string>;
+      const [, dockerImage] = Object.entries(images)[0] ?? [undefined, undefined];
+      if (!dockerImage) throw new ConflictException('Template has no docker images configured');
+      templateContext = { template, dockerImage };
+    }
 
     const planExists = await this.prisma.plan.findFirst({ where: { id: dto.planId, deletedAt: null }, select: { id: true } });
     if (!planExists) throw new NotFoundException('Plan not found');
 
-    const images = template.dockerImages as Record<string, string>;
-    const [, dockerImage] = Object.entries(images)[0] ?? [undefined, undefined];
-    if (!dockerImage) throw new ConflictException('Template has no docker images configured');
-
     return this.withSchedulerRetry(dto.planId, dto.nodeId, (nodeId, candidates) =>
-      this.createOnNode(dto, nodeId, { template, dockerImage }, candidates),
+      this.createOnNode(dto, nodeId, templateContext, candidates),
     );
   }
 
