@@ -138,7 +138,7 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 			return fmt.Errorf("modpack: file %q: %w", f.Path, err)
 		}
 		dest := filepath.Join(stageDir, filepath.FromSlash(f.Path))
-		if err := os.MkdirAll(filepath.Dir(dest), 0750); err != nil {
+		if err := mkdirAllOwned(stageDir, filepath.Dir(dest), s.spec.UID); err != nil {
 			return err
 		}
 		if err := downloadVerified(ctx, f.Downloads[0], dest, f.FileSize, f.Hashes["sha1"], f.Hashes["sha512"]); err != nil {
@@ -301,12 +301,12 @@ func extractOverrides(files []*zip.File, root string, uid int) error {
 		}
 		dest := filepath.Join(root, filepath.FromSlash(rel))
 		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(dest, 0750); err != nil {
+			if err := mkdirAllOwned(root, dest, uid); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0750); err != nil {
+		if err := mkdirAllOwned(root, filepath.Dir(dest), uid); err != nil {
 			return err
 		}
 		r, err := f.Open()
@@ -403,6 +403,36 @@ func copyTree(source, dest string, uid int) error {
 func chownStagedPath(target string, uid int) error {
 	if err := os.Chown(target, uid, uid); err != nil && runtime.GOOS == "linux" {
 		return fmt.Errorf("chown staged path %q to uid %d: %w", target, uid, err)
+	}
+	return nil
+}
+
+// mkdirAllOwned creates dir and hands every component it had to create
+// beneath root to the server's own uid.
+//
+// os.MkdirAll leaves new directories owned by whoever the AGENT runs as,
+// and 0750 grants nothing at all to "other" — so the container, which
+// runs as a completely different uid, cannot even open them. Found live:
+// a modpack install left every downloaded FILE correctly chowned but the
+// mods/ directory holding them owned by the agent, and the server died on
+// boot with "java.nio.file.AccessDeniedException: /home/container/mods"
+// — an install that reported success and a server that could never start.
+func mkdirAllOwned(root, dir string, uid int) error {
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." || rel == "" || strings.HasPrefix(rel, "..") {
+		// Outside (or equal to) root — chown only what was asked for,
+		// never walk upward past the staging directory.
+		return chownStagedPath(dir, uid)
+	}
+	current := root
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		current = filepath.Join(current, part)
+		if err := chownStagedPath(current, uid); err != nil {
+			return err
+		}
 	}
 	return nil
 }
