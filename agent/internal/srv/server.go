@@ -467,6 +467,13 @@ func (s *Server) Reinstall(ctx context.Context, dc dockerFull, image, startupTmp
 		}
 		s.ContainerID = ""
 	}
+	// Also clear by NAME, which is deterministic ("gxhost-" + uuid). An
+	// earlier attempt that died between creating the container and
+	// recording its id leaves one behind that this Server no longer has a
+	// handle for — Docker would then refuse the create below with "name
+	// already in use", making the failure permanent instead of
+	// retryable. Same defence, and the same reasoning, as Create's.
+	_ = dc.RemoveContainer(ctx, s.ContainerName, true)
 
 	s.spec.Image = image
 	s.spec.StartupTmpl = startupTmpl

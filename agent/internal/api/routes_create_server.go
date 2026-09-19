@@ -175,7 +175,17 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runInstallAsync(target *srv.Server, image, entrypoint, script string) {
-	err := target.Install(s.bgCtx, s.dc, image, entrypoint, script, 15*time.Minute)
+	s.reportInstallOutcome(target, target.Install(s.bgCtx, s.dc, image, entrypoint, script, 15*time.Minute))
+}
+
+// reportInstallOutcome tells the panel how an install ended — nil for
+// success. Split out of runInstallAsync so the steps that run BEFORE the
+// install script (pulling the image, recreating the container during a
+// reinstall) can report a failure through the same callback: the server
+// is sitting at `installing` in the panel from the moment the 202 goes
+// out, and only this call moves it off that status. Failing silently
+// would leave it stuck on "Preparando" forever.
+func (s *Server) reportInstallOutcome(target *srv.Server, err error) {
 	successful := err == nil
 	errMsg := ""
 	if err != nil {
@@ -264,21 +274,30 @@ func (s *Server) handleReinstallServer(w http.ResponseWriter, r *http.Request) {
 	if req.ImageDigest != "" {
 		image = image + "@" + req.ImageDigest
 	}
-	if err := s.dc.PullPinned(r.Context(), image, req.ImageDigest); err != nil {
-		writeErrorResp(w, http.StatusBadGateway, "PULL_FAILED", err.Error())
-		return
-	}
-	if err := target.Reinstall(r.Context(), s.dc, image, req.StartupTemplate, req.StopSignal, envMap); err != nil {
-		writeErrorResp(w, http.StatusBadGateway, "REINSTALL_FAILED", err.Error())
-		return
-	}
 
 	writeJSONResp(w, http.StatusAccepted, map[string]any{"uuid": uuid, "state": "installing"})
 
-	// Same "202 now, real answer later" contract as create: everything
-	// below runs on s.bgCtx, and the panel learns the outcome from the
-	// install-completed callback.
-	go s.runInstallAsync(target, req.InstallImage, req.InstallEntry, req.InstallScript)
+	// EVERYTHING heavy happens after the response, on s.bgCtx — never on
+	// r.Context(). Found live: pulling the image inside the request blew
+	// past AgentClient's 45s timeout the first time a version change
+	// needed an image the node didn't have yet (a cold java_17). The
+	// panel aborted, which cancelled r.Context() mid-CreateContainer:
+	// Docker went ahead and created the container while the SDK returned
+	// a cancellation error, so the agent never recorded the id and ended
+	// up with a server whose container existed but was unknown to it —
+	// "has no container to start; call Create first" on the next action,
+	// with no way out except re-adopting at boot.
+	go func() {
+		if err := s.dc.PullPinned(s.bgCtx, image, req.ImageDigest); err != nil {
+			s.reportInstallOutcome(target, fmt.Errorf("pulling %s: %w", image, err))
+			return
+		}
+		if err := target.Reinstall(s.bgCtx, s.dc, image, req.StartupTemplate, req.StopSignal, envMap); err != nil {
+			s.reportInstallOutcome(target, err)
+			return
+		}
+		s.runInstallAsync(target, req.InstallImage, req.InstallEntry, req.InstallScript)
+	}()
 }
 
 func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
