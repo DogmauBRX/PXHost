@@ -132,6 +132,12 @@ function fetchOwned(tx: Prisma.TransactionClient, serverId: string) {
       plan: { select: PLAN_CLIENT_SELECT },
       allocations: { select: { ip: true, port: true, isPrimary: true } },
       publicRoute: { select: { publicPort: true, state: true, customHostname: true, gateway: { select: { publicHost: true } } } },
+      // Single row (never more — MINECRAFT_VERSION is declared at most
+      // once per template) feeding toClientServerSummary's
+      // `minecraftVersion` — the installed game version, not a technical
+      // field like SERVER_JARFILE the client-facing shape otherwise never
+      // surfaces.
+      variables: { where: { variable: { envVariable: 'MINECRAFT_VERSION' } }, select: { value: true }, take: 1 },
     },
   });
 }
@@ -242,6 +248,7 @@ export class ServerAccessService {
           template: { select: { id: true, name: true, softwareKind: true } },
           allocations: { select: { ip: true, port: true, isPrimary: true } },
           publicRoute: { select: { publicPort: true, state: true, customHostname: true, gateway: { select: { publicHost: true } } } },
+          variables: { where: { variable: { envVariable: 'MINECRAFT_VERSION' } }, select: { value: true }, take: 1 },
         },
       }),
     );

@@ -1,6 +1,7 @@
+import { useState, type MouseEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Gamepad2, MemoryStick, Server, Settings2 } from 'lucide-react';
+import { Check, Copy, Gamepad2, MemoryStick, Server, Settings2 } from 'lucide-react';
 import { listServers } from './servers.api';
 import { serverStatusLabel } from './status-labels';
 import { Alert, EmptyState, LoadingRow, StatusBadge } from '@/ui/primitives';
@@ -25,6 +26,27 @@ const POWER_DOT: Record<string, string> = {
 
 export function ServerList({ limit }: { limit?: number } = {}) {
   const { data, isLoading, isError } = useQuery({ queryKey: ['servers'], queryFn: listServers, refetchInterval: 15_000 });
+  // Tracks which card's address was just copied, not a per-card boolean —
+  // one shared piece of state is enough since only one click can ever be
+  // "the most recent" at a time, and it self-clears so the icon doesn't
+  // stay a checkmark forever.
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  async function copyAddress(e: MouseEvent, serverId: string, address: string) {
+    // Every card is itself a <Link> — without this the click would also
+    // navigate to the server's own page instead of just copying.
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopiedId(serverId);
+      setTimeout(() => setCopiedId((id) => (id === serverId ? null : id)), 2000);
+    } catch {
+      // Clipboard access can fail (permissions, insecure context) — the
+      // address is already shown as plain selectable text, so this is a
+      // silent no-op rather than an error the user can't act on.
+    }
+  }
 
   if (isLoading) return <LoadingRow label="Carregando seus servidores…" />;
   if (isError) return <Alert>Não foi possível carregar seus servidores.</Alert>;
@@ -73,14 +95,32 @@ export function ServerList({ limit }: { limit?: number } = {}) {
               </div>
             ) : (
               (s.template || displayAddress) && (
-                <div className="flex items-center gap-3 text-xs text-text-muted">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-text-muted">
                   {s.template && (
                     <span className="inline-flex items-center gap-1.5">
                       <Gamepad2 className="h-3.5 w-3.5" aria-hidden="true" />
                       {s.template.name}
+                      {s.minecraftVersion && s.minecraftVersion !== 'latest' && <span>{s.minecraftVersion}</span>}
                     </span>
                   )}
-                  {displayAddress && <span className="font-mono">{displayAddress}</span>}
+                  {displayAddress && (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="font-mono">{displayAddress}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => void copyAddress(e, s.id, displayAddress)}
+                        aria-label="Copiar endereço"
+                        title="Copiar endereço"
+                        className="rounded p-0.5 text-text-faint transition-colors hover:bg-surface-2 hover:text-text"
+                      >
+                        {copiedId === s.id ? (
+                          <Check className="h-3.5 w-3.5 text-ok" aria-hidden="true" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                      </button>
+                    </span>
+                  )}
                 </div>
               )
             )}

@@ -19,6 +19,11 @@ interface ServerWithTemplate {
   // chose, or null — separate from `publicAddress` below, which is the
   // fully-composed, display-ready string.
   publicRoute?: { publicPort: number; state: string; customHostname: string | null; gateway: { publicHost: string } } | null;
+  // The MINECRAFT_VERSION row alone (ServerAccessService's include
+  // already filters to just it) — absent entirely for a template that
+  // never declared that variable, which `minecraftVersion` below turns
+  // into null rather than a confusing empty array on the response.
+  variables?: { value: string }[];
   [key: string]: unknown;
 }
 
@@ -40,7 +45,8 @@ interface ServerWithTemplate {
  * keep.
  */
 export function toClientServerSummary<T extends ServerWithTemplate>(row: T, zone?: string | null, dnsAutomationActive = false) {
-  const { publicRoute, ...rest } = row;
+  const { publicRoute, variables, ...rest } = row;
+  const minecraftVersion = variables?.[0]?.value ?? null;
   const customHostname = publicRoute?.customHostname ?? null;
   let publicAddress: string | null = null;
   if (publicRoute && publicRoute.state === 'active') {
@@ -51,7 +57,7 @@ export function toClientServerSummary<T extends ServerWithTemplate>(row: T, zone
       publicAddress = derivePublicAddress(publicRoute.gateway.publicHost, row.shortId, publicRoute.publicPort, zone);
     }
   }
-  return { ...rest, software: describeSoftware(row.template?.softwareKind ?? null), publicAddress, customHostname };
+  return { ...rest, software: describeSoftware(row.template?.softwareKind ?? null), publicAddress, customHostname, minecraftVersion };
 }
 
 export function toClientServerDetail<T extends ServerWithTemplate>(

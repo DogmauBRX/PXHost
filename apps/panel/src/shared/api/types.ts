@@ -107,6 +107,9 @@ export interface ServerSummary {
   // fully-composed, display-ready string — this is what pre-fills the
   // Configurações tab's input.
   customHostname: string | null;
+  // The installed MINECRAFT_VERSION value, or null when the template
+  // never declared that variable (or nothing has resolved it yet).
+  minecraftVersion: string | null;
 }
 
 export interface ServerDetail extends ServerSummary {
