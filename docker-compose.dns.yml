@@ -1,0 +1,71 @@
+# GXhost's own authoritative DNS — STANDALONE deployment, for a
+# nameserver that is NOT the same host as the rest of the stack (e.g.
+# ns2.gxhost.com.br on a second VPS/location). See docs/DNS-POWERDNS.md
+# for the full runbook (Registro.br delegation, glue records, zone
+# transfer between ns1/ns2, testing, backup/restore).
+#
+# ns1 normally runs as the `pdns` service already defined in
+# docker-compose.prod.yml (sharing that VPS's own Postgres) — use THIS
+# file instead only for a nameserver on its own separate host, which is
+# why it brings its own dedicated Postgres rather than reaching across
+# the network to ns1's.
+#
+# First boot on this host:
+#   docker compose -f docker-compose.dns.yml up -d postgres
+#   # wait for it to report healthy, then load PowerDNS's own schema —
+#   # see docs/DNS-POWERDNS.md "Inicializar o schema do PowerDNS".
+#   docker compose -f docker-compose.dns.yml up -d pdns
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pdns
+      POSTGRES_PASSWORD: ${PDNS_POSTGRES_PASSWORD}
+      POSTGRES_DB: pdns
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdns"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - gxhost_pdns_data:/var/lib/postgresql/data
+
+  pdns:
+    image: powerdns/pdns-auth-49:latest
+    restart: unless-stopped
+    # No `environment:` here at all — this image's own startup wrapper
+    # only ever reads ONE env var (PDNS_AUTH_API_KEY, to auto-generate a
+    # webserver+api config block); every other PDNS_* env var is silently
+    # ignored (found live, with a local throwaway container, before ever
+    # deploying this file — see docker-compose.prod.yml's `pdns` service
+    # for the full explanation). Real settings go through `command:`
+    # below instead. Leaving PDNS_AUTH_API_KEY unset here is what
+    # actually keeps the webserver/API off — this nameserver only ever
+    # ANSWERS queries and receives zone transfers from ns1; nothing on
+    # GXhost's own API ever calls a secondary's REST API, so there's
+    # nothing to expose a second API key for.
+    command:
+      - --launch=gpgsql
+      - --gpgsql-host=postgres
+      - --gpgsql-dbname=pdns
+      - --gpgsql-user=pdns
+      - --gpgsql-password=${PDNS_POSTGRES_PASSWORD}
+      # Same reasoning as docker-compose.prod.yml's `pdns` service: the
+      # image's baked-in default pdns.conf is pre-configured for its own
+      # bundled gsqlite3 backend, and --launch=gpgsql above leaves two
+      # gsqlite3-only settings in that file unrecognized.
+      - --ignore-unknown-settings=gsqlite3-dnssec,gsqlite3-database
+      # AXFR from ns1 only — set to ns1's real public IP before starting.
+      - --allow-axfr-ips=${PDNS_NS1_PUBLIC_IP}
+      - --default-soa-content=@ hostmaster.gxhost.com.br 0 10800 3600 604800 3600
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  gxhost_pdns_data:

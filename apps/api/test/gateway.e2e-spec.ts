@@ -65,7 +65,7 @@ class FakeDnsProvider implements DnsProvider {
   }
 
   async isHostnameAvailable(hostname: string): Promise<boolean> {
-    if (this.isHostnameAvailableShouldThrow) throw new Error('fake cloudflare outage');
+    if (this.isHostnameAvailableShouldThrow) throw new Error('fake DNS provider outage');
     return !this.unavailableHostnames.has(hostname);
   }
 
@@ -376,9 +376,10 @@ describe('Public-exposure gateway (e2e)', () => {
 
     const fqdn = 'survival.gw-e2e-test.local';
     // target must be the hostname itself, never the gateway's raw IP —
-    // Cloudflare (and the SRV spec) rejects a literal address there
-    // ("SRV target must be a hostname"); the same fqdn is what the
-    // address-record assertion right below resolves to that IP.
+    // the DNS spec (and real providers like PowerDNS/Cloudflare) rejects
+    // a literal address there ("SRV target must be a hostname"); the
+    // same fqdn is what the address-record assertion right below
+    // resolves to that IP.
     expect(fakeDns.srvEnsured).toContainEqual(expect.objectContaining({ hostname: fqdn, target: fqdn }));
     expect(fakeDns.addressEnsured).toContainEqual(expect.objectContaining({ hostname: fqdn, ip: '203.0.113.50' }));
 
@@ -456,7 +457,7 @@ describe('Public-exposure gateway (e2e)', () => {
     await asAdmin((tx) => tx.server.delete({ where: { id: serverId } }));
   });
 
-  it('a live-availability check failure fails OPEN — the save still succeeds despite a simulated Cloudflare outage', async () => {
+  it('a live-availability check failure fails OPEN — the save still succeeds despite a simulated DNS provider outage', async () => {
     const nodeId = await makeNode('hostname-failopen', '10.10.9.15', 25674);
     const planId = await makePlan(400);
     const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'gw-e2e hostname failopen' } });

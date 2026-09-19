@@ -187,11 +187,37 @@ export const envSchema = z.object({
   // domain required to use this feature at all.
   PUBLIC_GATEWAY_HOSTNAME_ZONE: optionalSecret(),
   // Which DnsProvider GatewayModule binds — 'none' (default) never
-  // touches DNS; 'cloudflare' additionally requires the two vars below.
-  // See docs/PUBLIC-EXPOSURE.md §"SRV opcional" before turning this on.
-  PUBLIC_GATEWAY_DNS_PROVIDER: z.enum(['none', 'cloudflare']).default('none'),
+  // touches DNS; 'powerdns' additionally requires the three vars below.
+  // See docs/DNS-POWERDNS.md before turning this on. (Previously also
+  // had a 'cloudflare' option — removed: game-server DNS now runs on
+  // GXhost's own PowerDNS nameservers instead of a third-party provider,
+  // per docs/DNS-POWERDNS.md's own reasoning. `gxhost.com.br` itself
+  // — site/painel/api.gxhost.com.br — is unrelated to this var entirely
+  // and can stay on whatever DNS host it already uses.)
+  PUBLIC_GATEWAY_DNS_PROVIDER: z.enum(['none', 'powerdns']).default('none'),
+  // The zone this platform's own PowerDNS is authoritative for (e.g.
+  // "mc.gxhost.com.br") — the SAME value as PUBLIC_GATEWAY_HOSTNAME_ZONE
+  // above by convention (a server's hostname must live inside the zone
+  // PowerDNS actually manages), reused rather than duplicated: PowerDNS
+  // has no separate "zone ID" concept the way Cloudflare did.
+  //
+  // Base URL of this platform's own PowerDNS Authoritative Server's REST
+  // API (e.g. "http://10.10.0.1:8081") — reachable only over the private
+  // network/WireGuard, never the public internet (see
+  // docs/DNS-POWERDNS.md's own security section).
+  PUBLIC_GATEWAY_DNS_API_URL: optionalUrl(),
+  // The API key PowerDNS's `webserver-password`/`api-key` config expects
+  // in the `X-API-Key` header. Kept under the SAME var name the removed
+  // Cloudflare provider used (both are just "the current DNS provider's
+  // credential") rather than renamed, so an existing deployment's env
+  // file needs one value swapped, not a new key added.
   PUBLIC_GATEWAY_DNS_API_TOKEN: optionalSecret(),
-  PUBLIC_GATEWAY_DNS_ZONE_ID: optionalSecret(),
+  // PowerDNS's own server identifier in its REST API path
+  // (`/api/v1/servers/{id}/...`) — virtually always the literal string
+  // "localhost" (PowerDNS's own internal name for "the local instance
+  // answering this API call", NOT a hostname to connect to). Optional:
+  // every real deployment uses the default.
+  PUBLIC_GATEWAY_DNS_SERVER_ID: optionalSecret(),
 });
 
 export type Env = z.infer<typeof envSchema>;

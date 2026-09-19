@@ -111,6 +111,73 @@ services:
       GATEWAY_LISTEN_PORT: "9443"
       GATEWAY_NGINX_CONF_PATH: /etc/nginx/gxhost-routes.conf
 
+  # GXhost's own authoritative DNS (docs/DNS-POWERDNS.md) — replaces
+  # depending on Cloudflare/etc. for game-server hostnames. Optional,
+  # same posture as `gateway` above: a deployment that never sets
+  # PUBLIC_GATEWAY_DNS_PROVIDER=powerdns can leave this whole service out
+  # of `docker compose up` with zero effect on anything else (DnsProvider
+  # falls back to NoneDnsProvider). This entry is for running ns1 on the
+  # SAME VPS as the rest of the stack — ns2 (a genuinely separate host,
+  # never the same physical/virtual machine as ns1) uses the standalone
+  # `docker-compose.dns.yml` instead, which brings its own Postgres
+  # rather than reaching across hosts for this one.
+  #
+  # Port 53 (tcp+udp) is the one genuinely public port here — every
+  # recursive resolver on the internet needs to reach it for
+  # mc.gxhost.com.br to resolve at all. Port 8081 (the REST API) must
+  # NEVER be reachable from the public internet — see this service's own
+  # `--webserver-allow-from` below and docs/DNS-POWERDNS.md's security
+  # section for what actually enforces that on top of this.
+  pdns:
+    image: powerdns/pdns-auth-49:latest
+    restart: unless-stopped
+    environment:
+      # The ONLY setting this image's own startup wrapper
+      # (/usr/local/sbin/pdns_server-startup) actually reads from the
+      # environment — it auto-generates the webserver+api+api-key config
+      # block from this one value. Found live, with a local throwaway
+      # container, BEFORE ever deploying this file: every other PDNS_*
+      # env var this block used to set (PDNS_launch, PDNS_gpgsql_*,
+      # PDNS_api, PDNS_webserver, PDNS_webserver_address/port) was
+      # silently ignored — this image has no generic PDNS_<setting>
+      # environment mechanism at all, unlike some other PowerDNS images.
+      # Real settings go through `command:` below (plain pdns_server CLI
+      # args, which this image's entrypoint forwards verbatim).
+      PDNS_AUTH_API_KEY: ${PUBLIC_GATEWAY_DNS_API_TOKEN}
+    command:
+      - --launch=gpgsql
+      - --gpgsql-host=postgres
+      - --gpgsql-dbname=pdns
+      - --gpgsql-user=gxhost
+      - --gpgsql-password=${POSTGRES_PASSWORD}
+      # The image ships a baked-in default pdns.conf pre-configured for
+      # ITS OWN bundled gsqlite3 backend; --launch above replaces the
+      # active backend with gpgsql, but the two gsqlite3-only settings
+      # left over in that same file become unknown settings the instant
+      # gsqlite3 itself isn't loaded — pdns_server refuses to start on an
+      # unknown setting unless told to ignore it.
+      - --ignore-unknown-settings=gsqlite3-dnssec,gsqlite3-database
+      # Only the WireGuard subnet (where the API container — this app's
+      # own `api`/`worker` — actually calls from) and loopback may reach
+      # the webserver/API port, regardless of what's published below.
+      # This OVERRIDES PDNS_AUTH_API_KEY's own auto-generated
+      # `webserver-allow-from=0.0.0.0/0` — command-line settings always
+      # win over config-file ones, and this is later in argv than that
+      # auto-generated file.
+      - --webserver-allow-from=127.0.0.1,10.10.0.0/24
+      - --default-soa-content=@ hostmaster.gxhost.com.br 0 10800 3600 604800 3600
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      # Deliberately NOT published to 0.0.0.0 — only reachable over the
+      # compose network (this VPS's own api/worker) or, if ns1 and the
+      # app VPS are ever split apart, bind this to the WireGuard
+      # interface's own address instead (e.g. "10.10.0.1:8081:8081").
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped

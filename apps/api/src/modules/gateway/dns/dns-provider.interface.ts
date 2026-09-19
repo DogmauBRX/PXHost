@@ -28,6 +28,6 @@ export interface DnsProvider {
   /** Best-effort A/AAAA automation for a custom hostname — same "never blocks a route's state" posture as ensureSrv. */
   ensureAddressRecord(input: AddressRecordInput): Promise<void>;
   removeAddressRecord(hostname: string): Promise<void>;
-  /** Live conflict check for a candidate hostname, on top of the static reserved-word list (hostname-policy.ts). MUST fail OPEN (resolve true) on any network/API error — an unrelated Cloudflare outage must never block a customer's save. */
+  /** Live conflict check for a candidate hostname, on top of the static reserved-word list (hostname-policy.ts). MUST fail OPEN (resolve true) on any network/API error — an unrelated DNS provider outage must never block a customer's save. */
   isHostnameAvailable(hostname: string): Promise<boolean>;
 }

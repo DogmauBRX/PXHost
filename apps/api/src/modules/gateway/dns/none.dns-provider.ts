@@ -5,7 +5,7 @@ import type { AddressRecordInput, DnsProvider, SrvRecordInput } from './dns-prov
  * Default `DnsProvider` — never touches DNS, matching §16's "não altere
  * DNS automaticamente em produção sem deixar isso claramente
  * configurável." Bound whenever `PUBLIC_GATEWAY_DNS_PROVIDER` is unset
- * or anything other than `'cloudflare'` (see `gateway.module.ts`'s
+ * or anything other than `'powerdns'` (see `gateway.module.ts`'s
  * factory) — a customer's public address then falls back to
  * `gateway.publicHost:port` (public-address.ts), with no SRV record and
  * no wildcard hostname requirement at all.

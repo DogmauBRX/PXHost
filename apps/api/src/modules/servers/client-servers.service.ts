@@ -85,7 +85,7 @@ export class ClientServersService {
   async list(userId: string) {
     const servers = await this.access.listAccessible(userId);
     const zone = this.config.get<string>('PUBLIC_GATEWAY_HOSTNAME_ZONE');
-    const dnsAutomationActive = this.config.get<string>('PUBLIC_GATEWAY_DNS_PROVIDER') === 'cloudflare';
+    const dnsAutomationActive = this.config.get<string>('PUBLIC_GATEWAY_DNS_PROVIDER') === 'powerdns';
     return servers.map((s) => toClientServerSummary(s, zone, dnsAutomationActive));
   }
 
@@ -100,7 +100,7 @@ export class ClientServersService {
     const allKeys = await this.permissionCatalog.keys();
     const permissions = allKeys.filter((key) => can(key));
     const zone = this.config.get<string>('PUBLIC_GATEWAY_HOSTNAME_ZONE');
-    const dnsAutomationActive = this.config.get<string>('PUBLIC_GATEWAY_DNS_PROVIDER') === 'cloudflare';
+    const dnsAutomationActive = this.config.get<string>('PUBLIC_GATEWAY_DNS_PROVIDER') === 'powerdns';
     return toClientServerDetail(server, role, permissions, zone, dnsAutomationActive);
   }
 

@@ -223,8 +223,8 @@ export class GatewayService {
       if (!available) throw new ConflictException('Este endereço já está em uso');
     } catch (err) {
       if (err instanceof ConflictException) throw err;
-      // Live-check failure (network/API) fails OPEN — an unrelated
-      // Cloudflare outage must never block a customer's save. The
+      // Live-check failure (network/API) fails OPEN — an unrelated DNS
+      // provider outage must never block a customer's save. The
       // reserved-word list (checked by the caller) plus the DB's own
       // unique constraint below are the real backstops.
       this.logger.warn(`isHostnameAvailable failed for ${fqdn}, failing open: ${(err as Error).message}`);
@@ -427,7 +427,7 @@ export class GatewayService {
   /**
    * Address record FIRST, then SRV — not just ordering for its own sake.
    * An SRV record's `target` must itself be a hostname per the DNS spec
-   * (Cloudflare enforces this: a literal IP there fails outright with
+   * (a real provider enforces this: a literal IP there fails outright with
    * "SRV target must be a hostname", found live — every route on a
    * fresh gateway retried and failed this every ~30s, forever, and a
    * bare `return false` in the old SRV-first ordering meant the address
