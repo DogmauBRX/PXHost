@@ -62,9 +62,23 @@ describe('escolha da imagem Java por versão do Minecraft', () => {
       expect(pickDockerImage(imagens, '26.3')).toBe('ghcr.io/pterodactyl/yolks:java_25');
     });
 
-    it('versão desconhecida cai na primeira imagem, sem inventar', () => {
-      expect(pickDockerImage(imagens, 'latest')).toBe('ghcr.io/pterodactyl/yolks:java_8');
-      expect(pickDockerImage(imagens, undefined)).toBe('ghcr.io/pterodactyl/yolks:java_8');
+    // "latest" é o valor PADRÃO de MINECRAFT_VERSION nos presets e quer
+    // dizer a versão mais nova — resolver para a JRE mais antiga do mapa
+    // (Java 8, que ordena primeiro) quebraria praticamente todo servidor
+    // moderno. Foi o que a primeira versão desta função fazia.
+    it('versão desconhecida cai na imagem MAIS NOVA, nunca na primeira', () => {
+      expect(pickDockerImage(imagens, 'latest')).toBe('ghcr.io/pterodactyl/yolks:java_25');
+      expect(pickDockerImage(imagens, undefined)).toBe('ghcr.io/pterodactyl/yolks:java_25');
+      expect(pickDockerImage(imagens, '25w14a')).toBe('ghcr.io/pterodactyl/yolks:java_25');
+    });
+
+    it('a imagem mais nova é achada pelo número, não pela ordem do objeto', () => {
+      const forasDeOrdem = {
+        'Java 25': 'ghcr.io/pterodactyl/yolks:java_25',
+        'Java 8': 'ghcr.io/pterodactyl/yolks:java_8',
+        'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
+      };
+      expect(pickDockerImage(forasDeOrdem, 'latest')).toBe('ghcr.io/pterodactyl/yolks:java_25');
     });
 
     // Todo template que já existe no banco tem uma imagem só, e um admin

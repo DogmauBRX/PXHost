@@ -21,8 +21,10 @@
 //     "com sucesso" e nunca subia.
 //
 // Uso:
-//   pnpm --dir apps/api run sync:preset-templates            # simulação — só imprime o que MUDARIA
-//   pnpm --dir apps/api run sync:preset-templates -- --apply # grava
+//   pnpm --dir apps/api run sync:preset-templates                      # simulação — só imprime o que MUDARIA
+//   pnpm --dir apps/api run sync:preset-templates -- --apply           # grava
+//   pnpm --dir apps/api run sync:preset-templates -- --images          # simula incluindo docker_images
+//   pnpm --dir apps/api run sync:preset-templates -- --images --apply  # grava incluindo docker_images
 //
 // Diferente de `cleanup-test-plans.ts`, este script PODE rodar contra
 // produção — é justamente lá que a correção precisa chegar. As proteções
@@ -33,9 +35,17 @@
 //      software_kind, ou com um kind fora da lista) nunca é tocado.
 //   3. Campo a campo: só grava o que realmente difere do preset, e imprime
 //      cada diferença ANTES de gravar. Rodar duas vezes é inofensivo.
-//   4. Nunca toca em `docker_images`. Essa é a coluna que um admin tem
-//      motivo legítimo para customizar (imagem/versão de Java por node);
-//      uma divergência aqui é apenas REPORTADA, para você decidir.
+//   4. `docker_images` só é gravado sob `--images`, nunca por padrão.
+//      Essa é a coluna que um admin tem motivo legítimo para customizar
+//      (imagem/versão de Java por node), então uma divergência é apenas
+//      REPORTADA a menos que você peça explicitamente. A flag existe
+//      porque a escolha automática de Java por versão do Minecraft
+//      (pickDockerImage) só atua em template com MAIS DE UMA imagem: um
+//      template de imagem única é tratado como escolha explícita do
+//      admin e respeitado como está. Todo template semeado antes dessa
+//      mudança tem uma imagem só, e sem `--images` continuaria assim —
+//      com um modpack de 1.20.1 caindo na JRE mais nova e morrendo ao
+//      carregar os mods.
 //   5. Ao final, lista os servidores que usam esses templates. Corrigir o
 //      template NÃO conserta um servidor já instalado: os arquivos em
 //      disco dele continuam sendo o resultado do script antigo. Esses
@@ -56,7 +66,9 @@ function short(value: string): string {
 
 async function main(): Promise<void> {
   const apply = process.argv.includes('--apply');
-  console.log(apply ? '=== APLICANDO (gravando no banco) ===\n' : '=== SIMULAÇÃO — nada será gravado (use -- --apply para gravar) ===\n');
+  const syncImages = process.argv.includes('--images');
+  console.log(apply ? '=== APLICANDO (gravando no banco) ===' : '=== SIMULAÇÃO — nada será gravado (use -- --apply para gravar) ===');
+  console.log(syncImages ? '=== docker_images INCLUÍDO (--images) ===\n' : '=== docker_images preservado (use -- --images para sincronizar também) ===\n');
 
   let changedCount = 0;
 
@@ -84,17 +96,40 @@ async function main(): Promise<void> {
     for (const template of templates) {
       const differing = SYNCED_FIELDS.filter((f) => template[f] !== preset[f]);
 
-      // docker_images é só reportado, nunca gravado (proteção 4 acima).
+      // docker_images só é gravado sob --images, nunca por padrão
+      // (proteção 4 acima). Sem a flag, uma divergência é apenas
+      // reportada para você decidir.
       const presetImages = JSON.stringify(preset.dockerImages);
       const currentImages = JSON.stringify(template.dockerImages);
-      if (presetImages !== currentImages) {
-        console.log(`[${kind}] "${template.name}" ⚠ docker_images difere do preset (NÃO alterado — decida você):`);
+      const imagesDiffer = presetImages !== currentImages;
+      if (imagesDiffer) {
+        const sufixo = syncImages ? '→ SERÁ atualizado (--images)' : '(NÃO alterado — use --images para sincronizar)';
+        console.log(`[${kind}] "${template.name}" ⚠ docker_images difere do preset ${sufixo}:`);
         console.log(`        no banco: ${currentImages}`);
         console.log(`        no preset: ${presetImages}`);
+        // Uma imagem só significa que a seleção por versão de Java fica
+        // inativa para esse template: pickDockerImage respeita um mapa de
+        // uma entrada como escolha explícita do admin. É por isso que
+        // sincronizar as imagens importa — sem o mapa completo, um
+        // modpack de 1.20.1 continua caindo na JRE mais nova e morre
+        // carregando os mods.
+        if (Object.keys(template.dockerImages as Record<string, string>).length <= 1) {
+          console.log('        nota: com uma imagem só, a escolha automática de Java NÃO atua neste template');
+        }
+      }
+
+      if (syncImages && imagesDiffer) {
+        changedCount++;
+        if (apply) {
+          await prisma.serverTemplate.update({ where: { id: template.id }, data: { dockerImages: preset.dockerImages } });
+          console.log('        ✓ docker_images gravado');
+        }
       }
 
       if (differing.length === 0) {
-        console.log(`[${kind}] "${template.name}" já está em dia`);
+        // Não anuncia "em dia" quando as imagens divergem: o bloco acima
+        // já disse o que há, e as duas mensagens juntas se contradiriam.
+        if (!imagesDiffer) console.log(`[${kind}] "${template.name}" já está em dia`);
         continue;
       }
 

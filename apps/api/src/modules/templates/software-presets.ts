@@ -232,18 +232,32 @@ export function requiredJavaMajor(minecraftVersion: string): number | null {
  * when they set one image by hand, and silently overriding their explicit
  * choice would be worse than running the version they asked for. Only a
  * multi-image template (what the presets below now ship) gets version-aware
- * selection, and even then an unknown version falls back to the first entry.
+ * selection.
+ *
+ * An unknown version falls back to the NEWEST image, not the first one:
+ * `latest` is MINECRAFT_VERSION's own default, and it means the newest
+ * release — resolving it to the oldest JRE in the map (Java 8, which
+ * sorts first) would fail on essentially every modern server. Newest is
+ * also exactly what this did before the map gained more entries.
  */
 export function pickDockerImage(images: Record<string, string>, minecraftVersion: string | undefined): string | undefined {
   const entries = Object.entries(images);
   if (entries.length === 0) return undefined;
   if (entries.length === 1) return entries[0][1];
 
+  const javaMajorOf = ([label, ref]: [string, string]): number => {
+    const fromRef = /:java_(\d+)$/.exec(ref);
+    if (fromRef) return Number(fromRef[1]);
+    const fromLabel = /(\d+)/.exec(label);
+    return fromLabel ? Number(fromLabel[1]) : -1;
+  };
+  const newest = entries.reduce((a, b) => (javaMajorOf(b) > javaMajorOf(a) ? b : a));
+
   const major = minecraftVersion ? requiredJavaMajor(minecraftVersion) : null;
-  if (major === null) return entries[0][1];
+  if (major === null) return newest[1];
 
   const wanted = entries.find(([label, ref]) => label === `Java ${major}` || ref.endsWith(`:java_${major}`));
-  return wanted ? wanted[1] : entries[0][1];
+  return wanted ? wanted[1] : newest[1];
 }
 
 const STANDARD_STARTUP_COMMAND = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui';
