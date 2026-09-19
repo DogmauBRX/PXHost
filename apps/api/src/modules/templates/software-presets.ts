@@ -368,7 +368,7 @@ echo "Install complete."
 export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   paper: {
     name: 'Paper',
-    description: 'High-performance Paper server for Minecraft: Java Edition.',
+    description: 'Servidor Paper de alto desempenho para Minecraft: Java Edition.',
     dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
@@ -396,7 +396,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   },
   fabric: {
     name: 'Fabric',
-    description: 'Modded Minecraft: Java Edition server running the Fabric mod loader.',
+    description: 'Servidor modificado de Minecraft: Java Edition com o carregador de mods Fabric.',
     dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
@@ -424,7 +424,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   },
   quilt: {
     name: 'Quilt',
-    description: 'Modded Minecraft: Java Edition server running the Quilt mod loader.',
+    description: 'Servidor modificado de Minecraft: Java Edition com o carregador de mods Quilt.',
     dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
@@ -452,7 +452,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   },
   vanilla: {
     name: 'Vanilla',
-    description: 'Unmodified, official Minecraft: Java Edition server — no plugins or mods.',
+    description: 'Servidor oficial e sem modificações do Minecraft: Java Edition — sem plugins ou mods.',
     dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
@@ -470,7 +470,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   },
   forge: {
     name: 'Forge',
-    description: 'Modded Minecraft: Java Edition server running the Forge mod loader.',
+    description: 'Servidor modificado de Minecraft: Java Edition com o carregador de mods Forge.',
     dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
@@ -498,7 +498,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   },
   neoforge: {
     name: 'NeoForge',
-    description: 'Modded Minecraft: Java Edition server running the NeoForge mod loader (the actively-maintained fork of Forge for modern versions).',
+    description: 'Servidor modificado de Minecraft: Java Edition com NeoForge, fork do Forge mantido ativamente para versões modernas.',
     dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
@@ -526,7 +526,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   },
   purpur: {
     name: 'Purpur',
-    description: 'Paper-based server with extra performance tuning and gameplay options — drop-in compatible with Paper plugins.',
+    description: 'Servidor baseado no Paper com ajustes extras de desempenho e jogabilidade — compatível com plugins do Paper.',
     dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
