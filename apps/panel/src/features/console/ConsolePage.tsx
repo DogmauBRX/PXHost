@@ -105,17 +105,25 @@ export function ConsolePage({ serverId }: { serverId: string }) {
   const diskUsageMutation = useMutation({
     mutationFn: () => getServerDiskUsage(serverId),
     onSuccess: (snapshot) => {
-      if (snapshot.usedBytes == null || snapshot.limitBytes == null) {
+      if (snapshot.usedBytes == null) {
         diskGaugeRef.current?.update(0, 'normal', '—', 'Não foi possível medir agora');
         return;
       }
-      if (snapshot.limitBytes <= 0) {
+      // The agent's own disk quota is never real (fsx.Jail has no disk
+      // enforcement — see DiskUsageSnapshot's own doc comment, `limitMb`
+      // reads 0 for every server) — the plan's own snapshotted `diskMb`
+      // (same column CPU/RAM limits already come from, set once at
+      // creation from the plan then current) is the actual promised
+      // ceiling, so it's the fallback whenever the agent has nothing
+      // better to say.
+      const limitBytes = snapshot.limitBytes && snapshot.limitBytes > 0 ? snapshot.limitBytes : (server?.diskMb ?? 0) * 1024 * 1024;
+      if (limitBytes <= 0) {
         diskGaugeRef.current?.update(0, 'normal', formatBytes(snapshot.usedBytes), `${formatBytes(snapshot.usedBytes)} usados · sem limite`);
         return;
       }
-      const tone = severityToTone(memorySeverity(snapshot.usedBytes, snapshot.limitBytes));
-      const pct = (snapshot.usedBytes / snapshot.limitBytes) * 100;
-      diskGaugeRef.current?.update(pct, tone, `${Math.round(pct)}%`, `${formatBytes(snapshot.usedBytes)} / ${formatBytes(snapshot.limitBytes)} · ${STATUS_LABEL[tone]}`);
+      const tone = severityToTone(memorySeverity(snapshot.usedBytes, limitBytes));
+      const pct = (snapshot.usedBytes / limitBytes) * 100;
+      diskGaugeRef.current?.update(pct, tone, `${Math.round(pct)}%`, `${formatBytes(snapshot.usedBytes)} / ${formatBytes(limitBytes)} · ${STATUS_LABEL[tone]}`);
     },
     onError: () => {
       diskGaugeRef.current?.update(0, 'normal', '—', 'Falha ao medir');
