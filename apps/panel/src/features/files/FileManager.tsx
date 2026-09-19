@@ -60,7 +60,7 @@ type PendingPrompt =
   | { kind: 'compress'; names: string[] }
   | { kind: 'chmod'; name: string; currentMode: string };
 
-export function FileManager({ serverId }: { serverId: string }) {
+export function FileManager({ serverId, isAdmin = false }: { serverId: string; isAdmin?: boolean }) {
   const queryClient = useQueryClient();
   const [path, setPath] = useState('.');
   const [editingPath, setEditingPath] = useState<string | null>(null);
@@ -403,7 +403,7 @@ export function FileManager({ serverId }: { serverId: string }) {
                     <TD className="text-xs text-text-faint">{formatDate(e.modTime)}</TD>
                     <TD>
                       <div className="flex justify-end gap-1">
-                        {!e.isDir && (
+                        {isAdmin && !e.isDir && (
                           <Button variant="ghost" size="sm" onClick={() => void handleDownload(e.name)}>
                             Baixar
                           </Button>
@@ -418,7 +418,7 @@ export function FileManager({ serverId }: { serverId: string }) {
                             Renomear
                           </Button>
                         )}
-                        {canWrite && (
+                        {isAdmin && canWrite && (
                           <Button variant="ghost" size="sm" onClick={() => setPrompt({ kind: 'chmod', name: e.name, currentMode: e.mode })}>
                             Permissões
                           </Button>

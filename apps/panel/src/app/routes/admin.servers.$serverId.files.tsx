@@ -7,5 +7,5 @@ export const Route = createFileRoute('/admin/servers/$serverId/files')({
 
 function AdminServerFilesRoute() {
   const { serverId } = Route.useParams();
-  return <FileManager serverId={serverId} />;
+  return <FileManager serverId={serverId} isAdmin />;
 }
