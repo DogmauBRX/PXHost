@@ -27,20 +27,6 @@ export function completeServerSetup(id: string, input: CompleteServerSetupInput)
   return apiFetch<{ id: string; status: string }>(`/api/client/servers/${id}/setup`, { method: 'POST', body: JSON.stringify(input) });
 }
 
-// ---- Change version (VersionPickerModal) — a server already `ready`, not the post-purchase flow above ----
-
-export interface ChangeServerVersionInput {
-  templateId: string;
-  variables?: Record<string, string>;
-}
-// Reuses `getServerSetup`'s own catalog response as the picker's data
-// source — GET .../setup has no status precondition (see
-// ServerSetupService.getSetupInfo), so it already works for a `ready`
-// server exactly as-is.
-export function changeServerVersion(id: string, input: ChangeServerVersionInput) {
-  return apiFetch<{ id: string; status: string }>(`/api/client/servers/${id}/change-version`, { method: 'POST', body: JSON.stringify(input) });
-}
-
 export function sendPowerAction(id: string, action: PowerAction) {
   return apiFetch<{ state: string; previous: string }>(`/api/client/servers/${id}/power`, {
     method: 'POST',

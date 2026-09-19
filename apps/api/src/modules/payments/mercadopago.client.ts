@@ -44,17 +44,7 @@ export class MercadoPagoClient {
   constructor(private readonly config: ConfigService) {}
 
   private baseUrl(): string {
-    // `||`, not `??`: @nestjs/config's ConfigService.get() falls back to
-    // the RAW process.env string whenever the validated/transformed value
-    // is undefined (see ConfigService.getFromProcessEnv) — so an env file
-    // shipping this optional var as an empty line (`MERCADOPAGO_BASE_URL=`,
-    // exactly what optionalUrl() is meant to treat as "absent") comes back
-    // as `''`, not `undefined`. `??` only catches null/undefined and would
-    // pass that empty string straight into `new URL('' + '/preapproval')`,
-    // which throws "Invalid URL" — every other optional* field in this
-    // schema happens to be read with a truthiness check instead, which is
-    // why only this call site hit it.
-    return this.config.get<string>('MERCADOPAGO_BASE_URL') || DEFAULT_BASE_URL;
+    return this.config.get<string>('MERCADOPAGO_BASE_URL') ?? DEFAULT_BASE_URL;
   }
 
   private accessToken(): string {

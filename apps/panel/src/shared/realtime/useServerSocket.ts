@@ -28,28 +28,6 @@ const MAX_BACKOFF_MS = 15_000;
 const HIDDEN_SUPPRESS_MS = 60_000;
 const REAUTH_MARGIN_S = 30;
 
-// The agent's own error `message` is a raw internal string meant for logs
-// (e.g. "srv: server b0fd0c32-...-7f6cc5ef9a93 is not running") — found
-// live, shown straight to a customer as a scary-looking, UUID-bearing
-// error banner. `code` is the stable, finite part of the contract (see
-// agent/internal/api/ws.go's own sendError call sites for the full set);
-// this maps it to something a customer can actually make sense of, and
-// the real message still reaches the browser console for support/
-// debugging instead of just being thrown away.
-const FRIENDLY_WS_ERROR_MESSAGES: Record<string, string> = {
-  E_PERMISSION_DENIED: 'Você não tem permissão para fazer isso.',
-  RATE_LIMITED: 'Muitos comandos em pouco tempo — espere um instante e tente de novo.',
-  SERVER_OFFLINE: 'O servidor está desligado no momento.',
-  POWER_ACTION_FAILED: 'Não foi possível concluir essa ação agora. Tente novamente em instantes.',
-  BAD_REQUEST: 'Não foi possível processar essa ação.',
-  REAUTH_FAILED: 'Sua sessão do console expirou.',
-  UNKNOWN_EVENT: 'Ocorreu um erro inesperado.',
-};
-
-function friendlyWsErrorMessage(data: ErrorData): string {
-  return FRIENDLY_WS_ERROR_MESSAGES[data.code] ?? 'Ocorreu um erro inesperado. Tente novamente em instantes.';
-}
-
 function backoffDelay(attempt: number): number {
   const base = Math.min(1000 * 2 ** attempt, MAX_BACKOFF_MS);
   return base / 2 + Math.random() * (base / 2); // full-range jitter around the midpoint
@@ -187,9 +165,7 @@ export function useServerSocket({ serverId, terminal, onStats, onStatus }: UseSe
           break;
         case EventError: {
           const data = env.data as ErrorData;
-          // eslint-disable-next-line no-console -- the raw detail is worth keeping for support, just never shown to the customer
-          console.error(`[console] ${data.code}: ${data.message}`);
-          setLastError(friendlyWsErrorMessage(data));
+          setLastError(data.message);
           break;
         }
         default:

@@ -222,24 +222,7 @@ export class OrdersService {
       const duplicate = await tx.order.findFirst({
         where: { userId, planId: plan.id, kind: 'plan_initial', status: 'pending', subscriptionId: { not: null }, expiresAt: { gt: new Date() } },
       });
-      // Reuse only when the payment method ALSO matches — a genuine
-      // retry/reload of the same in-flight checkout, never a second
-      // Mercado Pago call. A customer who comes back and picks the OTHER
-      // method (Pix ⇄ Cartão) is not retrying, they changed their mind:
-      // returning the stale order as-is used to hand back whatever QR
-      // code/checkout link the FIRST attempt produced, regardless of
-      // what was just clicked. The stale pending order/subscription is
-      // cancelled here rather than left to rot — otherwise it would sit
-      // there, still "pending", until its own TTL expiry.
-      if (duplicate && duplicate.paymentMethod === dto.paymentMethod) {
-        return { order: duplicate, reused: true as const };
-      }
-      if (duplicate) {
-        await tx.order.update({ where: { id: duplicate.id }, data: { status: 'cancelled' } });
-        if (duplicate.subscriptionId) {
-          await tx.subscription.update({ where: { id: duplicate.subscriptionId }, data: { status: 'cancelled' } });
-        }
-      }
+      if (duplicate) return { order: duplicate, reused: true as const };
 
       const subscription = await this.subscriptions.createPendingSubscription(tx, userId, plan);
       await tx.subscription.update({ where: { id: subscription.id }, data: { paymentMethod: dto.paymentMethod } });

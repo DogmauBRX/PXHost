@@ -1,11 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Save, RefreshCw } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { listServerVariables, updateServerVariables } from './variables.api';
 import { updateServerHostname } from './hostname.api';
-import { readFile, writeFile } from '@/features/files/files.api';
 import { getServer, getServerStats } from '@/features/servers/servers.api';
-import { VersionPickerModal } from '@/features/servers/VersionPickerModal';
 import { ApiError } from '@/shared/api/client';
 import { Alert, Button, Field, Input, LoadingRow, PageHeader, Select } from '@/ui/primitives';
 
@@ -98,91 +96,6 @@ function isLive(state: string | null): boolean {
   return state !== null && state !== 'offline';
 }
 
-// online-mode lives in server.properties, not in a template startup
-// variable — unlike everything in VariablesPage's own list below, toggling
-// it needs no container recreate (Minecraft only reads server.properties
-// at JVM boot), so this reuses the plain file read/write endpoints the
-// file manager already exposes instead of going through
-// updateServerVariables. Silently renders nothing if the file can't be
-// read (non-Minecraft template, or not installed yet) rather than
-// showing a broken control.
-const ONLINE_MODE_LINE = /^online-mode=.*$/m;
-
-function parseOnlineMode(content: string): boolean {
-  const match = content.match(ONLINE_MODE_LINE);
-  // Minecraft's own default (a fresh server.properties with the line
-  // absent, or omitted entirely) is true — never silently read as off.
-  return match ? match[0].trim() !== 'online-mode=false' : true;
-}
-
-function withOnlineMode(content: string, value: boolean): string {
-  const line = `online-mode=${value}`;
-  if (ONLINE_MODE_LINE.test(content)) return content.replace(ONLINE_MODE_LINE, line);
-  return content.replace(/\n+$/, '') + '\n' + line + '\n';
-}
-
-function OnlineModeToggle({ serverId, canEdit }: { serverId: string; canEdit: boolean }) {
-  const queryClient = useQueryClient();
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  const { data: propertiesFile } = useQuery({
-    queryKey: ['server-properties', serverId],
-    queryFn: () => readFile(serverId, 'server.properties'),
-    retry: false,
-  });
-
-  const mutation = useMutation({
-    mutationFn: (nextValue: boolean) => writeFile(serverId, 'server.properties', withOnlineMode(propertiesFile!.content, nextValue)),
-    onSuccess: (_result, nextValue) => {
-      setError(null);
-      setNotice(`Online mode ${nextValue ? 'ativado' : 'desativado'} — reinicie o servidor para aplicar.`);
-      void queryClient.invalidateQueries({ queryKey: ['server-properties', serverId] });
-    },
-    onError: (err) => {
-      setNotice(null);
-      setError(err instanceof ApiError ? err.message : 'Não foi possível salvar.');
-    },
-  });
-
-  if (!propertiesFile) return null;
-  const value = mutation.isPending ? mutation.variables! : parseOnlineMode(propertiesFile.content);
-
-  return (
-    <div className="mb-6 flex flex-col gap-3 rounded-card border border-border bg-surface p-5">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="font-semibold text-text">Online Mode</h2>
-          <p className="mt-1 text-sm text-text-muted">
-            Exige que quem entra tenha uma conta Microsoft/Mojang autenticada. Desligue só para testes com contas não-premium —
-            enquanto estiver desligado, qualquer pessoa entra com qualquer nome.
-          </p>
-        </div>
-        {canEdit && (
-          <button
-            type="button"
-            role="switch"
-            aria-checked={value}
-            aria-label={value ? 'Desligar online mode' : 'Ligar online mode'}
-            disabled={mutation.isPending}
-            onClick={() => mutation.mutate(!value)}
-            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${value ? 'bg-accent' : 'bg-surface-2'}`}
-          >
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
-          </button>
-        )}
-      </div>
-      {notice && (
-        <Alert tone="ok" onDismiss={() => setNotice(null)}>
-          {notice}
-        </Alert>
-      )}
-      {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
-    </div>
-  );
-}
-
-
 export function VariablesPage({ serverId }: { serverId: string }) {
   const queryClient = useQueryClient();
   const { data: server } = useQuery({ queryKey: ['server', serverId], queryFn: () => getServer(serverId) });
@@ -192,7 +105,6 @@ export function VariablesPage({ serverId }: { serverId: string }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [versionPickerOpen, setVersionPickerOpen] = useState(false);
 
   const canEdit = server?.permissions.includes('startup.update') ?? false;
   const running = isLive(stats?.state ?? null);
@@ -261,59 +173,13 @@ export function VariablesPage({ serverId }: { serverId: string }) {
 
       <HostnameSettings serverId={serverId} canEdit={server?.permissions.includes('hostname.update') ?? false} />
 
-      {canEdit && (
-        <div className="mb-6 flex flex-col gap-3 rounded-card border border-border bg-surface p-5">
-          <div>
-            <h2 className="font-semibold text-text">Versão do Minecraft</h2>
-            <p className="mt-1 text-sm text-text-muted">Troque o software (Vanilla, Paper, Forge, Fabric…) ou a versão instalada — o mundo e os plugins são preservados.</p>
-          </div>
-          {running && <Alert tone="warn">Pare o servidor para trocar a versão.</Alert>}
-          <Button variant="secondary" disabled={running} onClick={() => setVersionPickerOpen(true)} className="self-start">
-            <RefreshCw className="h-4 w-4" aria-hidden="true" />
-            Trocar versão do Minecraft
-          </Button>
-        </div>
-      )}
-      {server && (
-        <VersionPickerModal
-          serverId={serverId}
-          currentTemplateId={server.template?.id ?? null}
-          currentVersion={variables?.find((v) => v.envVariable === 'MINECRAFT_VERSION')?.value ?? null}
-          open={versionPickerOpen}
-          onClose={() => setVersionPickerOpen(false)}
-        />
-      )}
-
-      <OnlineModeToggle serverId={serverId} canEdit={server?.permissions.includes('file.write') ?? false} />
-
       {/* Non-editable variables (e.g. SERVER_MEMORY, set by the plan) are
           never rendered here — a disabled field the customer can't act on
           either way isn't useful in a settings form; it's plumbing, not a
           setting. Still returned by the API (isUserViewable alone gates
-          that), just not shown on THIS screen. MINECRAFT_VERSION and each
-          software's own build/loader field (PAPER_BUILD,
-          FABRIC_LOADER_VERSION, FORGE_VERSION, NEOFORGE_VERSION,
-          PURPUR_BUILD — see software-presets.ts's own `buildVariable` per
-          preset) are excluded here too, even though they ARE editable —
-          found live: editing "Forge Version" here alone can never take
-          effect without a restart anyway (same "stopped, then recreates
-          the container" rule every other field here already has), and
-          changing JUST the build without the Minecraft version it's
-          paired with rarely makes sense on its own. "Trocar versão" above
-          supersedes both: it already requires the server to be offline,
-          and resolves the right build for whichever Minecraft version the
-          customer actually picks — this is the one place editing either
-          is expected to belong. */}
+          that), just not shown on THIS screen. */}
       {(() => {
-        const VERSION_PICKER_OWNED_VARIABLES = new Set([
-          'MINECRAFT_VERSION',
-          'PAPER_BUILD',
-          'FABRIC_LOADER_VERSION',
-          'FORGE_VERSION',
-          'NEOFORGE_VERSION',
-          'PURPUR_BUILD',
-        ]);
-        const editableVariables = variables?.filter((v) => v.isEditable && !VERSION_PICKER_OWNED_VARIABLES.has(v.envVariable)) ?? [];
+        const editableVariables = variables?.filter((v) => v.isEditable) ?? [];
         if (editableVariables.length === 0) {
           return <p className="text-sm text-text-muted">Este servidor não tem variáveis configuráveis.</p>;
         }

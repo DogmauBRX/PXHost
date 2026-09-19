@@ -10,7 +10,7 @@ import {
 } from './dto/template.dto';
 import { PublicTemplatesService } from '../public/public-templates.service';
 import { SoftwareDiscoveryService } from './software-discovery.service';
-import { KNOWN_MINECRAFT_VERSIONS, SOFTWARE_PRESETS, type PresetKind } from './software-presets';
+import { SOFTWARE_PRESETS, type PresetKind } from './software-presets';
 
 @Injectable()
 export class TemplatesService {
@@ -289,14 +289,10 @@ export class TemplatesService {
     }
     const softwareKind = template.softwareKind as PresetKind;
 
-    // Live first (freshest — catches a release this hardcoded list
-    // hasn't been updated for yet); KNOWN_MINECRAFT_VERSIONS only as a
-    // fallback, never the other way around. Found live: this used to
-    // just throw here, meaning a third-party outage left the admin with
-    // no way to curate a template at all, not even to the same
-    // known-good baseline `getSetupInfo` itself now falls back to.
-    const liveVersions = await this.discovery.getVersions(softwareKind);
-    const versions = liveVersions.length > 0 ? liveVersions : KNOWN_MINECRAFT_VERSIONS[softwareKind];
+    const versions = await this.discovery.getVersions(softwareKind);
+    if (versions.length === 0) {
+      throw new ConflictException('Não foi possível obter a lista de versões agora — tente novamente em instantes');
+    }
 
     const versionVariable = SOFTWARE_PRESETS[softwareKind].versionVariable;
     const variable = template.variables.find((v) => v.envVariable === versionVariable);
@@ -359,7 +355,7 @@ function toVariableCreateInput(v: TemplateVariableDto, sortOrder: number) {
  * both already handle this exact shape — this is the one place that
  * WRITES it, from the wizard's chips instead of an admin typing it.
  */
-export function withInList(baseRules: string | undefined, values: string[]): string {
+function withInList(baseRules: string | undefined, values: string[]): string {
   const rules = (baseRules ?? 'required|string').replace(/\|?in:[^|]*/, '');
   return `${rules}|in:${values.join(',')}`;
 }

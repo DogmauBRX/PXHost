@@ -4,7 +4,6 @@ import { Link } from '@tanstack/react-router';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import { Clock, RefreshCw, Settings2 } from 'lucide-react';
 import { getServer, getServerDiskUsage } from '@/features/servers/servers.api';
-import { listServerVariables } from '@/features/variables/variables.api';
 import { useServerSocket } from '@/shared/realtime/useServerSocket';
 import { formatBytes } from '@/shared/format/datetime';
 import { Terminal } from './Terminal';
@@ -51,12 +50,6 @@ const CONN_LABEL: Record<string, string> = {
 
 export function ConsolePage({ serverId }: { serverId: string }) {
   const { data: server } = useQuery({ queryKey: ['server', serverId], queryFn: () => getServer(serverId) });
-  // Same query VariablesPage already makes (shares its cache when the
-  // customer has visited both tabs) — MINECRAFT_VERSION is always
-  // present in this list even though VariablesPage's own UI hides it
-  // from the editable fields (superseded there by "Trocar versão").
-  const { data: variables } = useQuery({ queryKey: ['server-variables', serverId], queryFn: () => listServerVariables(serverId) });
-  const minecraftVersion = variables?.find((v) => v.envVariable === 'MINECRAFT_VERSION')?.value;
   const [powerState, setPowerState] = useState<string | null>(null);
   const [command, setCommand] = useState('');
   const termRef = useRef<XTerm | null>(null);
@@ -164,18 +157,10 @@ export function ConsolePage({ serverId }: { serverId: string }) {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          {server?.template && (
-            <span className="text-sm font-medium text-text-muted">
-              {server.template.name}
-              {minecraftVersion ? ` ${minecraftVersion}` : ''}
-            </span>
-          )}
-          <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${connected ? 'text-ok' : 'text-text-faint'}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-ok' : 'bg-text-faint'}`} />
-            {CONN_LABEL[connectionState]}
-          </span>
-        </div>
+        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${connected ? 'text-ok' : 'text-text-faint'}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-ok' : 'bg-text-faint'}`} />
+          {CONN_LABEL[connectionState]}
+        </span>
       </div>
 
       {server?.publicAddress && (

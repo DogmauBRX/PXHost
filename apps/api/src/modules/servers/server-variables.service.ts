@@ -47,25 +47,10 @@ export class ServerVariablesService {
     // calls to this endpoint must see an empty list, never a crash.
     if (!server.templateId) return [];
 
-    // `server_variables` carries the same RLS policy `servers` does —
-    // PrismaService.withRLS's own doc comment: "even one already
-    // authorized by a guard [access.resolve/can() above] MUST go through
-    // this." Found live: this was a bare `this.prisma.serverVariable.
-    // findMany(...)` — with `app.user_id` never set, RLS silently
-    // matched zero rows, so `value` below ALWAYS fell through to
-    // `tv.defaultValue`, for every variable, on every server. Invisible
-    // for fields whose real value happens to equal their default
-    // (SERVER_JARFILE, FORGE_VERSION's "latest", ...) — very visible the
-    // moment a customer's actual MINECRAFT_VERSION diverges from the
-    // template's, since the panel then shows the template's default
-    // version instead of what's actually installed.
-    const templateId = server.templateId;
-    const [templateVars, serverVars] = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
-      Promise.all([
-        tx.templateVariable.findMany({ where: { templateId, isUserViewable: true }, orderBy: { sortOrder: 'asc' } }),
-        tx.serverVariable.findMany({ where: { serverId: server.id } }),
-      ]),
-    );
+    const [templateVars, serverVars] = await Promise.all([
+      this.prisma.templateVariable.findMany({ where: { templateId: server.templateId, isUserViewable: true }, orderBy: { sortOrder: 'asc' } }),
+      this.prisma.serverVariable.findMany({ where: { serverId: server.id } }),
+    ]);
     const valueByVariableId = new Map(serverVars.map((v) => [v.variableId.toString(), v.value]));
 
     return templateVars.map((tv) => ({
@@ -107,22 +92,10 @@ export class ServerVariablesService {
     // the only one — belt and suspenders for a TypeScript-visible null.
     if (!server.templateId) throw new ConflictException('Server has no template yet — complete initial setup first');
 
-    // Same RLS fix as list() above, and for the same reason — `values`
-    // only carries the field(s) the customer's form actually changed;
-    // resolvedValues below fills in every OTHER declared variable from
-    // `currentByVariableId`, which a bare (non-withRLS) query always saw
-    // as empty. That's the more serious half of this bug: it never just
-    // mis-displayed those other fields, it silently RESET every one of
-    // them to its template default in the payload actually sent to the
-    // agent — a customer editing SERVER_MEMORY, say, would have reverted
-    // their own already-installed MINECRAFT_VERSION back to "latest"
-    // (or whatever the template's current default is) as a side effect,
-    // recreating the container with it.
-    const templateId = server.templateId;
-    const rlsCtx = { userId: actor.id, isAdmin: actor.isAdmin };
-    const [templateVars, serverVars] = await this.prisma.withRLS(rlsCtx, (tx) =>
-      Promise.all([tx.templateVariable.findMany({ where: { templateId } }), tx.serverVariable.findMany({ where: { serverId: server.id } })]),
-    );
+    const [templateVars, serverVars] = await Promise.all([
+      this.prisma.templateVariable.findMany({ where: { templateId: server.templateId } }),
+      this.prisma.serverVariable.findMany({ where: { serverId: server.id } }),
+    ]);
     const byEnvVar = new Map(templateVars.map((tv) => [tv.envVariable, tv]));
     const currentByVariableId = new Map(serverVars.map((v) => [v.variableId.toString(), v.value]));
 
@@ -146,18 +119,16 @@ export class ServerVariablesService {
       resolvedValues,
     );
 
-    await this.prisma.withRLS(rlsCtx, (tx) =>
-      Promise.all(
-        templateVars
-          .filter((tv) => values[tv.envVariable] !== undefined)
-          .map((tv) =>
-            tx.serverVariable.upsert({
-              where: { serverId_variableId: { serverId: server.id, variableId: tv.id } },
-              update: { value: resolvedValues[tv.envVariable] },
-              create: { serverId: server.id, variableId: tv.id, value: resolvedValues[tv.envVariable] },
-            }),
-          ),
-      ),
+    await this.prisma.$transaction(
+      templateVars
+        .filter((tv) => values[tv.envVariable] !== undefined)
+        .map((tv) =>
+          this.prisma.serverVariable.upsert({
+            where: { serverId_variableId: { serverId: server.id, variableId: tv.id } },
+            update: { value: resolvedValues[tv.envVariable] },
+            create: { serverId: server.id, variableId: tv.id, value: resolvedValues[tv.envVariable] },
+          }),
+        ),
     );
 
     await this.audit.record({

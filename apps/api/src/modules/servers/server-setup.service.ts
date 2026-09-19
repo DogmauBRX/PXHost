@@ -7,9 +7,8 @@ import { AuditService } from '../audit/audit.service';
 import { DEFAULT_INSTALL_ENTRYPOINT, DEFAULT_INSTALL_IMAGE, ServersService } from './servers.service';
 import { resolveDeclaredVariables } from './variable-resolution';
 import { CompleteServerSetupDto } from './dto/server-setup.dto';
-import { ChangeServerVersionDto } from './dto/change-version.dto';
 import { SoftwareDiscoveryService } from '../templates/software-discovery.service';
-import { KNOWN_MINECRAFT_VERSIONS, PRESET_KINDS, type PresetKind } from '../templates/software-presets';
+import { PRESET_KINDS, type PresetKind } from '../templates/software-presets';
 
 export interface SetupSoftwareOption {
   id: string;
@@ -108,17 +107,11 @@ export class ServerSetupService {
         let choices = versionsCurated ? (versionOption!.choices ?? []) : [];
 
         if (!versionsCurated && t.softwareKind && (PRESET_KINDS as readonly string[]).includes(t.softwareKind)) {
-          const kind = t.softwareKind as PresetKind;
-          const liveVersions = await this.discovery.getVersions(kind);
-          // KNOWN_MINECRAFT_VERSIONS as the floor, never plain free text:
-          // found live, a template that was seeded (not curated through
-          // the wizard) showed a bare text input to the customer — "type
-          // a version and hope" — every time this live fetch happened to
-          // fail (a third-party outage, or this environment having no
-          // outbound access to it at all). A hand-picked, real, per-
-          // software list is always available even then.
-          choices = liveVersions.length > 0 ? liveVersions : KNOWN_MINECRAFT_VERSIONS[kind];
-          versionsCurated = true;
+          const liveVersions = await this.discovery.getVersions(t.softwareKind as PresetKind);
+          if (liveVersions.length > 0) {
+            choices = liveVersions;
+            versionsCurated = true;
+          }
         }
 
         // `defaultValue` is a free-text column ("latest" for every preset,
@@ -301,107 +294,6 @@ export class ServerSetupService {
         installEntrypoint: template.installEntrypoint || DEFAULT_INSTALL_ENTRYPOINT,
         installScript: template.installScript,
       },
-      { rethrow: true },
-    );
-
-    return { id: serverId, status: 'installing' as const };
-  }
-
-  /**
-   * Changes an already-`ready` server's software/template — Vanilla ⇄
-   * Paper ⇄ Forge ⇄ Fabric, or just a different curated Minecraft version
-   * of the same one. Deliberately a SEPARATE method from `complete`
-   * above, not a widened CAS on it: the two have disjoint preconditions
-   * (this only ever accepts 'ready'; `complete` only ever accepts
-   * 'setup_pending'/'install_failed') and disjoint permission checks
-   * (`startup.update` — this genuinely rewrites startup config on a live
-   * server, the same permission `ServerVariablesService.update` already
-   * requires — vs. `complete`'s deliberate `server.read`, which only
-   * makes sense pre-ready; see that method's own doc comment). Sharing
-   * one method with an `if` branching on which precondition applied
-   * would read as one operation with two unrelated meanings rather than
-   * two operations that happen to dispatch the same way.
-   *
-   * Requires the server to already be `powerState: 'offline'` (product
-   * decision: this never stops the server itself — a clear 409 here
-   * beats a customer's world getting yanked out from under a running
-   * container, or a cryptic agent-side rejection). World saves/plugins/
-   * configs survive regardless: the install script — like every
-   * template's — only ever writes/overwrites its own files inside the
-   * SAME persistent data directory, never wipes it, so re-running it
-   * against an existing volume is exactly as safe as the first install
-   * `complete` already trusts it to be.
-   */
-  async changeVersion(actor: AccessActor, serverId: string, dto: ChangeServerVersionDto) {
-    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
-    if (!can('startup.update')) throw new ForbiddenException('Missing permission: startup.update');
-    if (server.status !== 'ready') throw new ConflictException('INVALID_TRANSITION: server is not ready for a version change');
-    if (server.powerState !== 'offline') throw new ConflictException('SERVER_MUST_BE_OFFLINE: pare o servidor antes de trocar a versão');
-
-    const template = await this.prisma.serverTemplate.findFirst({
-      where: { id: dto.templateId, deletedAt: null, isPublic: true, isActive: true },
-    });
-    if (!template) throw new NotFoundException('Template not found');
-
-    const images = template.dockerImages as Record<string, string>;
-    const [, dockerImage] = Object.entries(images)[0] ?? [undefined, undefined];
-    if (!dockerImage) throw new ConflictException('Template has no docker images configured');
-
-    const templateVars = await this.prisma.templateVariable.findMany({ where: { templateId: template.id } });
-    const resolvedValues = resolveDeclaredVariables(templateVars, dto.variables ?? {});
-
-    // Same "CAS + variable upserts in one transaction" shape as `complete`
-    // above, re-checking `powerState` at UPDATE time too — the server
-    // could have started between `access.resolve`'s read and here.
-    const count = await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
-      const result = await tx.server.updateMany({
-        where: { id: serverId, status: 'ready', powerState: 'offline' },
-        data: { status: 'installing', templateId: template.id, dockerImage, startupCommand: template.startupCommand },
-      });
-      if (result.count === 0) return 0;
-
-      await Promise.all(
-        templateVars.map((tv) =>
-          tx.serverVariable.upsert({
-            where: { serverId_variableId: { serverId, variableId: tv.id } },
-            create: { serverId, variableId: tv.id, value: resolvedValues[tv.envVariable] },
-            update: { value: resolvedValues[tv.envVariable] },
-          }),
-        ),
-      );
-      return result.count;
-    });
-    if (count === 0) throw new ConflictException('SERVER_MUST_BE_OFFLINE: pare o servidor antes de trocar a versão');
-
-    await this.audit.record({
-      action: 'server.version.changed',
-      actorId: actor.id,
-      targetType: 'server',
-      targetId: serverId,
-      metadata: { templateId: template.id, previousTemplateId: server.templateId },
-    });
-
-    // dispatchReinstallToAgent, NOT dispatchToAgent: this server is
-    // `ready`, which means the agent already has its container registered
-    // from the ORIGINAL create — agent.createServer would always 409
-    // SERVER_EXISTS here and never actually swap anything (see that
-    // method's own doc comment for the bug this replaced). `previous`
-    // is what a genuine dispatch failure reverts to, since the old
-    // container is untouched in that case.
-    await this.servers.dispatchReinstallToAgent(
-      serverId,
-      server.nodeId,
-      {
-        image: dockerImage,
-        startupTemplate: template.startupCommand,
-        stopSignal: undefined,
-        declaredVariables: templateVars.map((tv) => tv.envVariable),
-        variables: resolvedValues,
-        installImage: template.installImage || DEFAULT_INSTALL_IMAGE,
-        installEntrypoint: template.installEntrypoint || DEFAULT_INSTALL_ENTRYPOINT,
-        installScript: template.installScript,
-      },
-      { templateId: server.templateId!, dockerImage: server.dockerImage!, startupCommand: server.startupCommand! },
       { rethrow: true },
     );
 

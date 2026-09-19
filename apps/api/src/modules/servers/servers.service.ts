@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, ServerTemplate } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
-import { AgentClient, CreateAgentServerRequest, ReinstallAgentServerRequest } from '../nodes/agent-client.service';
+import { AgentClient, CreateAgentServerRequest } from '../nodes/agent-client.service';
 import { AuditService } from '../audit/audit.service';
 import { DatabasesService } from '../databases/databases.service';
 import { ActivityService } from '../activity/activity.service';
@@ -521,58 +521,6 @@ export class ServersService {
         targetType: 'server',
         targetId: serverId,
         metadata: { error: (err as Error).message },
-      });
-      if (options?.rethrow) throw err;
-    }
-  }
-
-  /**
-   * The reinstall counterpart to dispatchToAgent, for
-   * ServerSetupService.changeVersion. Deliberately NOT a call to
-   * dispatchToAgent/agent.createServer: a version change only ever runs
-   * on a `ready` server, which by construction already has a container
-   * the agent registered during its ORIGINAL create — `agent.createServer`
-   * would hit manager.Register's guard and always come back 409
-   * SERVER_EXISTS. Found live: that is exactly what changeVersion did
-   * before this method existed, and dispatchToAgent's own SERVER_EXISTS
-   * branch (correctly, for the create-retry case it exists for) swallows
-   * that 409 as success and leaves the row at `installing` — with no
-   * container ever touched and no install ever run, nothing was ever
-   * going to call reportInstallResult back, so the row was stuck forever.
-   *
-   * On a genuine dispatch failure here, `previous` (the server's
-   * template/image/startup command from BEFORE changeVersion's own CAS
-   * overwrote them) is restored alongside `status: 'ready'`, not
-   * `install_failed`: unlike a brand-new server (dispatchToAgent's case,
-   * where there is no earlier working state to fall back to), a failed
-   * reinstall dispatch leaves the OLD container exactly as it was — the
-   * agent only ever removes it AFTER a successful image pull, inside the
-   * same call this method is reacting to failing. Reporting `ready` with
-   * the old software is what actually matches reality; `install_failed`
-   * would tell the customer their previously-working server is now
-   * broken when it never stopped working at all.
-   */
-  async dispatchReinstallToAgent(
-    serverId: string,
-    nodeId: string,
-    payload: ReinstallAgentServerRequest,
-    previous: { templateId: string; dockerImage: string; startupCommand: string },
-    options?: { rethrow?: boolean },
-  ): Promise<void> {
-    try {
-      await this.agent.reinstallServer(nodeId, serverId, payload);
-    } catch (err) {
-      await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
-        tx.server.update({
-          where: { id: serverId },
-          data: { status: 'ready', templateId: previous.templateId, dockerImage: previous.dockerImage, startupCommand: previous.startupCommand },
-        }),
-      );
-      await this.audit.record({
-        action: 'server.reinstall.dispatch_failed',
-        targetType: 'server',
-        targetId: serverId,
-        metadata: { error: (err as Error).message, revertedToTemplateId: previous.templateId },
       });
       if (options?.rethrow) throw err;
     }

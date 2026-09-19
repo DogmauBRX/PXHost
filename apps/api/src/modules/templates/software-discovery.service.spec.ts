@@ -115,27 +115,9 @@ describe('SoftwareDiscoveryService', () => {
     expect(builds).toEqual(['47.3.0']);
   });
 
-  it('NeoForge versions are Vanilla\'s own real version list, scoped down to 1.20.1 onward (where NeoForge forked from Forge) — never derived from NeoForge\'s own release-version numbers', async () => {
-    // Only fetchVanillaVersions' endpoint is hit — NeoForge's own
-    // releases API is never called for the version LIST (still used
-    // separately by getBuilds, unaffected by this).
-    mockFetchOnce({
-      versions: [
-        { id: '1.21.4', type: 'release' },
-        { id: '1.21.4-rc1', type: 'snapshot' },
-        { id: '1.21.1', type: 'release' },
-        { id: '1.20.1', type: 'release' },
-        { id: '1.19.4', type: 'release' }, // older than NeoForge's floor — excluded
-      ],
-    });
+  it('NeoForge versions are derived from release-version prefixes and displayed with a leading "1."', async () => {
+    mockFetchOnce({ versions: ['20.4.80', '20.4.79', '21.1.0'] });
     const versions = await service.getVersions('neoforge');
-    expect(versions).toEqual(['1.21.4', '1.21.1', '1.20.1']);
-    expect(global.fetch).toHaveBeenCalledWith('https://launchermeta.mojang.com/mc/game/version_manifest.json', expect.anything());
-  });
-
-  it('NeoForge versions falls back to Vanilla\'s FULL list if 1.20.1 is somehow missing from it, rather than an empty/wrong result', async () => {
-    mockFetchOnce({ versions: [{ id: '1.21.4', type: 'release' }, { id: '1.19.4', type: 'release' }] });
-    const versions = await service.getVersions('neoforge');
-    expect(versions).toEqual(['1.21.4', '1.19.4']);
+    expect(versions).toEqual(['1.21.1', '1.20.4']);
   });
 });

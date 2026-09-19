@@ -10,7 +10,6 @@ import { ServersService } from '../src/modules/servers/servers.service';
 import { CapacityService } from '../src/modules/capacity/capacity.service';
 import { PublicTemplatesService } from '../src/modules/public/public-templates.service';
 import { RedisService } from '../src/core/redis/redis.service';
-import { KNOWN_MINECRAFT_VERSIONS } from '../src/modules/templates/software-presets';
 
 /**
  * The post-purchase setup flow (see the setup plan): a `setup_pending`
@@ -376,30 +375,6 @@ describe('Server setup (e2e)', () => {
     }
   });
 
-  it('GET .../setup falls back to KNOWN_MINECRAFT_VERSIONS (never free text) when a template has no curated in: list AND live discovery is also down', async () => {
-    // Found live: an uncurated template whose live-discovery fetch failed
-    // (papermc.io/mojang/etc. unreachable, or briefly down) used to leave
-    // `versionsCurated: false` — a bare text input on the client, "type a
-    // version and hope it exists." KNOWN_MINECRAFT_VERSIONS is the
-    // hardcoded, real-versions-only floor under BOTH failure modes.
-    await app.get(RedisService).client.del('template-discovery:fabric:versions');
-    const fetchSpy = jest.spyOn(global, 'fetch' as any).mockRejectedValue(new Error('ECONNREFUSED'));
-
-    try {
-      const res = await asOwner(`/api/client/servers/${serverId}/setup`);
-      expect(res.statusCode).toBe(200);
-      const body = JSON.parse(res.body);
-      const entry = body.software.find((s: any) => s.id === uncuratedTemplateId);
-      expect(entry).toBeTruthy();
-      expect(entry.versionsCurated).toBe(true);
-      expect(entry.versions).toEqual(KNOWN_MINECRAFT_VERSIONS.fabric);
-      expect(entry.defaultVersion).toBe(KNOWN_MINECRAFT_VERSIONS.fabric[0]);
-    } finally {
-      fetchSpy.mockRestore();
-      await app.get(RedisService).client.del('template-discovery:fabric:versions');
-    }
-  });
-
   it('GET .../setup 404s for a non-owner (never confirms existence)', async () => {
     const res = await asIntruder(`/api/client/servers/${serverId}/setup`);
     expect(res.statusCode).toBe(404);
@@ -510,96 +485,6 @@ describe('Server setup (e2e)', () => {
     const server = await asAdmin((tx) => tx.server.findUniqueOrThrow({ where: { id: serverId } }));
     expect(server.name).not.toBe('outro-nome'); // the rejected request never wrote anything
     expect(server.status).toBe('ready');
-  });
-
-  it('POST .../change-version 404s for a non-owner (never confirms existence)', async () => {
-    const res = await asIntruder(`/api/client/servers/${serverId}/change-version`, {
-      method: 'POST',
-      payload: { templateId: staleDefaultTemplateId },
-    });
-    expect(res.statusCode).toBe(404);
-  });
-
-  it('POST .../change-version refuses while the server is still running (SERVER_MUST_BE_OFFLINE)', async () => {
-    await asAdmin((tx) => tx.server.update({ where: { id: serverId }, data: { powerState: 'running' } }));
-
-    const res = await asOwner(`/api/client/servers/${serverId}/change-version`, {
-      method: 'POST',
-      payload: { templateId: staleDefaultTemplateId },
-    });
-    expect(res.statusCode).toBe(409);
-    expect(res.body).toContain('SERVER_MUST_BE_OFFLINE');
-
-    const server = await asAdmin((tx) => tx.server.findUniqueOrThrow({ where: { id: serverId } }));
-    expect(server.templateId).toBe(templateId); // rejected request never wrote anything
-
-    await asAdmin((tx) => tx.server.update({ where: { id: serverId }, data: { powerState: 'offline' } }));
-  });
-
-  it('POST .../change-version refuses a server that isn\'t ready yet (INVALID_TRANSITION)', async () => {
-    await asAdmin((tx) => tx.server.update({ where: { id: serverId }, data: { status: 'installing' } }));
-
-    const res = await asOwner(`/api/client/servers/${serverId}/change-version`, {
-      method: 'POST',
-      payload: { templateId: staleDefaultTemplateId },
-    });
-    expect(res.statusCode).toBe(409);
-    expect(res.body).toContain('INVALID_TRANSITION');
-
-    await asAdmin((tx) => tx.server.update({ where: { id: serverId }, data: { status: 'ready' } }));
-  });
-
-  it('POST .../change-version 404s on a template that is not public or not active, same as first-time setup', async () => {
-    const privateRes = await asOwner(`/api/client/servers/${serverId}/change-version`, {
-      method: 'POST',
-      payload: { templateId: privateTemplateId },
-    });
-    expect(privateRes.statusCode).toBe(404);
-
-    const inactiveRes = await asOwner(`/api/client/servers/${serverId}/change-version`, {
-      method: 'POST',
-      payload: { templateId: inactiveTemplateId },
-    });
-    expect(inactiveRes.statusCode).toBe(404);
-  });
-
-  it('POST .../change-version on an offline, ready server reverts to the previous, still-working template when the agent dispatch fails, since the old container was never touched', async () => {
-    const before = await asAdmin((tx) => tx.server.findUniqueOrThrow({ where: { id: serverId } }));
-    const beforeVars = await asAdmin((tx) => tx.serverVariable.findMany({ where: { serverId }, include: { variable: true } }));
-    const beforeMinecraftVersion = beforeVars.find((v: any) => v.variable.templateId === before.templateId && v.variable.envVariable === 'MINECRAFT_VERSION')?.value;
-
-    const res = await asOwner(`/api/client/servers/${serverId}/change-version`, {
-      method: 'POST',
-      payload: { templateId: staleDefaultTemplateId, variables: { MINECRAFT_VERSION: '1.21.1' } },
-    });
-    // rethrow: true, same posture as `complete` — the customer must see
-    // the real dispatch error, never a false success.
-    expect(res.statusCode).toBe(503);
-
-    const server = await asAdmin((tx) => tx.server.findUniqueOrThrow({ where: { id: serverId } }));
-    expect(server.name).toBe(before.name); // change-version never renames the server
-    // dispatchReinstallToAgent's own failure handling reverts
-    // template/image/startup back to whatever they were BEFORE this
-    // attempt, and status back to 'ready' — never 'install_failed' — the
-    // agent only ever removes the OLD container after a successful pull
-    // (routes_server.go's handleReinstallServer), and this dispatch never
-    // even reached the agent (unbootstrapped node): the real container is
-    // still exactly the Paper one it always was, so reporting anything
-    // else would lie to the customer about their still-working server.
-    expect(server.templateId).toBe(before.templateId);
-    expect(server.dockerImage).toBe(before.dockerImage);
-    expect(server.startupCommand).toBe(before.startupCommand);
-    expect(server.status).toBe('ready');
-
-    // The reverted (Paper) template's own MINECRAFT_VERSION is untouched
-    // by the failed attempt — Vanilla's MINECRAFT_VERSION got upserted to
-    // '1.21.1' before dispatch ran (same "upsert, not create" reasoning as
-    // a first-time-setup retry), but that row is now orphaned under a
-    // templateId the server no longer points at, never read again unless
-    // a FUTURE change-version to Vanilla actually succeeds.
-    const vars = await asAdmin((tx) => tx.serverVariable.findMany({ where: { serverId }, include: { variable: true } }));
-    const currentMinecraftVersion = vars.find((v: any) => v.variable.templateId === server.templateId && v.variable.envVariable === 'MINECRAFT_VERSION')?.value;
-    expect(currentMinecraftVersion).toBe(beforeMinecraftVersion);
   });
 
   it('a setup_pending server blocks power/console actions (deny-by-default pre-ready gate) — not the agent-unreachable 503 a ready server would get', async () => {

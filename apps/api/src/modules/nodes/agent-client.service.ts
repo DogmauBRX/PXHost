@@ -95,23 +95,6 @@ export interface CreateAgentServerRequest {
   installEntrypoint: string;
   installScript: string;
 }
-
-// Mirrors agent/internal/api/routes_server.go's reinstallRequest — never
-// uid/allocations/limits, unlike CreateAgentServerRequest above: a version
-// change never touches those, and the agent's already-registered
-// *srv.Server keeps them from its original Create.
-export interface ReinstallAgentServerRequest {
-  image: string;
-  imageDigest?: string;
-  startupTemplate: string;
-  stopSignal?: string;
-  declaredVariables: string[];
-  variables: Record<string, string>;
-  installImage: string;
-  installEntrypoint: string;
-  installScript: string;
-}
-
 export interface InstallAgentModpackRequest {
   operationId: string;
   sourceUrl: string;
@@ -121,6 +104,7 @@ export interface InstallAgentModpackRequest {
   sha512?: string;
   diskLimitMb: number;
 }
+
 
 /**
  * The Panel's single outbound client to a Node Agent's control API
@@ -141,21 +125,6 @@ export class AgentClient {
   async createServer(nodeId: string, req: CreateAgentServerRequest): Promise<{ state: string }> {
     return this.call(nodeId, 'POST', '/api/servers', req);
   }
-
-  /**
-   * The reinstall counterpart to createServer — used for a version change
-   * on a server the agent already has registered (see
-   * ServersService.dispatchReinstallToAgent's doc comment for why
-   * createServer itself can never be reused here: the agent's own
-   * Register guard always 409s on a UUID it already knows, which is
-   * exactly the normal case for a server old enough to have a version to
-   * change). Hits agent/internal/api/routes_server.go's POST
-   * .../reinstall, which looks the server up instead of registering it.
-   */
-  async reinstallServer(nodeId: string, serverUuid: string, req: ReinstallAgentServerRequest): Promise<{ state: string }> {
-    return this.call(nodeId, 'POST', `/api/servers/${serverUuid}/reinstall`, req);
-  }
-
   async installModpack(nodeId: string, serverUuid: string, req: InstallAgentModpackRequest): Promise<{ operationId: string; status: string }> {
     return this.call(nodeId, 'POST', `/api/servers/${serverUuid}/modpacks/install`, req);
   }

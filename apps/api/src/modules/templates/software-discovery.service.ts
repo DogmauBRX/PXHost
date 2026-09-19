@@ -216,12 +216,7 @@ export class SoftwareDiscoveryService {
     return values;
   }
 
-  // ---- NeoForge (version numbers ENCODE the Minecraft version they
-  // target, but not consistently enough to reverse safely — see
-  // fetchNeoForgeVersions's own doc comment for why the version LIST
-  // cross-references Vanilla's instead of parsing this. fetchNeoForgeReleaseVersions
-  // itself is still needed as-is for fetchNeoForgeBuildsFor's exact/prefix
-  // match against a Minecraft version the caller already picked.) ----
+  // ---- NeoForge (version numbers already encode the Minecraft minor.patch, e.g. "20.4.80" -> Minecraft 1.20.4) ----
 
   private async fetchNeoForgeReleaseVersions(): Promise<string[]> {
     const data = (await this.fetchJson('https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge')) as {
@@ -230,33 +225,14 @@ export class SoftwareDiscoveryService {
     return Array.isArray(data.versions) ? data.versions.filter((v): v is string => typeof v === 'string') : [];
   }
 
-  // NeoForge forked from Forge at Minecraft 1.20.1 — its oldest real
-  // release ever, and the floor this scopes Vanilla's own list down to.
-  private static readonly NEOFORGE_OLDEST_MINECRAFT_VERSION = '1.20.1';
-
-  /**
-   * Deriving "which Minecraft version does this NeoForge release target"
-   * from the release string alone isn't safe: the pre-2026 scheme is
-   * "<mc-minor>.<mc-patch>.<build>" (needs a "1." prefix restored, e.g.
-   * "20.4.80" -> Minecraft 1.20.4), but the newer bare-year scheme adds
-   * one more segment for the Minecraft PATCH itself, without a trailing
-   * ".0" when that patch is 0 (e.g. "26.1.2.71" -> Minecraft "26.1.2",
-   * while "26.2.0.57" -> "26.2", not "26.2.0") — guessing which segments
-   * are "Minecraft version" vs "NeoForge's own patch/build" from the
-   * string alone produced actively wrong output before this (found live:
-   * "1.26.3", a version that never existed, and "1.0.25w14craftmine"
-   * from one of NeoForge's own April Fools joke releases leaking
-   * through). Cross-referencing against `fetchVanillaVersions` — which
-   * this class already gets right, straight from Mojang's own manifest —
-   * sidesteps parsing NeoForge's scheme at all: every version NeoForge
-   * could possibly target is already a real Vanilla release, so this
-   * just scopes that same, already-correct list down to NeoForge's
-   * actual supported range.
-   */
   private async fetchNeoForgeVersions(): Promise<string[]> {
-    const vanillaVersions = await this.fetchVanillaVersions();
-    const cutoffIndex = vanillaVersions.indexOf(SoftwareDiscoveryService.NEOFORGE_OLDEST_MINECRAFT_VERSION);
-    return cutoffIndex === -1 ? vanillaVersions : vanillaVersions.slice(0, cutoffIndex + 1);
+    const releases = await this.fetchNeoForgeReleaseVersions();
+    const prefixes = new Set<string>();
+    for (const version of releases) {
+      const parts = version.split('.');
+      if (parts.length >= 2) prefixes.add(`${parts[0]}.${parts[1]}`);
+    }
+    return [...prefixes].map((prefix) => `1.${prefix}`).sort(compareVersionsDesc);
   }
 
   private async fetchNeoForgeBuildsFor(mcVersion: string): Promise<string[]> {
