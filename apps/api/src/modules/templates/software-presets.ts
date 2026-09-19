@@ -171,16 +171,81 @@ export interface TemplatePreset {
   buildVariable: string | null;
 }
 
-// Java is backward compatible (a newer JRE runs older bytecode fine), so
-// one shared, reasonably current image covers every curated Minecraft
-// version below it — the alternative (picking an image per version) has
-// nowhere to live in this data model anyway (one dockerImages per
-// TEMPLATE, not per version choice). Bump this whenever a new Minecraft
-// release needs a newer classfile version than the current JRE here
-// supports (java_21 = classfile 65; a real customer install of
-// Minecraft 26.2 — classfile 69, i.e. Java 25 — failed outright with
-// UnsupportedClassVersionError before this was bumped to java_25).
-const JAVA_IMAGE = { 'Java 25': 'ghcr.io/pterodactyl/yolks:java_25' };
+// One image per Java version a curated Minecraft release actually targets.
+//
+// This used to be a single java_25 entry, on the reasoning that "Java is
+// backward compatible, so the newest JRE runs every older release". That
+// holds for BYTECODE and is exactly why vanilla and Paper never noticed —
+// but it is false for the JDK's own internals, which get removed. Found
+// live: a Minecraft 1.20.1 Cobblemon pack died during mod loading on
+// java_25 with
+//
+//   NoSuchMethodError: 'void sun.misc.Unsafe.ensureClassInitialized(Class)'
+//
+// from the GraalVM/Truffle engine bundled inside the mod — a method newer
+// JDKs no longer have. Big mods reach into sun.misc.Unsafe routinely, so
+// "newest JRE" is the wrong default for anything modded: the right one is
+// the Java the chosen Minecraft version was built against.
+const JAVA_IMAGES: Record<string, string> = {
+  'Java 8': 'ghcr.io/pterodactyl/yolks:java_8',
+  'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
+  'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
+  'Java 25': 'ghcr.io/pterodactyl/yolks:java_25',
+};
+
+/**
+ * The Java major a given Minecraft version targets, or null when the
+ * version is unknown/unparseable (`latest`, a snapshot name, free text a
+ * customer typed) — callers fall back to the template's own first image
+ * rather than guessing.
+ *
+ * The boundaries are Mojang's own: 1.20.5 moved the requirement to 21,
+ * 1.18 to 17, and everything at or below 1.16 still wants 8. Versions in
+ * the bare-year scheme (26.x) are newer than all of those and take the
+ * newest JRE — that's the classfile-69 case the java_25 bump was for.
+ */
+export function requiredJavaMajor(minecraftVersion: string): number | null {
+  const parts = minecraftVersion.trim().split('.');
+  const first = Number(parts[0]);
+  if (!Number.isInteger(first)) return null;
+  // Bare-year scheme ("26.3"): newer than every 1.x release.
+  if (first !== 1) return first >= 26 ? 25 : null;
+
+  const minor = Number(parts[1]);
+  if (!Number.isInteger(minor)) return null;
+  if (minor <= 16) return 8;
+  if (minor <= 19) return 17;
+  if (minor === 20) {
+    // 1.20.5 is the break: .0–.4 are Java 17, .5+ are Java 21.
+    const patch = Number(parts[2] ?? '0');
+    return Number.isInteger(patch) && patch >= 5 ? 21 : 17;
+  }
+  return 21;
+}
+
+/**
+ * Chooses which of a template's `dockerImages` to run a server on, given
+ * the Minecraft version the customer picked.
+ *
+ * A template carrying a SINGLE image is taken at its word — that is both
+ * every pre-existing template in the database and the shape an admin gets
+ * when they set one image by hand, and silently overriding their explicit
+ * choice would be worse than running the version they asked for. Only a
+ * multi-image template (what the presets below now ship) gets version-aware
+ * selection, and even then an unknown version falls back to the first entry.
+ */
+export function pickDockerImage(images: Record<string, string>, minecraftVersion: string | undefined): string | undefined {
+  const entries = Object.entries(images);
+  if (entries.length === 0) return undefined;
+  if (entries.length === 1) return entries[0][1];
+
+  const major = minecraftVersion ? requiredJavaMajor(minecraftVersion) : null;
+  if (major === null) return entries[0][1];
+
+  const wanted = entries.find(([label, ref]) => label === `Java ${major}` || ref.endsWith(`:java_${major}`));
+  return wanted ? wanted[1] : entries[0][1];
+}
+
 const STANDARD_STARTUP_COMMAND = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui';
 
 // Forge and NeoForge (1.17+) install NO runnable jar at all — they write a
@@ -580,7 +645,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   paper: {
     name: 'Paper',
     description: 'Servidor Paper de alto desempenho para Minecraft: Java Edition.',
-    dockerImages: JAVA_IMAGE,
+    dockerImages: JAVA_IMAGES,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: INSTALL_IMAGE,
@@ -608,7 +673,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   fabric: {
     name: 'Fabric',
     description: 'Servidor modificado de Minecraft: Java Edition com o carregador de mods Fabric.',
-    dockerImages: JAVA_IMAGE,
+    dockerImages: JAVA_IMAGES,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: JAVA_INSTALL_IMAGE,
@@ -636,7 +701,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   quilt: {
     name: 'Quilt',
     description: 'Servidor modificado de Minecraft: Java Edition com o carregador de mods Quilt.',
-    dockerImages: JAVA_IMAGE,
+    dockerImages: JAVA_IMAGES,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: JAVA_INSTALL_IMAGE,
@@ -664,7 +729,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   vanilla: {
     name: 'Vanilla',
     description: 'Servidor oficial e sem modificações do Minecraft: Java Edition — sem plugins ou mods.',
-    dockerImages: JAVA_IMAGE,
+    dockerImages: JAVA_IMAGES,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: INSTALL_IMAGE,
@@ -682,7 +747,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   forge: {
     name: 'Forge',
     description: 'Servidor modificado de Minecraft: Java Edition com o carregador de mods Forge.',
-    dockerImages: JAVA_IMAGE,
+    dockerImages: JAVA_IMAGES,
     startupCommand: MODLOADER_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: JAVA_INSTALL_IMAGE,
@@ -710,7 +775,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   neoforge: {
     name: 'NeoForge',
     description: 'Servidor modificado de Minecraft: Java Edition com NeoForge, fork do Forge mantido ativamente para versões modernas.',
-    dockerImages: JAVA_IMAGE,
+    dockerImages: JAVA_IMAGES,
     startupCommand: MODLOADER_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: JAVA_INSTALL_IMAGE,
@@ -738,7 +803,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
   purpur: {
     name: 'Purpur',
     description: 'Servidor baseado no Paper com ajustes extras de desempenho e jogabilidade — compatível com plugins do Paper.',
-    dockerImages: JAVA_IMAGE,
+    dockerImages: JAVA_IMAGES,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: INSTALL_IMAGE,

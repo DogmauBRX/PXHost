@@ -12,6 +12,7 @@ import { NodeSchedulerService, SchedulerCandidate } from '../scheduler/node-sche
 import { GatewayService } from '../gateway/gateway.service';
 import { CreateServerDto, CreateSetupPendingServerInput } from './dto/server.dto';
 import { generateShortId } from './short-id';
+import { pickDockerImage } from '../templates/software-presets';
 import { validateVariableValue } from './variable-rules';
 
 // Exported for ServerSetupService, which builds the exact same
@@ -143,7 +144,9 @@ export class ServersService {
       if (!template.isActive) throw new ConflictException('Template is not active');
 
       const images = template.dockerImages as Record<string, string>;
-      const [, dockerImage] = Object.entries(images)[0] ?? [undefined, undefined];
+      // Version-aware: a modded server on the wrong Java dies during mod
+      // loading, not at startup — see pickDockerImage's doc comment.
+      const dockerImage = pickDockerImage(images, dto.variables?.MINECRAFT_VERSION);
       if (!dockerImage) throw new ConflictException('Template has no docker images configured');
       templateContext = { template, dockerImage };
     }

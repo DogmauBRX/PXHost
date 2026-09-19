@@ -5,6 +5,7 @@ import type { AccessActor } from '../authorization/server-access.service';
 import { PublicTemplatesService } from '../public/public-templates.service';
 import { AuditService } from '../audit/audit.service';
 import { DEFAULT_INSTALL_ENTRYPOINT, DEFAULT_INSTALL_IMAGE, ServersService } from './servers.service';
+import { pickDockerImage } from '../templates/software-presets';
 import { resolveDeclaredVariables } from './variable-resolution';
 import { CompleteServerSetupDto } from './dto/server-setup.dto';
 import { ChangeServerVersionDto } from './dto/change-version.dto';
@@ -203,7 +204,9 @@ export class ServerSetupService {
     if (!template) throw new NotFoundException('Template not found');
 
     const images = template.dockerImages as Record<string, string>;
-    const [, dockerImage] = Object.entries(images)[0] ?? [undefined, undefined];
+    // Version-aware: um servidor com mods no Java errado morre
+    // carregando os mods, nao no startup (ver pickDockerImage).
+    const dockerImage = pickDockerImage(images, dto.variables?.MINECRAFT_VERSION);
     if (!dockerImage) throw new ConflictException('Template has no docker images configured');
 
     const templateVars = await this.prisma.templateVariable.findMany({ where: { templateId: template.id } });
@@ -344,7 +347,9 @@ export class ServerSetupService {
     if (!template) throw new NotFoundException('Template not found');
 
     const images = template.dockerImages as Record<string, string>;
-    const [, dockerImage] = Object.entries(images)[0] ?? [undefined, undefined];
+    // Version-aware: um servidor com mods no Java errado morre
+    // carregando os mods, nao no startup (ver pickDockerImage).
+    const dockerImage = pickDockerImage(images, dto.variables?.MINECRAFT_VERSION);
     if (!dockerImage) throw new ConflictException('Template has no docker images configured');
 
     const templateVars = await this.prisma.templateVariable.findMany({ where: { templateId: template.id } });
