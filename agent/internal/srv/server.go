@@ -260,6 +260,36 @@ func (s *Server) Start(ctx context.Context, dc dockerFull) error {
 	return nil
 }
 
+// Adopt reconnects an in-memory Server handle to a container that survived
+// an agent restart. Docker is the durable source of truth for container
+// identity/state; the manager itself is intentionally memory-only.
+func (s *Server) Adopt(dc dockerFull, containerID string, running bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if containerID == "" {
+		return fmt.Errorf("srv: cannot adopt an empty container id for %s", s.UUID)
+	}
+	s.ContainerID = containerID
+	if !running {
+		s.State = StateOffline
+		return nil
+	}
+
+	pump, err := console.Start(s.bgCtx, dc, containerID, s.Hub)
+	if err != nil {
+		s.ContainerID = ""
+		return fmt.Errorf("srv: attaching console while adopting %s: %w", s.UUID, err)
+	}
+	s.pump = pump
+	s.State = StateRunning
+	memLimitBytes := uint64(s.spec.Limits.MemoryMB) * 1024 * 1024
+	cpuLimitPercent := uint64(s.spec.Limits.CPUPercent)
+	s.collector = stats.NewCollector(dc, containerID, memLimitBytes, cpuLimitPercent, nil, nil)
+	go func() { _ = s.collector.Run(s.bgCtx) }()
+	return nil
+}
+
 // Stop performs a graceful stop: Docker's ContainerStop sends the
 // configured stop signal and waits up to stopTimeout before the daemon
 // itself escalates to SIGKILL. The console pump and stats collector are

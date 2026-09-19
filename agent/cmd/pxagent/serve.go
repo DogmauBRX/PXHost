@@ -4,8 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/gxhost/agent/internal/api"
 	"github.com/gxhost/agent/internal/auth"
 	"github.com/gxhost/agent/internal/config"
@@ -82,6 +86,10 @@ func runServeCmd(args []string) error {
 	}
 
 	manager := srv.NewManager()
+	adopted, err := reconcileManagedContainers(ctx, manager, dc, node)
+	if err != nil {
+		return fmt.Errorf("reconciling managed containers: %w", err)
+	}
 	for _, p := range serverPaths {
 		if err := loadAndAdopt(ctx, manager, dc, node, p, *autostart); err != nil {
 			return fmt.Errorf("loading %s: %w", p, err)
@@ -107,7 +115,7 @@ func runServeCmd(args []string) error {
 	errCh := make(chan error, 1)
 	go func() { errCh <- apiServer.ListenAndServe(listenAddr) }()
 
-	fmt.Printf("pxagent serving on %s (%d server(s) registered)\n", listenAddr, len(serverPaths))
+	fmt.Printf("pxagent serving on %s (%d server(s) registered)\n", listenAddr, adopted+len(serverPaths))
 
 	if nf.PanelURL != "" {
 		go runHeartbeatLoop(ctx, nf, tokenStore, dc)
@@ -128,6 +136,144 @@ func runServeCmd(args []string) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+// reconcileManagedContainers rebuilds the volatile manager from Docker's
+// durable gxhost labels. Installer containers are deliberately skipped:
+// only the long-lived game container represents a registered server.
+func reconcileManagedContainers(ctx context.Context, manager *srv.Manager, dc *dockerx.Client, node spec.Node) (int, error) {
+	containers, err := dc.ListManaged(ctx)
+	if err != nil {
+		return 0, err
+	}
+	adopted := 0
+	for _, item := range containers {
+		if item.Labels["gxhost.role"] == "installer" {
+			continue
+		}
+		uuid := item.Labels["gxhost.server.uuid"]
+		if uuid == "" {
+			continue
+		}
+		insp, err := dc.InspectContainer(ctx, item.ID)
+		if err != nil {
+			return adopted, err
+		}
+		sv, err := recoveredServerSpec(insp.Config.Image, insp.Config.Entrypoint, insp.Config.Cmd, insp.Config.StopSignal, item.Labels, insp.HostConfig)
+		if err != nil {
+			return adopted, fmt.Errorf("container %s: %w", item.ID, err)
+		}
+		target, err := manager.Register(sv, node)
+		if err != nil {
+			return adopted, err
+		}
+		running := insp.State != nil && insp.State.Running
+		if err := target.Adopt(dc, item.ID, running); err != nil {
+			return adopted, err
+		}
+		fmt.Printf("adopted managed container %s for server %s (running=%t)\n", item.ID, uuid, running)
+		adopted++
+	}
+	return adopted, nil
+}
+
+func recoveredServerSpec(image string, entrypoint, cmd []string, stopSignal string, labels map[string]string, hc *container.HostConfig) (spec.Server, error) {
+	uuid := labels["gxhost.server.uuid"]
+	uid, err := strconv.Atoi(labels["gxhost.server.uid"])
+	if err != nil || uid <= 0 {
+		return spec.Server{}, fmt.Errorf("invalid gxhost.server.uid label")
+	}
+	argv := append(append([]string{}, entrypoint...), cmd...)
+	if image == "" || len(argv) == 0 {
+		return spec.Server{}, fmt.Errorf("managed container is missing image or startup command")
+	}
+	limits := spec.Limits{DiskMB: 1}
+	if hc != nil {
+		limits.MemoryMB = hc.Memory / (1024 * 1024)
+		if hc.CPUPeriod > 0 {
+			limits.CPUPercent = int(hc.CPUQuota * 100 / hc.CPUPeriod)
+		}
+		if hc.MemorySwap < 0 {
+			limits.SwapMB = -1
+		} else if hc.MemorySwap > hc.Memory {
+			limits.SwapMB = (hc.MemorySwap - hc.Memory) / (1024 * 1024)
+		}
+		limits.IOWeight = int(hc.BlkioWeight)
+		if hc.PidsLimit != nil {
+			limits.PidsLimit = *hc.PidsLimit
+		}
+	}
+	if limits.MemoryMB <= 0 {
+		limits.MemoryMB = 1
+	}
+	return spec.Server{
+		UUID: uuid, UID: uid, Image: image,
+		StartupTmpl: joinShellArgs(argv), StopSignal: stopSignal,
+		Env: map[string]string{}, Limits: limits,
+		Allocations: recoveredAllocations(hc),
+	}, nil
+}
+
+func recoveredAllocations(hc *container.HostConfig) []spec.Allocation {
+	if hc == nil {
+		return nil
+	}
+	type key struct {
+		ip   string
+		port int
+	}
+	byAddress := map[key]map[string]bool{}
+	for containerPort, bindings := range hc.PortBindings {
+		port, err := strconv.Atoi(containerPort.Port())
+		if err != nil {
+			continue
+		}
+		for _, binding := range bindings {
+			hostPort, err := strconv.Atoi(binding.HostPort)
+			if err != nil || hostPort != port {
+				continue
+			}
+			k := key{binding.HostIP, port}
+			if byAddress[k] == nil {
+				byAddress[k] = map[string]bool{}
+			}
+			byAddress[k][containerPort.Proto()] = true
+		}
+	}
+	keys := make([]key, 0, len(byAddress))
+	for k := range byAddress {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].port == keys[j].port {
+			return keys[i].ip < keys[j].ip
+		}
+		return keys[i].port < keys[j].port
+	})
+	result := make([]spec.Allocation, 0, len(keys))
+	for i, k := range keys {
+		protocols := make([]string, 0, len(byAddress[k]))
+		for proto := range byAddress[k] {
+			protocols = append(protocols, proto)
+		}
+		sort.Strings(protocols)
+		result = append(result, spec.Allocation{IP: k.ip, Port: k.port, Primary: i == 0, Protocols: protocols})
+	}
+	return result
+}
+
+func joinShellArgs(argv []string) string {
+	quoted := make([]string, len(argv))
+	for i, arg := range argv {
+		if arg != "" && strings.IndexFunc(arg, func(r rune) bool {
+			return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_./:@%+=,-", r))
+		}) == -1 {
+			quoted[i] = arg
+		} else {
+			quoted[i] = "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
+		}
+	}
+	return strings.Join(quoted, " ")
 }
 
 // loadAndAdopt registers one server with the manager. If a matching
