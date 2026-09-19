@@ -377,6 +377,72 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('lists server uuids for the node — feeds the agent\'s own orphan-reconciliation sweep', async () => {
+    // Regression coverage for the production bug this endpoint exists to
+    // fix: agent/internal/srv/manager.go's registry is in-memory only, so
+    // a server created live is forgotten the instant the agent process
+    // restarts. If a DELETE for it then 404s against the manager, the
+    // panel's AgentClient.deleteServer treats that as "nothing to tear
+    // down" and hard-deletes the row anyway — silently orphaning the real
+    // container. This endpoint is what the agent's own periodic sweep
+    // (srv.ReconcileOrphans) diffs Docker's container labels against to
+    // catch that case on its own, so it has to report every server row
+    // that still genuinely exists for this node — no more, no less.
+    const emptyRes = await app.inject({
+      method: 'GET',
+      url: '/api/remote/nodes/servers',
+      headers: { authorization: `Bearer ${nodeToken}` },
+    });
+    expect(emptyRes.statusCode).toBe(200);
+    expect(JSON.parse(emptyRes.body)).toEqual({ serverUuids: [] });
+
+    // Inserted directly via Prisma, not the admin HTTP API: creating a
+    // server for real dispatches synchronously to this node's agent
+    // (ServersService.createOnNode awaits dispatchToAgent), and this
+    // suite's node is a `.test` fqdn unreachable by design — that call
+    // would just burn AgentClient's full 45s timeout for no benefit to
+    // what this test actually checks (the listing query, not creation).
+    const passwordHash = await argon2.hash('OwnerPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
+    const owner = await prisma.user.create({
+      data: { email: `nodes-owner-${suffix}@gxhost.local`, username: `nodes-owner-${suffix}`, passwordHash, isActive: true },
+    });
+    const shortId = (Date.now().toString(36) + 'aaaaaaaa').slice(0, 8);
+    // `servers` carries a real RLS policy (unlike `users`, which is why
+    // the prisma.user.create above needed no special context) — a bare
+    // prisma.server.create is a normal client-scoped connection with no
+    // user/admin context attached, which RLS rejects outright. Same
+    // asAdmin/withRLS pattern databases.e2e-spec.ts uses for the same
+    // reason.
+    const server = await prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+      tx.server.create({
+        // status: 'setup_pending' — servers_setup_consistency requires
+        // templateId/dockerImage/startupCommand to be null exactly when
+        // status is 'setup_pending' (see the Server model's own doc
+        // comment on templateId), which is all this test needs: a real
+        // row for the endpoint to list, not a fully provisioned server.
+        data: { shortId, ownerId: owner.id, nodeId, name: 'nodes-e2e reconcile-test server', memoryMb: 256, diskMb: 512, status: 'setup_pending' },
+      }),
+    );
+
+    try {
+      const withServerRes = await app.inject({
+        method: 'GET',
+        url: '/api/remote/nodes/servers',
+        headers: { authorization: `Bearer ${nodeToken}` },
+      });
+      expect(withServerRes.statusCode).toBe(200);
+      expect(JSON.parse(withServerRes.body)).toEqual({ serverUuids: [server.id] });
+    } finally {
+      await prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.server.deleteMany({ where: { id: server.id } }));
+      await prisma.user.updateMany({ where: { id: owner.id }, data: { deletedAt: new Date() } });
+    }
+  });
+
+  it('rejects the servers list without a node token', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/remote/nodes/servers' });
+    expect(res.statusCode).toBe(401);
+  });
+
   it('re-bootstrapping the same node revokes the old node token', async () => {
     const tokenRes = await authed(`/api/admin/nodes/${nodeId}/bootstrap-token`, { method: 'POST' });
     const secondBootstrapToken = JSON.parse(tokenRes.body).token;

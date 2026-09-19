@@ -3,10 +3,13 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
+	"github.com/gxhost/agent/internal/dockerx"
 	"github.com/gxhost/agent/internal/panel"
 	"github.com/gxhost/agent/internal/spec"
 	"github.com/gxhost/agent/internal/srv"
@@ -166,7 +169,30 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 	uuid := pathParam(r, "uuid")
 	target, ok := s.manager.Get(uuid)
 	if !ok {
-		writeErrorResp(w, http.StatusNotFound, "SERVER_NOT_FOUND", "no server registered with that uuid")
+		// manager is in-memory only — a server created live through
+		// handleCreateServer is never persisted to disk, so an agent
+		// restart drops every server it knew about from this map while
+		// their containers keep running untouched. The panel's
+		// AgentClient.deleteServer treats a 404 here as an idempotent
+		// no-op (the legitimate case is an install that failed before
+		// Register ever ran, so there truly is no container) and hard-
+		// deletes the server row regardless of which case this was.
+		// Found live: that made a bare "not registered" answer wrong
+		// whenever it was actually the restart case — the container
+		// survived, permanently orphaned with nothing left pointing at
+		// it. Docker's own label is the only remaining source of truth
+		// at that point, so it gets one direct check before this
+		// answers "truly nothing here".
+		removed, err := s.removeUnregisteredContainer(r.Context(), uuid)
+		if err != nil {
+			writeErrorResp(w, http.StatusBadGateway, "REMOVE_FAILED", err.Error())
+			return
+		}
+		if !removed {
+			writeErrorResp(w, http.StatusNotFound, "SERVER_NOT_FOUND", "no server registered with that uuid")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	if target.State != srv.StateOffline {
@@ -181,6 +207,47 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 	}
 	s.manager.Remove(uuid)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// findContainerByUUID returns the id/running-state of the first container
+// in list carrying dockerx.ServerUUIDLabel == uuid. Split out from
+// removeUnregisteredContainer's Docker calls so the matching logic can be
+// unit tested without a real daemon (dockerx.Client is a concrete wrapper
+// with no fake-able seam — see srv package's test files for the same
+// pattern/reasoning).
+func findContainerByUUID(list []container.Summary, uuid string) (id string, running bool, found bool) {
+	for _, c := range list {
+		if c.Labels[dockerx.ServerUUIDLabel] == uuid {
+			return c.ID, c.State == "running", true
+		}
+	}
+	return "", false, false
+}
+
+// removeUnregisteredContainer force-tears-down a managed container by its
+// gxhost.server.uuid label, bypassing the manager entirely. Used only when
+// the manager has no handle for the requested uuid (see handleDeleteServer)
+// — the container's Docker-reported state is checked directly since there
+// is no in-memory srv.Server for it here.
+func (s *Server) removeUnregisteredContainer(ctx context.Context, uuid string) (bool, error) {
+	list, err := s.dc.ListManaged(ctx)
+	if err != nil {
+		return false, fmt.Errorf("listing managed containers: %w", err)
+	}
+	id, running, found := findContainerByUUID(list, uuid)
+	if !found {
+		return false, nil
+	}
+	if running {
+		if err := s.dc.KillContainer(ctx, id); err != nil {
+			return false, fmt.Errorf("killing orphaned container %s: %w", id, err)
+		}
+	}
+	if err := s.dc.RemoveContainer(ctx, id, true); err != nil {
+		return false, fmt.Errorf("removing orphaned container %s: %w", id, err)
+	}
+	s.log.Warn("removed a container the manager had no record of (agent restart lost its registration)", "uuid", uuid, "container", id)
+	return true, nil
 }
 
 // primaryAllocationPort returns the primary allocation's port, or 0 if

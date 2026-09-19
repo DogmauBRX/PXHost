@@ -231,7 +231,7 @@ type jwksResponse struct {
 // trusted until the next successful refresh, never a hard failure.
 func (c *Client) FetchJWKS(ctx context.Context) (map[string]ed25519.PublicKey, error) {
 	var resp jwksResponse
-	if err := c.get(ctx, "/api/remote/jwks", &resp); err != nil {
+	if err := c.get(ctx, "/api/remote/jwks", "", &resp); err != nil {
 		return nil, fmt.Errorf("panel: fetch-jwks: %w", err)
 	}
 	keys := make(map[string]ed25519.PublicKey, len(resp.Keys))
@@ -248,12 +248,35 @@ func (c *Client) FetchJWKS(ctx context.Context) (map[string]ed25519.PublicKey, e
 	return keys, nil
 }
 
-// get is post's unauthenticated, no-body sibling — used only by
-// FetchJWKS today, which needs neither a bearer token nor a request body.
-func (c *Client) get(ctx context.Context, path string, out interface{}) error {
+type ListServersResponse struct {
+	ServerUUIDs []string `json:"serverUuids"`
+}
+
+// ListServers returns the authoritative set of server UUIDs the panel
+// still has a row for. Used by the agent's own orphan-reconciliation sweep
+// (srv.ReconcileOrphans): once this agent's process restarts, Docker's
+// container labels are the only thing left pointing at a server (Manager's
+// registry is in-memory only), so an accurate "what should still exist"
+// list has to come from the one place that actually hard-deletes a server
+// row, not from anything the agent itself remembers.
+func (c *Client) ListServers(ctx context.Context, nodeToken string) (*ListServersResponse, error) {
+	var resp ListServersResponse
+	if err := c.get(ctx, "/api/remote/nodes/servers", nodeToken, &resp); err != nil {
+		return nil, fmt.Errorf("panel: list-servers: %w", err)
+	}
+	return &resp, nil
+}
+
+// get is post's no-body sibling. bearerToken may be empty (FetchJWKS is
+// the one caller that needs neither a bearer token nor a request body);
+// every other caller authenticates the same way post's callers do.
+func (c *Client) get(ctx context.Context, path, bearerToken string, out interface{}) error {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
+	}
+	if bearerToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+bearerToken)
 	}
 	resp, err := c.http.Do(httpReq)
 	if err != nil {

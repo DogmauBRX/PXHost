@@ -258,6 +258,40 @@ export class NodeBootstrapService {
 
     return { status: deriveHealthStatus(node.lastHeartbeatAt) };
   }
+
+  /**
+   * The authoritative "what should still exist on this node" list for the
+   * agent's own orphan-reconciliation sweep (agent/internal/srv/reconcile.go).
+   * Found live: `servers` are hard-deleted the moment the panel confirms
+   * agent teardown (architecture doc 2.2), but the agent's in-memory
+   * server registry is never persisted — an agent restart drops it
+   * entirely while a container it was tracking keeps running untouched.
+   * If a delete then arrives (or already arrived, while the agent was
+   * down) for a server whose container the agent no longer has a record
+   * of, nothing else it ever hears from the panel again gives it a chance
+   * to notice; this endpoint is what its periodic sweep diffs Docker's
+   * own container labels against to catch that case on its own. No
+   * `deletedAt` filter needed: unlike most tables in this schema, `servers`
+   * has no soft delete, so every row returned here is genuinely still
+   * live.
+   */
+  async listServerUuids(nodeId: string): Promise<{ serverUuids: string[] }> {
+    // `servers` is RLS-protected (PrismaService's own doc comment) — a
+    // bare `this.prisma.server.findMany` here would silently return an
+    // empty list on every call, no error, nothing to notice in a log.
+    // That's not just wrong, it's actively dangerous for THIS endpoint
+    // specifically: the agent's orphan sweep (srv.ReconcileOrphans) treats
+    // "not in this list" as "safe to force-remove", so an empty list back
+    // here would make it tear down every container on the node on its
+    // very next tick. Same withRLS(admin) context every other
+    // agent-initiated system call in ServersService already uses (see
+    // reportInstallResult/findServerForNode) — there is no end user
+    // behind this request to scope it to.
+    const servers = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+      tx.server.findMany({ where: { nodeId }, select: { id: true } }),
+    );
+    return { serverUuids: servers.map((s) => s.id) };
+  }
 }
 
 function bootstrapRedisKey(token: string): string {

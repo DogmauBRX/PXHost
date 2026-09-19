@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { NodeBootstrapService } from './node-bootstrap.service';
 import { BootstrapRequestDto, HeartbeatDto } from './dto/node.dto';
@@ -38,5 +38,13 @@ export class RemoteNodesController {
   rotateToken(@Req() req: FastifyRequest) {
     const node = (req as unknown as { node: AuthenticatedNode }).node;
     return this.bootstrap.rotateSelf(node.id);
+  }
+
+  /** Feeds the agent's own orphan-reconciliation sweep — see NodeBootstrapService.listServerUuids' doc comment. */
+  @Get('servers')
+  @UseGuards(NodeAuthGuard)
+  listServers(@Req() req: FastifyRequest) {
+    const node = (req as unknown as { node: AuthenticatedNode }).node;
+    return this.bootstrap.listServerUuids(node.id);
   }
 }

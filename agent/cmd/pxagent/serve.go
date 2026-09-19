@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
@@ -123,6 +124,7 @@ func runServeCmd(args []string) error {
 			go runTokenRotationLoop(ctx, *nodePath, nf, tokenStore)
 		}
 		go runJWKSRefreshLoop(ctx, nf, verifier)
+		go runReconcileLoop(ctx, manager, nf, tokenStore, dc)
 	} else {
 		fmt.Println("no panel_url configured — running standalone, not reporting heartbeats")
 	}
@@ -483,6 +485,65 @@ func runTokenRotationLoop(ctx context.Context, nodePath string, nf config.NodeFi
 			return
 		case <-ticker.C:
 			rotate()
+		}
+	}
+}
+
+// orphanReconcileInterval bounds how long a container can stay orphaned
+// (its server row deleted while this agent was down/unreachable, or the
+// delete itself losing the race with the manager's in-memory registry
+// after a restart — see srv.ReconcileOrphans' doc comment) before this
+// sweep finds and removes it on its own. There is no real Docker-event/
+// reconnect-driven listener yet (architecture doc 4.1's "full reconciliation
+// sweep on every reconnect" is a later milestone), so a ticker is today's
+// bounded stand-in — 5 minutes keeps a leaked port from staying blocked for
+// long without hammering the panel's new list-servers endpoint every tick.
+const orphanReconcileInterval = 5 * time.Minute
+
+// runReconcileLoop is the safety net for srv.ReconcileOrphans: it asks the
+// panel which server UUIDs should still exist on this node and tears down
+// any managed container Docker still has that isn't in that set. Runs
+// once immediately (so a restart's own orphans, if any, are caught within
+// this one bounded delay rather than waiting a full tick) and then on
+// orphanReconcileInterval for as long as the process runs. A failure
+// (panel unreachable, Docker list call failing) is logged and retried
+// next tick, same non-fatal posture as every other background loop here —
+// a panel outage must not take down a node's already-running game servers.
+func runReconcileLoop(ctx context.Context, manager *srv.Manager, nf config.NodeFile, tokenStore *api.TokenStore, dc *dockerx.Client) {
+	client := panel.New(nf.PanelURL)
+	log := slog.Default()
+
+	reconcile := func() {
+		reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		resp, err := client.ListServers(reqCtx, tokenStore.Get())
+		if err != nil {
+			fmt.Printf("orphan reconcile: failed to fetch known servers (will retry in %s): %v\n", orphanReconcileInterval, err)
+			return
+		}
+		known := make(map[string]bool, len(resp.ServerUUIDs))
+		for _, uuid := range resp.ServerUUIDs {
+			known[uuid] = true
+		}
+		removed, err := srv.ReconcileOrphans(reqCtx, manager, dc, known, log)
+		if err != nil {
+			fmt.Printf("orphan reconcile: sweep failed (will retry in %s): %v\n", orphanReconcileInterval, err)
+			return
+		}
+		if len(removed) > 0 {
+			fmt.Printf("orphan reconcile: removed %d orphaned container(s) with no matching server: %v\n", len(removed), removed)
+		}
+	}
+
+	reconcile()
+	ticker := time.NewTicker(orphanReconcileInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reconcile()
 		}
 	}
 }

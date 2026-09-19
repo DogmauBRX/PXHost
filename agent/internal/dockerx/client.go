@@ -29,6 +29,14 @@ const pinnedAPIVersion = "1.43"
 // (architecture doc 4.2/4.3).
 const ManagedLabel = "gxhost.managed"
 
+// ServerUUIDLabel identifies which server a managed container belongs to.
+// Must match the literal key spec.buildLabels (hostconfig.go) writes at
+// create time — duplicated here rather than imported to keep this package
+// free of a dependency on spec, but the two must never drift: this is the
+// only way an orphaned container (one whose Manager entry and server row
+// are both gone) can still be traced back to the server it belonged to.
+const ServerUUIDLabel = "gxhost.server.uuid"
+
 type Client struct {
 	cli *client.Client
 }
