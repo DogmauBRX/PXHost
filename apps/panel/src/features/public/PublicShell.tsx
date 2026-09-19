@@ -27,6 +27,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggle);
   const accessToken = useAuthStore((s) => s.accessToken);
+  const username = useAuthStore((s) => s.user?.username);
   const isAdmin = useAuthStore((s) => s.user?.isAdmin);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -73,9 +74,12 @@ export function PublicShell({ children }: { children: ReactNode }) {
               {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
             </button>
             {accessToken ? (
-              <Link to={dashboardTo}>
-                <Button variant="primary">Ir para o painel</Button>
-              </Link>
+              <>
+                <span className="max-w-[12rem] truncate text-sm text-text-muted">{username}</span>
+                <Link to={dashboardTo}>
+                  <Button variant="primary">Ir para o painel</Button>
+                </Link>
+              </>
             ) : (
               <>
                 <Link to="/login">
@@ -110,7 +114,12 @@ export function PublicShell({ children }: { children: ReactNode }) {
                 {catalogNavLabel}
               </Link>
               {accessToken ? (
-                <Link to={dashboardTo} onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-text hover:bg-surface-2">
+                <Link
+                  to={dashboardTo}
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-text hover:bg-surface-2"
+                >
+                  {username && <span className="block text-xs font-normal text-text-muted">{username}</span>}
                   Ir para o painel
                 </Link>
               ) : (
