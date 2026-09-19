@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -76,7 +77,7 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 		return err
 	}
 	progress(25, "Pacote validado; preparando staging")
-	if err := copyTree(dataDir, stageDir); err != nil {
+	if err := copyTree(dataDir, stageDir, s.spec.UID); err != nil {
 		return fmt.Errorf("modpack: preparing staging: %w", err)
 	}
 	stageJail, err := fsx.Open(stageDir)
@@ -346,7 +347,7 @@ func safeRelative(value string) error {
 	return nil
 }
 
-func copyTree(source, dest string) error {
+func copyTree(source, dest string, uid int) error {
 	return filepath.Walk(source, func(current string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -356,14 +357,20 @@ func copyTree(source, dest string) error {
 			return err
 		}
 		if rel == "." {
-			return os.MkdirAll(dest, info.Mode().Perm())
+			if err := os.MkdirAll(dest, info.Mode().Perm()); err != nil {
+				return err
+			}
+			return chownStagedPath(dest, uid)
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("symlink %q is not allowed", rel)
 		}
 		target := filepath.Join(dest, rel)
 		if info.IsDir() {
-			return os.MkdirAll(target, info.Mode().Perm())
+			if err := os.MkdirAll(target, info.Mode().Perm()); err != nil {
+				return err
+			}
+			return chownStagedPath(target, uid)
 		}
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("special file %q is not allowed", rel)
@@ -386,6 +393,16 @@ func copyTree(source, dest string) error {
 		if inErr != nil {
 			return inErr
 		}
-		return closeErr
+		if closeErr != nil {
+			return closeErr
+		}
+		return chownStagedPath(target, uid)
 	})
+}
+
+func chownStagedPath(target string, uid int) error {
+	if err := os.Chown(target, uid, uid); err != nil && runtime.GOOS == "linux" {
+		return fmt.Errorf("chown staged path %q to uid %d: %w", target, uid, err)
+	}
+	return nil
 }
