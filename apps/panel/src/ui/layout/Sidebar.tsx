@@ -81,6 +81,9 @@ export function Sidebar({ sections, panelLabel, settingsTo, area }: SidebarProps
       >
         <div className="sidebar-brand flex h-20 shrink-0 flex-col justify-center gap-1 border-b border-border px-5">
           <CircuitPattern className="sidebar-brand__circuit" />
+          {/* The "voltar para o site" link used to live here as a bare icon
+              overlapping this corner — moved to Topbar as a real labeled
+              button next to the theme toggle instead. */}
           <div className="relative flex items-center gap-3">
             <Logo size={38} />
             <Wordmark className="text-2xl" />
