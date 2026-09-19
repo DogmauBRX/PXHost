@@ -36,7 +36,7 @@ export function Topbar() {
         className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-text-muted transition-colors hover:bg-surface-2 hover:text-text"
       >
         <Home className="h-[18px] w-[18px]" aria-hidden="true" />
-        <span className="hidden sm:inline">Site</span>
+        <span className="hidden sm:inline">Página principal</span>
       </Link>
 
       <button
