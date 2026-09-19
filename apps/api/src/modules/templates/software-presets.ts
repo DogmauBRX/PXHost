@@ -46,6 +46,14 @@ export interface TemplatePreset {
 const JAVA_IMAGE = { 'Java 25': 'ghcr.io/pterodactyl/yolks:java_25' };
 const STANDARD_STARTUP_COMMAND = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui';
 const INSTALL_IMAGE = 'ghcr.io/parkervcp/installers:debian';
+// Fabric/Forge/NeoForge's own installers are Java programs
+// (`java -jar *-installer.jar ...`), unlike Paper/Purpur/Vanilla which
+// only ever `curl` a prebuilt jar — `INSTALL_IMAGE` (parkervcp/installers:
+// debian) has curl/jq/bash but genuinely no JVM, so those three scripts
+// failed live with "install script exited 127" (command not found) on
+// every real attempt. Same `parkervcp/installers` family, `java_25` tag
+// instead — still has curl/jq/bash, plus a real OpenJDK.
+const JAVA_INSTALL_IMAGE = 'ghcr.io/parkervcp/installers:java_25';
 const INSTALL_ENTRYPOINT = 'bash';
 
 // Every preset's last declared variable — the one thing the client-facing
@@ -358,7 +366,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
     dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
-    installImage: INSTALL_IMAGE,
+    installImage: JAVA_INSTALL_IMAGE,
     installEntrypoint: INSTALL_ENTRYPOINT,
     installScript: FABRIC_INSTALL_SCRIPT,
     softwareKind: 'fabric',
@@ -404,7 +412,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
     dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
-    installImage: INSTALL_IMAGE,
+    installImage: JAVA_INSTALL_IMAGE,
     installEntrypoint: INSTALL_ENTRYPOINT,
     installScript: FORGE_INSTALL_SCRIPT,
     softwareKind: 'forge',
@@ -432,7 +440,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
     dockerImages: JAVA_IMAGE,
     startupCommand: STANDARD_STARTUP_COMMAND,
     stopCommand: 'stop',
-    installImage: INSTALL_IMAGE,
+    installImage: JAVA_INSTALL_IMAGE,
     installEntrypoint: INSTALL_ENTRYPOINT,
     installScript: NEOFORGE_INSTALL_SCRIPT,
     softwareKind: 'neoforge',
