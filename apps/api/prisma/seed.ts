@@ -4,7 +4,8 @@
 // `pnpm prisma:seed` — idempotent, safe to re-run.
 import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { PRESET_KINDS, SOFTWARE_PRESETS } from '../src/modules/templates/software-presets';
+import { KNOWN_MINECRAFT_VERSIONS, PRESET_KINDS, SOFTWARE_PRESETS } from '../src/modules/templates/software-presets';
+import { withInList } from '../src/modules/templates/templates.service';
 
 const prisma = new PrismaClient();
 
@@ -157,7 +158,7 @@ async function seedLocationAndTemplate(): Promise<void> {
   // customer buys and one a fresh dev database seeds are byte-identical.
   // Paper stays first/`isPublic` (payments plan's own "a customer needs
   // at least one choosable software at checkout" requirement); the other
-  // five are public too as of the six-software client setup screen.
+  // the remaining presets are public too as of the multi-software client setup screen.
   for (const [index, kind] of PRESET_KINDS.entries()) {
     const preset = SOFTWARE_PRESETS[kind];
     const existing = await prisma.serverTemplate.findFirst({ where: { groupId: group.id, name: preset.name } });
@@ -166,6 +167,20 @@ async function seedLocationAndTemplate(): Promise<void> {
       console.log(`Template "${preset.name}" already present — skipped`);
       continue;
     }
+    // Curated from the moment this template exists — never the raw,
+    // free-text preset variables as-is. Found live: leaving these
+    // uncurated (the old behavior) meant a fresh database's client setup
+    // screen showed a bare text input for MINECRAFT_VERSION until an
+    // admin remembered to open Admin > Templates and click "Atualizar
+    // versões" at least once — indistinguishable, to a customer, from a
+    // real bug. `KNOWN_MINECRAFT_VERSIONS` (software-presets.ts) is the
+    // same hardcoded, real-versions-only list `getSetupInfo`'s own
+    // live-discovery fallback uses, so a seeded template and one an admin
+    // curates by hand end up validated the exact same way.
+    const versions = KNOWN_MINECRAFT_VERSIONS[kind];
+    const curatedVariables = preset.variables.map((v) =>
+      v.envVariable === preset.versionVariable ? { ...v, rules: withInList(v.rules, versions), defaultValue: versions[0] } : v,
+    );
     await prisma.serverTemplate.create({
       data: {
         groupId: group.id,
@@ -185,10 +200,10 @@ async function seedLocationAndTemplate(): Promise<void> {
         softwareKind: preset.softwareKind,
         // Public on a fresh database — a customer needs at least one
         // choosable software at checkout (`GET /api/public/templates`);
-        // all six presets are public as of the client setup screen.
+        // every curated preset is public as of the client setup screen.
         isPublic: true,
         sortOrder: index,
-        variables: { create: preset.variables },
+        variables: { create: curatedVariables },
       },
     });
     // eslint-disable-next-line no-console

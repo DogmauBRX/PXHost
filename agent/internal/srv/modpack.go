@@ -22,10 +22,10 @@ import (
 )
 
 const (
-	maxMrpackBytes = int64(2 << 30)
-	maxPackEntries = 100000
-	maxIndexBytes  = int64(4 << 20)
-	maxExpandedBytes = int64(10 << 30)
+	maxMrpackBytes      = int64(2 << 30)
+	maxPackEntries      = 100000
+	maxIndexBytes       = int64(4 << 20)
+	maxExpandedBytes    = int64(10 << 30)
 	maxCompressionRatio = uint64(1000)
 )
 
@@ -198,8 +198,15 @@ func downloadVerified(ctx context.Context, source, dest string, expected int64, 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download returned HTTP %d", resp.StatusCode)
 	}
-	if resp.ContentLength >= 0 && resp.ContentLength != expected {
-		return fmt.Errorf("content-length mismatch: got %d, expected %d", resp.ContentLength, expected)
+	// Modrinth's index fileSize is useful for quota planning but a small
+	// number of CDN objects have stale size metadata (observed in production
+	// with a two-byte difference). The cryptographic checksum is the actual
+	// integrity authority. Keep a tight overrun cap to prevent an incorrect
+	// index or response from turning into an unbounded download, then accept
+	// a size discrepancy only when the full checksum still matches.
+	maxDownload := expected + downloadSizeTolerance(expected)
+	if resp.ContentLength > maxDownload {
+		return fmt.Errorf("content-length exceeds safety limit: got %d, maximum %d", resp.ContentLength, maxDownload)
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0750); err != nil {
 		return err
@@ -220,7 +227,7 @@ func downloadVerified(ctx context.Context, source, dest string, expected int64, 
 		out.Close()
 		return fmt.Errorf("download has no supported checksum")
 	}
-	n, copyErr := io.Copy(io.MultiWriter(out, h), io.LimitReader(resp.Body, expected+1))
+	n, copyErr := io.Copy(io.MultiWriter(out, h), io.LimitReader(resp.Body, maxDownload+1))
 	closeErr := out.Close()
 	if copyErr != nil {
 		return copyErr
@@ -228,13 +235,22 @@ func downloadVerified(ctx context.Context, source, dest string, expected int64, 
 	if closeErr != nil {
 		return closeErr
 	}
-	if n != expected {
-		return fmt.Errorf("download size mismatch: got %d, expected %d", n, expected)
+	if n > maxDownload {
+		return fmt.Errorf("download exceeds safety limit: got more than %d bytes", maxDownload)
 	}
 	if hex.EncodeToString(h.Sum(nil)) != expectedHash {
 		return fmt.Errorf("checksum verification failed")
 	}
 	return os.Rename(tmp, dest)
+}
+
+func downloadSizeTolerance(expected int64) int64 {
+	const oneMiB = int64(1 << 20)
+	tolerance := expected / 100 // at most a 1% metadata discrepancy
+	if tolerance < oneMiB {
+		return oneMiB
+	}
+	return tolerance
 }
 
 func readMrpackIndex(files []*zip.File) (*mrpackIndex, error) {

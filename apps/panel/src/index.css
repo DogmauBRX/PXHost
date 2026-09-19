@@ -30,18 +30,23 @@
      bem forte a luminosidade branca"). Every step below is still
      clearly "light mode," just a few points darker than the previous
      pass, and the relative spacing between bg/surface/surface-2/field
-     is preserved so hover/elevation logic elsewhere needs no changes. */
-  --color-bg: #eef0f3;
-  --color-surface: #f9fafb;
-  --color-surface-2: #e9ecf0;
+     is preserved so hover/elevation logic elsewhere needs no changes.
+     Follow-up ("deixe ele menos claro, tipo um acinzentado"): pushed a
+     further ~20pt darker still, and flattened the slight cool blue cast
+     the old hexes carried (R<G<B, e.g. the old bg #eef0f3) to genuinely
+     neutral R=G=B grays — "grayish" specifically, not just "darker
+     light-blue." Same preserved relative spacing as before. */
+  --color-bg: #e8e8e8;
+  --color-surface: #f5f5f5;
+  --color-surface-2: #dfdfdf;
   /* Inputs need their own token: on light, `surface-2` is also the row-hover
      colour, so fields would read as hovered rows inside a white card. */
-  --color-field: #f5f6f8;
-  --color-border: #e4e7ec;
-  --color-border-strong: #cdd3dc;
+  --color-field: #efefef;
+  --color-border: #d8d8d8;
+  --color-border-strong: #bababa;
   --color-text: #14181f;
-  --color-text-muted: #596274;
-  --color-text-faint: #8a93a3;
+  --color-text-muted: #565b63;
+  --color-text-faint: #82868d;
 
   /* Orange is the brand accent, used for fills and active state — not as a
      wash over the whole UI. The accent/accent-strong split exists because

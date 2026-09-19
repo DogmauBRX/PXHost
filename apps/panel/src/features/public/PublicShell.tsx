@@ -64,15 +64,6 @@ export function PublicShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="hidden items-center gap-3 md:flex">
-            <button
-              type="button"
-              onClick={toggleTheme}
-              aria-label={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
-              title={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
-              className="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-2 hover:text-text"
-            >
-              {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
-            </button>
             {accessToken ? (
               <>
                 <span className="max-w-[14rem] truncate text-sm text-text-muted">
@@ -92,6 +83,19 @@ export function PublicShell({ children }: { children: ReactNode }) {
                 </Link>
               </>
             )}
+            {/* Separated from the CTA cluster with its own divider — a
+                utility control tucked in the header's own top-right corner,
+                not another button competing with Entrar/Criar conta. */}
+            <span className="h-6 w-px bg-border" aria-hidden="true" />
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
+              title={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
+              className="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-2 hover:text-text"
+            >
+              {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+            </button>
           </div>
 
           <button
