@@ -162,9 +162,12 @@ func (sess *wsSession) run(parentCtx context.Context) {
 			})
 
 		case <-statsTicker.C:
-			if frame, ok := sess.server.LatestStats(); ok {
-				_ = sess.send(ctx, Envelope{Event: EventStats, Data: frame, TS: time.Now().UnixMilli()})
-			}
+			// Sent unconditionally, not only while a collector exists: the
+			// panel treats every stats frame as the ambient truth for "is
+			// this running right now" (ConsolePage's own note), so going
+			// silent the moment a container dies is what left its badge
+			// stuck on RUNNING. StatsFrame always carries the live state.
+			_ = sess.send(ctx, Envelope{Event: EventStats, Data: sess.server.StatsFrame(), TS: time.Now().UnixMilli()})
 
 		case <-expiryTimer.C:
 			remaining := int64(time.Until(claims.ExpiresAt.Time).Seconds())

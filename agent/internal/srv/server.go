@@ -252,9 +252,15 @@ func (s *Server) Start(ctx context.Context, dc dockerFull) error {
 
 	memLimitBytes := uint64(s.spec.Limits.MemoryMB) * 1024 * 1024
 	cpuLimitPercent := uint64(s.spec.Limits.CPUPercent)
-	s.collector = stats.NewCollector(dc, s.ContainerID, memLimitBytes, cpuLimitPercent, nil, nil)
+	collector := stats.NewCollector(dc, s.ContainerID, memLimitBytes, cpuLimitPercent, nil, nil)
+	s.collector = collector
 	go func() {
-		_ = s.collector.Run(s.bgCtx)
+		// Docker holds the stats stream open for exactly as long as the
+		// container lives, so Run returning is the agent's signal that it
+		// stopped — deliberately or not. handleStatsStreamEnded is what
+		// tells those two apart; see its doc comment (crash.go).
+		_ = collector.Run(s.bgCtx)
+		s.handleStatsStreamEnded(dc)
 	}()
 
 	return nil
@@ -422,6 +428,45 @@ func (s *Server) teardownRuntimeLocked() {
 		s.collector.Stop()
 		s.collector = nil
 	}
+}
+
+// StatsFrame returns the latest usage sample stamped with the server's
+// CURRENT state — or, when nothing is collecting (stopped, or crashed and
+// torn down), a usage-free frame carrying that state and the configured
+// limits.
+//
+// The state MUST be stamped here rather than taken from the frame:
+// stats.Collector hardcodes "running" into every frame it decodes, since
+// it has no view of this state machine. A frame cached moments before a
+// container died therefore keeps claiming "running" forever, which is
+// exactly what the panel's console showed on a crashed server — it treats
+// every frame as the ambient truth for "is it actually running right now"
+// (see ConsolePage's own note on why), so a stale frame left the badge on
+// RUNNING with the uptime counter ticking up.
+func (s *Server) StatsFrame() stats.Frame {
+	s.mu.Lock()
+	c := s.collector
+	state := s.State
+	memLimitBytes := uint64(s.spec.Limits.MemoryMB) * 1024 * 1024
+	cpuLimitPercent := float64(s.spec.Limits.CPUPercent)
+	s.mu.Unlock()
+
+	// Anything but "running" reports no usage at all rather than the last
+	// values seen before it stopped — those are no longer true of
+	// anything, and showing them frozen is how this bug looked in the UI.
+	if state != StateRunning || c == nil {
+		return stats.Frame{State: string(state), CPULimitPercent: cpuLimitPercent, MemoryLimitBytes: memLimitBytes}
+	}
+
+	f := c.Latest()
+	f.State = string(state)
+	if f.MemoryLimitBytes == 0 {
+		f.MemoryLimitBytes = memLimitBytes
+	}
+	if f.CPULimitPercent == 0 {
+		f.CPULimitPercent = cpuLimitPercent
+	}
+	return f
 }
 
 // LatestStats returns the most recent stats frame, or the zero value if
