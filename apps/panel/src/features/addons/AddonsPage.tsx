@@ -4,10 +4,12 @@ import { getServer } from '@/features/servers/servers.api';
 import { Alert, LoadingRow, PageHeader } from '@/ui/primitives';
 import { ADDON_SOURCES } from './sources';
 import type { AddonContext } from './addons.types';
+import { ModpacksPanel } from './ModpacksPanel';
 
 export function AddonsPage({ serverId }: { serverId: string }) {
   const { data: server, isLoading, isError } = useQuery({ queryKey: ['server', serverId], queryFn: () => getServer(serverId) });
   const [sourceId, setSourceId] = useState(ADDON_SOURCES[0].id);
+  const [contentType, setContentType] = useState<'mods' | 'modpacks'>('mods');
 
   if (isLoading) return <LoadingRow />;
   if (isError || !server) return <Alert>Não foi possível carregar este servidor.</Alert>;
@@ -28,6 +30,8 @@ export function AddonsPage({ serverId }: { serverId: string }) {
   const ctx: AddonContext = { server, permissions, software };
   const available = ADDON_SOURCES.filter((s) => s.available(ctx));
   const active = available.find((s) => s.id === sourceId) ?? available[0];
+  const isModsServer = software.addonNoun === 'mod';
+  const canViewModpacks = server.role !== 'subuser' || permissions.includes('addons.catalog.read');
 
   return (
     <>
@@ -38,7 +42,24 @@ export function AddonsPage({ serverId }: { serverId: string }) {
         </p>
       </PageHeader>
 
-      {available.length > 1 && (
+      {isModsServer && (
+        <div className="-mt-2 mb-4 flex items-center gap-1 border-b border-border">
+          {(['mods', 'modpacks'] as const).map((type) => (
+            <button
+              key={type}
+              type="button"
+              disabled={type === 'modpacks' && !canViewModpacks}
+              title={type === 'modpacks' && !canViewModpacks ? 'Você não possui permissão para visualizar o catálogo.' : undefined}
+              onClick={() => setContentType(type)}
+              className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${contentType === type ? 'border-accent text-accent-strong' : 'border-transparent text-text-muted hover:text-text'}`}
+            >
+              {type === 'mods' ? 'Mods' : 'Modpacks'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {contentType === 'mods' && available.length > 1 && (
         <div className="-mt-2 mb-4 flex items-center gap-1 border-b border-border">
           {available.map((s) => (
             <button
@@ -57,7 +78,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
         </div>
       )}
 
-      {active && <active.Panel serverId={serverId} ctx={ctx} />}
+      {contentType === 'modpacks' && isModsServer && canViewModpacks ? <ModpacksPanel serverId={serverId} ctx={ctx} /> : active && <active.Panel serverId={serverId} ctx={ctx} />}
     </>
   );
 }

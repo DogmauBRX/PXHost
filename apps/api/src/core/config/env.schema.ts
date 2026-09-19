@@ -73,6 +73,11 @@ export const envSchema = z.object({
   ASSISTANT_PROVIDER: z.enum(['kb', 'llm']).default('kb'),
   ASSISTANT_LLM_API_KEY: optionalSecret(),
 
+  // Modrinth requires an identifying User-Agent. No credential is needed
+  // for public catalog reads; operators may override this to add contact
+  // information as recommended by the provider.
+  MODRINTH_USER_AGENT: z.string().min(3).default('gxhost/hosting-panel/0.1.0'),
+
   // Client account management, Fase 1 — generic SMTP for password-reset
   // emails, no specific provider baked in. All optional, same posture as
   // ASSISTANT_LLM_API_KEY just above (not MERCADOPAGO_ACCESS_TOKEN's own

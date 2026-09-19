@@ -93,6 +93,11 @@ const PERMISSION_CATALOG: { key: string; groupKey: string; i18nKey: string; isDa
   { key: 'file.write', groupKey: 'file', i18nKey: 'permission.file.write', sortOrder: 11 },
   { key: 'file.delete', groupKey: 'file', i18nKey: 'permission.file.delete', isDangerous: true, sortOrder: 12 },
 
+  { key: 'addons.catalog.read', groupKey: 'addons', i18nKey: 'permission.addons.catalog.read', sortOrder: 13 },
+  { key: 'addons.install', groupKey: 'addons', i18nKey: 'permission.addons.install', isDangerous: true, sortOrder: 14 },
+  { key: 'addons.update', groupKey: 'addons', i18nKey: 'permission.addons.update', isDangerous: true, sortOrder: 15 },
+  { key: 'addons.remove', groupKey: 'addons', i18nKey: 'permission.addons.remove', isDangerous: true, sortOrder: 16 },
+
   { key: 'backup.read', groupKey: 'backup', i18nKey: 'permission.backup.read', sortOrder: 20 },
   { key: 'backup.create', groupKey: 'backup', i18nKey: 'permission.backup.create', sortOrder: 21 },
   { key: 'backup.delete', groupKey: 'backup', i18nKey: 'permission.backup.delete', isDangerous: true, sortOrder: 22 },
