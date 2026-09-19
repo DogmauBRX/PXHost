@@ -189,7 +189,18 @@ func recoveredServerSpec(image string, entrypoint, cmd []string, stopSignal stri
 	if image == "" || len(argv) == 0 {
 		return spec.Server{}, fmt.Errorf("managed container is missing image or startup command")
 	}
-	limits := spec.Limits{DiskMB: 1}
+	// Docker stores every limit EXCEPT this one (disk has no cgroup on a
+	// bind mount — fsx enforces it in-process), so it is read back from
+	// the label spec.buildLabels writes at create time. The 1MB
+	// placeholder this used to fall back to was worse than having no
+	// number at all: fsx.CheckQuota treats <=0 as "unlimited" and returns
+	// early, but a 1MB limit made it refuse every upload on a server that
+	// had been adopted after an agent restart. Found live on a 6GB server
+	// showing "582.2 MB / 1.0 MB · Crítico" right after the boot sweep.
+	// Containers created before the label exists fall back to 0: not
+	// enforcing a quota until the panel pushes real limits again is a far
+	// smaller problem than blocking the customer's uploads outright.
+	limits := spec.Limits{DiskMB: parseLabelInt64(labels["gxhost.limits.disk_mb"])}
 	if hc != nil {
 		limits.MemoryMB = hc.Memory / (1024 * 1024)
 		if hc.CPUPeriod > 0 {
@@ -214,6 +225,16 @@ func recoveredServerSpec(image string, entrypoint, cmd []string, stopSignal stri
 		Env: map[string]string{}, Limits: limits,
 		Allocations: recoveredAllocations(hc),
 	}, nil
+}
+
+// parseLabelInt64 returns 0 for a missing or malformed label — every
+// caller treats 0 as "unknown", never as a real limit.
+func parseLabelInt64(value string) int64 {
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 func recoveredAllocations(hc *container.HostConfig) []spec.Allocation {

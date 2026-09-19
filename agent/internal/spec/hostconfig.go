@@ -170,10 +170,19 @@ func validateServer(srv Server, node Node) error {
 
 func buildLabels(srv Server, node Node) map[string]string {
 	return map[string]string{
-		"gxhost.managed":      "true",
-		"gxhost.server.uuid":  srv.UUID,
-		"gxhost.server.uid":   fmt.Sprintf("%d", srv.UID),
-		"gxhost.spec.version": specVersion,
+		"gxhost.managed":     "true",
+		"gxhost.server.uuid": srv.UUID,
+		"gxhost.server.uid":  fmt.Sprintf("%d", srv.UID),
+		// The disk limit is the one limit Docker itself does not store
+		// anywhere: there is no cgroup for it on a plain bind mount, so
+		// fsx enforces it in the agent (see fsx.CheckQuota). That made it
+		// unrecoverable when the boot sweep rebuilds a server's spec from
+		// the container — cmd/pxagent's recoveredServerSpec had to invent
+		// a value, and the 1MB placeholder it used meant every adopted
+		// server reported a 1MB quota and refused every upload. Persisted
+		// here so the sweep can read back the real number.
+		"gxhost.limits.disk_mb": fmt.Sprintf("%d", srv.Limits.DiskMB),
+		"gxhost.spec.version":   specVersion,
 	}
 }
 
