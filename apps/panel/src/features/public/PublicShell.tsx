@@ -75,7 +75,9 @@ export function PublicShell({ children }: { children: ReactNode }) {
             </button>
             {accessToken ? (
               <>
-                <span className="max-w-[12rem] truncate text-sm text-text-muted">{username}</span>
+                <span className="max-w-[14rem] truncate text-sm text-text-muted">
+                  Logado em <span className="font-medium text-text">{username}</span>
+                </span>
                 <Link to={dashboardTo}>
                   <Button variant="primary">Ir para o painel</Button>
                 </Link>
@@ -119,7 +121,11 @@ export function PublicShell({ children }: { children: ReactNode }) {
                   onClick={() => setMobileOpen(false)}
                   className="rounded-lg px-3 py-2.5 text-sm font-medium text-text hover:bg-surface-2"
                 >
-                  {username && <span className="block text-xs font-normal text-text-muted">{username}</span>}
+                  {username && (
+                    <span className="block text-xs font-normal text-text-muted">
+                      Logado em <span className="font-medium text-text">{username}</span>
+                    </span>
+                  )}
                   Ir para o painel
                 </Link>
               ) : (
