@@ -9,6 +9,7 @@ import { PrismaService } from '../src/core/prisma/prisma.service';
 import { ServersService } from '../src/modules/servers/servers.service';
 import { CapacityService } from '../src/modules/capacity/capacity.service';
 import { PublicTemplatesService } from '../src/modules/public/public-templates.service';
+import { RedisService } from '../src/core/redis/redis.service';
 
 /**
  * The post-purchase setup flow (see the setup plan): a `setup_pending`
@@ -41,6 +42,7 @@ describe('Server setup (e2e)', () => {
   let privateTemplateId: string;
   let inactiveTemplateId: string;
   let staleDefaultTemplateId: string;
+  let uncuratedTemplateId: string;
   let adminToken: string;
   const suffix = Date.now();
 
@@ -197,6 +199,38 @@ describe('Server setup (e2e)', () => {
     });
     staleDefaultTemplateId = staleDefaultTemplate.id;
 
+    // A fresh "criação rápida" preset template, exactly as software-presets.ts
+    // seeds it — MINECRAFT_VERSION starts free-text (`rules` with no
+    // `in:`), never curated by an admin. Proves GET .../setup still hands
+    // the client a real dropdown by falling back to SoftwareDiscoveryService.
+    const uncuratedTemplate = await prisma.serverTemplate.create({
+      data: {
+        groupId,
+        name: `setup-e2e-uncurated-fabric-${suffix}`,
+        author: 'test',
+        dockerImages: { 'Java 21': 'ghcr.io/pterodactyl/yolks:java_21' },
+        startupCommand: 'java -jar server.jar',
+        installScript: '#!/bin/sh\n',
+        softwareKind: 'fabric',
+        isActive: true,
+        isPublic: true,
+        variables: {
+          create: [
+            {
+              name: 'Minecraft Version',
+              envVariable: 'MINECRAFT_VERSION',
+              defaultValue: 'latest',
+              rules: 'required|string|max:16',
+              isUserViewable: true,
+              isUserEditable: true,
+              sortOrder: 0,
+            },
+          ],
+        },
+      },
+    });
+    uncuratedTemplateId = uncuratedTemplate.id;
+
     // PublicTemplatesService.list() caches in Redis for 60s, SHARED with
     // every other e2e file hitting the public templates endpoint in a
     // parallel Jest worker — without this, a GET .../setup run moments
@@ -226,12 +260,17 @@ describe('Server setup (e2e)', () => {
       // impossible to repeat.
       () =>
         asAdmin((tx) =>
-          tx.server.deleteMany({ where: { templateId: { in: [templateId, privateTemplateId, inactiveTemplateId, staleDefaultTemplateId] } } }),
+          tx.server.deleteMany({
+            where: { templateId: { in: [templateId, privateTemplateId, inactiveTemplateId, staleDefaultTemplateId, uncuratedTemplateId] } },
+          }),
         ),
       () => asAdmin((tx) => tx.subscription.deleteMany({ where: { planId } })),
       () => prisma.plan.updateMany({ where: { id: planId }, data: { deletedAt: new Date() } }),
-      () => prisma.templateVariable.deleteMany({ where: { templateId: { in: [templateId, staleDefaultTemplateId] } } }),
-      () => prisma.serverTemplate.deleteMany({ where: { id: { in: [templateId, privateTemplateId, inactiveTemplateId, staleDefaultTemplateId] } } }),
+      () => prisma.templateVariable.deleteMany({ where: { templateId: { in: [templateId, staleDefaultTemplateId, uncuratedTemplateId] } } }),
+      () =>
+        prisma.serverTemplate.deleteMany({
+          where: { id: { in: [templateId, privateTemplateId, inactiveTemplateId, staleDefaultTemplateId, uncuratedTemplateId] } },
+        }),
       () => prisma.templateGroup.deleteMany({ where: { id: groupId } }),
       () => prisma.node.deleteMany({ where: { id: nodeId } }),
       () => prisma.location.deleteMany({ where: { id: locationId } }),
@@ -303,6 +342,37 @@ describe('Server setup (e2e)', () => {
     // NOT 'latest' (the stale stored value) — a value the customer could
     // actually submit successfully without touching the dropdown.
     expect(entry.defaultVersion).toBe('1.21.4');
+  });
+
+  it('GET .../setup falls back to live SoftwareDiscoveryService when a template has no curated in: list yet', async () => {
+    // Forces a fresh fetch instead of a hit from whatever the same Redis
+    // instance already cached for "fabric" from a real, earlier run.
+    await app.get(RedisService).client.del('template-discovery:fabric:versions');
+    const fetchSpy = jest.spyOn(global, 'fetch' as any).mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { version: '1.21.4', stable: true },
+        { version: '1.21.1', stable: true },
+        { version: '1.20.6', stable: false }, // non-stable entries are filtered out
+      ],
+    } as any);
+
+    try {
+      const res = await asOwner(`/api/client/servers/${serverId}/setup`);
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      const entry = body.software.find((s: any) => s.id === uncuratedTemplateId);
+      expect(entry).toBeTruthy();
+      expect(entry.versionsCurated).toBe(true);
+      expect(entry.versions).toEqual(['1.21.4', '1.21.1']);
+      // NOT 'latest' (the template's own free-text default) — a value
+      // the customer could actually submit and have it validate.
+      expect(entry.defaultVersion).toBe('1.21.4');
+      expect(fetchSpy).toHaveBeenCalledWith('https://meta.fabricmc.net/v2/versions/game', expect.anything());
+    } finally {
+      fetchSpy.mockRestore();
+      await app.get(RedisService).client.del('template-discovery:fabric:versions');
+    }
   });
 
   it('GET .../setup 404s for a non-owner (never confirms existence)', async () => {

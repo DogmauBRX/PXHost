@@ -7,6 +7,8 @@ import { AuditService } from '../audit/audit.service';
 import { DEFAULT_INSTALL_ENTRYPOINT, DEFAULT_INSTALL_IMAGE, ServersService } from './servers.service';
 import { resolveDeclaredVariables } from './variable-resolution';
 import { CompleteServerSetupDto } from './dto/server-setup.dto';
+import { SoftwareDiscoveryService } from '../templates/software-discovery.service';
+import { PRESET_KINDS, type PresetKind } from '../templates/software-presets';
 
 export interface SetupSoftwareOption {
   id: string;
@@ -66,6 +68,7 @@ export class ServerSetupService {
     private readonly publicTemplates: PublicTemplatesService,
     private readonly servers: ServersService,
     private readonly audit: AuditService,
+    private readonly discovery: SoftwareDiscoveryService,
   ) {}
 
   /**
@@ -78,42 +81,67 @@ export class ServerSetupService {
    * customer picks software + version, nothing else, and `complete` fills
    * every other variable with its template default (see
    * `resolveDeclaredVariables`).
+   *
+   * A freshly-created preset template (software-presets.ts) has NO
+   * curated `in:` list yet — `MINECRAFT_VERSION` starts as free-text
+   * ("latest", narrowed only if an admin later runs "Atualizar versões")
+   * — which used to mean the customer saw a bare text input instead of a
+   * dropdown. Falling back to `SoftwareDiscoveryService` here (same live
+   * APIs, same 10min Redis cache the admin wizard already reads from)
+   * means the dropdown always reflects the CHOSEN software, curated or
+   * not, without depending on an admin remembering to click that button
+   * first. Safe against the template's own `rules` at `complete()` time:
+   * an uncurated template's `MINECRAFT_VERSION` rule has no `in:`
+   * restriction (just `required|string|max:16`), so any live-fetched
+   * value still validates.
    */
   async getSetupInfo(actor: AccessActor, serverId: string): Promise<SetupInfo> {
     const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('server.read')) throw new ForbiddenException('Missing permission: server.read');
 
     const templates = await this.publicTemplates.list();
-    const software: SetupSoftwareOption[] = templates.map((t) => {
-      const versionOption = t.options.find((o) => o.envVariable === 'MINECRAFT_VERSION');
-      const versionsCurated = versionOption?.kind === 'choice';
-      const choices = versionsCurated ? (versionOption!.choices ?? []) : [];
-      // `defaultValue` is a free-text column ("latest" for every preset,
-      // resolved by the install script itself — see software-presets.ts)
-      // that predates per-template curated version lists. Once a template
-      // is curated (`rules` narrowed to `in:<list>`), "latest" is no
-      // longer a value `resolveDeclaredVariables` will accept, so it can
-      // never be trusted as this dropdown's selected value without first
-      // checking it's actually a member of that same list — otherwise the
-      // customer sees one version pre-selected (the browser's own
-      // first-<option> fallback for an unmatched `<select>` value) while
-      // the value that would actually be submitted is the stale "latest".
-      const defaultVersion =
-        versionsCurated && versionOption?.defaultValue && !choices.includes(versionOption.defaultValue)
-          ? (choices[0] ?? null)
-          : (versionOption?.defaultValue ?? null);
-      return {
-        id: t.id,
-        name: t.name,
-        description: t.description,
-        iconUrl: t.iconUrl,
-        softwareKind: t.softwareKind,
-        group: t.group,
-        versions: versionsCurated ? choices : versionOption ? [versionOption.defaultValue] : [],
-        defaultVersion,
-        versionsCurated,
-      };
-    });
+    const software: SetupSoftwareOption[] = await Promise.all(
+      templates.map(async (t) => {
+        const versionOption = t.options.find((o) => o.envVariable === 'MINECRAFT_VERSION');
+        let versionsCurated = versionOption?.kind === 'choice';
+        let choices = versionsCurated ? (versionOption!.choices ?? []) : [];
+
+        if (!versionsCurated && t.softwareKind && (PRESET_KINDS as readonly string[]).includes(t.softwareKind)) {
+          const liveVersions = await this.discovery.getVersions(t.softwareKind as PresetKind);
+          if (liveVersions.length > 0) {
+            choices = liveVersions;
+            versionsCurated = true;
+          }
+        }
+
+        // `defaultValue` is a free-text column ("latest" for every preset,
+        // resolved by the install script itself — see software-presets.ts)
+        // that predates per-template curated version lists. Once a template
+        // is curated (`rules` narrowed to `in:<list>`, or curated live just
+        // above), "latest" is no longer a value `resolveDeclaredVariables`
+        // will accept, so it can never be trusted as this dropdown's
+        // selected value without first checking it's actually a member of
+        // that same list — otherwise the customer sees one version
+        // pre-selected (the browser's own first-<option> fallback for an
+        // unmatched `<select>` value) while the value that would actually
+        // be submitted is the stale "latest".
+        const defaultVersion =
+          versionsCurated && versionOption?.defaultValue && !choices.includes(versionOption.defaultValue)
+            ? (choices[0] ?? null)
+            : (versionOption?.defaultValue ?? null);
+        return {
+          id: t.id,
+          name: t.name,
+          description: t.description,
+          iconUrl: t.iconUrl,
+          softwareKind: t.softwareKind,
+          group: t.group,
+          versions: versionsCurated ? choices : versionOption ? [versionOption.defaultValue] : [],
+          defaultVersion,
+          versionsCurated,
+        };
+      }),
+    );
 
     return {
       status: server.status,

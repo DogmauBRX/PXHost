@@ -8,6 +8,10 @@ import { PublicModule } from '../public/public.module';
   imports: [PublicModule],
   providers: [TemplatesService, SoftwareDiscoveryService],
   controllers: [TemplatesController],
-  exports: [TemplatesService],
+  // SoftwareDiscoveryService is also consumed by ServersModule's
+  // ServerSetupService — the client-facing setup screen falls back to the
+  // same live version discovery when a template isn't manually curated
+  // yet (see that service's own doc comment).
+  exports: [TemplatesService, SoftwareDiscoveryService],
 })
 export class TemplatesModule {}
