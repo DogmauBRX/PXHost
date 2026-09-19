@@ -4,6 +4,7 @@ import { Link } from '@tanstack/react-router';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import { Clock, RefreshCw, Settings2 } from 'lucide-react';
 import { getServer, getServerDiskUsage } from '@/features/servers/servers.api';
+import { powerStateLabel } from '@/features/servers/status-labels';
 import { useServerSocket } from '@/shared/realtime/useServerSocket';
 import { formatBytes } from '@/shared/format/datetime';
 import { Terminal } from './Terminal';
@@ -157,7 +158,7 @@ export function ConsolePage({ serverId }: { serverId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold tracking-tight text-text">{server?.name ?? '…'}</h1>
-          <StatusBadge status={displayState} />
+          <StatusBadge status={displayState} label={powerStateLabel(displayState)} />
           {liveUptimeMs != null && (
             <span className="inline-flex items-center gap-2 text-lg font-medium text-text-muted">
               <Clock className="h-5 w-5" aria-hidden="true" />
