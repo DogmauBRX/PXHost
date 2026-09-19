@@ -45,6 +45,39 @@ export interface TemplatePreset {
 // UnsupportedClassVersionError before this was bumped to java_25).
 const JAVA_IMAGE = { 'Java 25': 'ghcr.io/pterodactyl/yolks:java_25' };
 const STANDARD_STARTUP_COMMAND = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui';
+
+// Forge and NeoForge (1.17+) install NO runnable jar at all — they write a
+// generated java argument file at
+// libraries/<group>/forge/<version>/unix_args.txt, with the resolved
+// version baked into that path, and their own run.sh does
+// `java @user_jvm_args.txt @<that file>`. The agent builds argv without a
+// shell (spec.BuildArgv tokenizes then substitutes — no globbing, no
+// command substitution), so a startup command can never reach a path that
+// is only known after the installer has run. WRITE_ARGS_FILE below copies
+// whatever the installer produced to this ONE fixed name, which is what
+// makes a single static startup command possible for every version.
+const MODLOADER_STARTUP_COMMAND = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M @unix_args.txt nogui';
+
+// Shared tail of the Forge/NeoForge install scripts. Found live: both
+// installers reported "The server installed successfully", the scripts
+// exited 0 — and then every server failed to boot, because the startup
+// command ran `java -jar server.jar` against a server.jar the modern
+// installers never create. The legacy branch matters too: 1.16.5 and
+// older really do ship a runnable universal/shim jar and no args file at
+// all, and `-jar x.jar` inside an @argfile is handled exactly like a
+// bare `-jar x.jar`, so one startup command covers both eras.
+const WRITE_ARGS_FILE = `ARGS_FILE=$(find libraries -name unix_args.txt 2>/dev/null | head -n1)
+if [ -n "$ARGS_FILE" ]; then
+  cp "$ARGS_FILE" unix_args.txt
+else
+  LEGACY_JAR=$(find . -maxdepth 1 \\( -name "*-shim.jar" -o -name "*-universal.jar" \\) | head -n1)
+  if [ -z "$LEGACY_JAR" ]; then
+    echo "Installer produced neither a unix_args.txt nor a runnable jar" >&2
+    exit 1
+  fi
+  mv "$LEGACY_JAR" "\${SERVER_JARFILE}"
+  printf -- '-jar\\n%s\\n' "\${SERVER_JARFILE}" > unix_args.txt
+fi`;
 const INSTALL_IMAGE = 'ghcr.io/parkervcp/installers:debian';
 // Fabric/Forge/NeoForge's own installers are Java programs
 // (`java -jar *-installer.jar ...`), unlike Paper/Purpur/Vanilla which
@@ -119,17 +152,49 @@ cd /mnt/server
 : "\${PAPER_BUILD:=latest}"
 : "\${SERVER_JARFILE:=server.jar}"
 
+PAPER_API="https://fill.papermc.io/v3/projects/paper"
+
 if [ "$MINECRAFT_VERSION" == "latest" ]; then
-  MINECRAFT_VERSION=$(curl -sSL https://api.papermc.io/v2/projects/paper | jq -r '.versions[-1]')
+  # v3 groups versions by minor release ({"26.3":["26.3","26.3-rc-3"],
+  # "26.2":[...], ...}), with both the groups and the entries inside each
+  # group already newest-first — so the first entry of the first group is
+  # the newest release, and skipping the rest of the group skips its
+  # release candidates.
+  MINECRAFT_VERSION=$(curl -fsSL "$PAPER_API" | jq -r '.versions | to_entries | .[0].value[0] // empty')
+fi
+if [ -z "$MINECRAFT_VERSION" ]; then
+  echo "Could not resolve a Paper version from $PAPER_API" >&2
+  exit 1
 fi
 
+BUILDS=$(curl -fsSL "\${PAPER_API}/versions/\${MINECRAFT_VERSION}/builds")
 if [ "$PAPER_BUILD" == "latest" ]; then
-  PAPER_BUILD=$(curl -sSL "https://api.papermc.io/v2/projects/paper/versions/\${MINECRAFT_VERSION}" | jq -r '.builds[-1]')
+  BUILD=$(echo "$BUILDS" | jq -r '.[0] // empty')
+else
+  BUILD=$(echo "$BUILDS" | jq -r --arg b "$PAPER_BUILD" '[.[] | select((.id | tostring) == $b)][0] // empty')
+fi
+if [ -z "$BUILD" ]; then
+  echo "No Paper build \\"\${PAPER_BUILD}\\" exists for Minecraft \${MINECRAFT_VERSION}" >&2
+  exit 1
 fi
 
-DOWNLOAD_URL="https://api.papermc.io/v2/projects/paper/versions/\${MINECRAFT_VERSION}/builds/\${PAPER_BUILD}/downloads/paper-\${MINECRAFT_VERSION}-\${PAPER_BUILD}.jar"
+PAPER_BUILD=$(echo "$BUILD" | jq -r '.id')
+# v3 serves content-addressed download URLs (the sha256 is IN the path),
+# so unlike the sunset v2 API this one CANNOT be assembled by hand — it
+# has to be read back out of the build object.
+DOWNLOAD_URL=$(echo "$BUILD" | jq -r '.downloads["server:default"].url // empty')
+EXPECTED_SHA256=$(echo "$BUILD" | jq -r '.downloads["server:default"].checksums.sha256 // empty')
+if [ -z "$DOWNLOAD_URL" ]; then
+  echo "Paper build \${PAPER_BUILD} has no server:default download" >&2
+  exit 1
+fi
+
 echo "Downloading Paper \${MINECRAFT_VERSION} build \${PAPER_BUILD}..."
-curl -sSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
+curl -fsSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
+
+if [ -n "$EXPECTED_SHA256" ]; then
+  echo "\${EXPECTED_SHA256}  \${SERVER_JARFILE}" | sha256sum -c -
+fi
 
 echo "eula=true" > eula.txt
 if grep -q '^server-port=' server.properties 2>/dev/null; then
@@ -149,17 +214,33 @@ cd /mnt/server
 : "\${SERVER_JARFILE:=fabric-server-launch.jar}"
 
 if [ "$MINECRAFT_VERSION" == "latest" ]; then
-  MINECRAFT_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/game | jq -r '[.[] | select(.stable == true)][0].version')
+  MINECRAFT_VERSION=$(curl -fsSL https://meta.fabricmc.net/v2/versions/game | jq -r '[.[] | select(.stable == true)][0].version')
 fi
 if [ "$FABRIC_LOADER_VERSION" == "latest" ]; then
-  FABRIC_LOADER_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/loader | jq -r '[.[] | select(.stable == true)][0].version')
+  FABRIC_LOADER_VERSION=$(curl -fsSL https://meta.fabricmc.net/v2/versions/loader | jq -r '[.[] | select(.stable == true)][0].version')
 fi
-INSTALLER_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/installer | jq -r '[.[] | select(.stable == true)][0].version')
+INSTALLER_VERSION=$(curl -fsSL https://meta.fabricmc.net/v2/versions/installer | jq -r '[.[] | select(.stable == true)][0].version')
 
 echo "Downloading Fabric installer \${INSTALLER_VERSION}..."
-curl -sSL -o fabric-installer.jar "https://maven.fabricmc.net/net/fabricmc/fabric-installer/\${INSTALLER_VERSION}/fabric-installer-\${INSTALLER_VERSION}.jar"
+curl -fsSL -o fabric-installer.jar "https://maven.fabricmc.net/net/fabricmc/fabric-installer/\${INSTALLER_VERSION}/fabric-installer-\${INSTALLER_VERSION}.jar"
 java -jar fabric-installer.jar server -mcversion "$MINECRAFT_VERSION" -loader "$FABRIC_LOADER_VERSION" -downloadMinecraft
 rm -f fabric-installer.jar
+
+# The installer writes TWO jars, and which one is which matters:
+# fabric-server-launch.jar is the launcher you are meant to run (a few
+# hundred bytes — it loads the real loader out of libraries/), while
+# server.jar is the plain vanilla Minecraft server it just downloaded FOR
+# that launcher to boot. Renaming server.jar onto SERVER_JARFILE — which
+# DEFAULTS to fabric-server-launch.jar — therefore overwrote the launcher
+# with vanilla, so every "Fabric" server here started a stock vanilla
+# server that ignored mods/ entirely (found live: a 1.20.1 Fabric server
+# whose log went straight to "Starting minecraft server version 1.20.1"
+# with no Fabric loader line at all). Only the LAUNCHER may be renamed,
+# and only when a custom filename was asked for; server.jar has to stay
+# exactly where the launcher expects to find it.
+if [ "\${SERVER_JARFILE}" != "fabric-server-launch.jar" ]; then
+  mv fabric-server-launch.jar "\${SERVER_JARFILE}"
+fi
 
 echo "eula=true" > eula.txt
 if grep -q '^server-port=' server.properties 2>/dev/null; then
@@ -179,18 +260,21 @@ cd /mnt/server
 : "\${SERVER_JARFILE:=quilt-server-launch.jar}"
 
 if [ "$MINECRAFT_VERSION" == "latest" ]; then
-  MINECRAFT_VERSION=$(curl -sSL -A "gxhost-hosting-panel/0.1.0" https://meta.quiltmc.org/v3/versions/game | jq -r '[.[] | select(.stable == true)][0].version')
+  MINECRAFT_VERSION=$(curl -fsSL -A "gxhost-hosting-panel/0.1.0" https://meta.quiltmc.org/v3/versions/game | jq -r '[.[] | select(.stable == true)][0].version')
 fi
 if [ "$QUILT_LOADER_VERSION" == "latest" ]; then
-  QUILT_LOADER_VERSION=$(curl -sSL -A "gxhost-hosting-panel/0.1.0" https://meta.quiltmc.org/v3/versions/loader | jq -r '[.[] | select(.version | test("-(alpha|beta|rc)"; "i") | not)][0].version')
+  QUILT_LOADER_VERSION=$(curl -fsSL -A "gxhost-hosting-panel/0.1.0" https://meta.quiltmc.org/v3/versions/loader | jq -r '[.[] | select(.version | test("-(alpha|beta|rc)"; "i") | not)][0].version')
 fi
-INSTALLER_URL=$(curl -sSL -A "gxhost-hosting-panel/0.1.0" https://meta.quiltmc.org/v3/versions/installer | jq -r '.[0].url')
+INSTALLER_URL=$(curl -fsSL -A "gxhost-hosting-panel/0.1.0" https://meta.quiltmc.org/v3/versions/installer | jq -r '.[0].url')
 
 echo "Downloading Quilt installer..."
-curl -sSL -o quilt-installer.jar "$INSTALLER_URL"
+curl -fsSL -o quilt-installer.jar "$INSTALLER_URL"
 java -jar quilt-installer.jar install server "$MINECRAFT_VERSION" "$QUILT_LOADER_VERSION" --download-server --install-dir=.
 rm -f quilt-installer.jar
 
+# Same reasoning as the Fabric block above: the Quilt installer also
+# writes a small launcher (quilt-server-launch.jar) next to the vanilla
+# server.jar it downloads, and only the LAUNCHER may be renamed.
 if [ -f quilt-server-launch.jar ] && [ "\${SERVER_JARFILE}" != "quilt-server-launch.jar" ]; then
   mv quilt-server-launch.jar "\${SERVER_JARFILE}"
 fi
@@ -211,15 +295,15 @@ cd /mnt/server
 : "\${MINECRAFT_VERSION:=latest}"
 : "\${SERVER_JARFILE:=server.jar}"
 
-MANIFEST=$(curl -sSL https://launchermeta.mojang.com/mc/game/version_manifest.json)
+MANIFEST=$(curl -fsSL https://launchermeta.mojang.com/mc/game/version_manifest.json)
 if [ "$MINECRAFT_VERSION" == "latest" ]; then
   MINECRAFT_VERSION=$(echo "$MANIFEST" | jq -r '.latest.release')
 fi
 VERSION_URL=$(echo "$MANIFEST" | jq -r --arg v "$MINECRAFT_VERSION" '.versions[] | select(.id == $v) | .url')
-DOWNLOAD_URL=$(curl -sSL "$VERSION_URL" | jq -r '.downloads.server.url')
+DOWNLOAD_URL=$(curl -fsSL "$VERSION_URL" | jq -r '.downloads.server.url')
 
 echo "Downloading vanilla Minecraft \${MINECRAFT_VERSION}..."
-curl -sSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
+curl -fsSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
 
 echo "eula=true" > eula.txt
 if grep -q '^server-port=' server.properties 2>/dev/null; then
@@ -245,7 +329,7 @@ cd /mnt/server
 : "\${FORGE_VERSION:=latest}"
 : "\${SERVER_JARFILE:=server.jar}"
 
-PROMOTIONS=$(curl -sSL https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json)
+PROMOTIONS=$(curl -fsSL https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json)
 
 if [ "$MINECRAFT_VERSION" == "latest" ]; then
   MINECRAFT_VERSION=$(echo "$PROMOTIONS" | jq -r '.promos | keys[]' | grep -E '^[0-9.]+-recommended$' | sed 's/-recommended$//' | sort -V | tail -n1)
@@ -258,14 +342,11 @@ fi
 FULL_VERSION="\${MINECRAFT_VERSION}-\${FORGE_VERSION}"
 INSTALLER_URL="https://maven.minecraftforge.net/net/minecraftforge/forge/\${FULL_VERSION}/forge-\${FULL_VERSION}-installer.jar"
 echo "Downloading Forge installer \${FULL_VERSION}..."
-curl -sSL -o forge-installer.jar "$INSTALLER_URL"
+curl -fsSL -o forge-installer.jar "$INSTALLER_URL"
 java -jar forge-installer.jar --installServer
 rm -f forge-installer.jar forge-installer.jar.log
 
-FOUND_JAR=$(find . -maxdepth 1 \\( -name "forge-*-shim.jar" -o -name "forge-*-universal.jar" \\) | head -n1)
-if [ -n "$FOUND_JAR" ] && [ "$FOUND_JAR" != "./\${SERVER_JARFILE}" ]; then
-  mv "$FOUND_JAR" "\${SERVER_JARFILE}"
-fi
+${WRITE_ARGS_FILE}
 
 echo "eula=true" > eula.txt
 if grep -q '^server-port=' server.properties 2>/dev/null; then
@@ -289,7 +370,7 @@ cd /mnt/server
 : "\${NEOFORGE_VERSION:=latest}"
 : "\${SERVER_JARFILE:=server.jar}"
 
-VERSIONS=$(curl -sSL https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge | jq -r '.versions[]')
+VERSIONS=$(curl -fsSL https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge | jq -r '.versions[]')
 
 if [ "$NEOFORGE_VERSION" == "latest" ]; then
   if [ "$MINECRAFT_VERSION" == "latest" ]; then
@@ -310,14 +391,11 @@ fi
 
 INSTALLER_URL="https://maven.neoforged.net/releases/net/neoforged/neoforge/\${NEOFORGE_VERSION}/neoforge-\${NEOFORGE_VERSION}-installer.jar"
 echo "Downloading NeoForge installer \${NEOFORGE_VERSION}..."
-curl -sSL -o neoforge-installer.jar "$INSTALLER_URL"
+curl -fsSL -o neoforge-installer.jar "$INSTALLER_URL"
 java -jar neoforge-installer.jar --installServer
 rm -f neoforge-installer.jar neoforge-installer.jar.log
 
-FOUND_JAR=$(find . -maxdepth 1 \\( -name "*-shim.jar" -o -name "*-universal.jar" \\) | head -n1)
-if [ -n "$FOUND_JAR" ] && [ "$FOUND_JAR" != "./\${SERVER_JARFILE}" ]; then
-  mv "$FOUND_JAR" "\${SERVER_JARFILE}"
-fi
+${WRITE_ARGS_FILE}
 
 echo "eula=true" > eula.txt
 if grep -q '^server-port=' server.properties 2>/dev/null; then
@@ -341,16 +419,16 @@ cd /mnt/server
 : "\${SERVER_JARFILE:=server.jar}"
 
 if [ "$MINECRAFT_VERSION" == "latest" ]; then
-  MINECRAFT_VERSION=$(curl -sSL https://api.purpurmc.org/v2/purpur | jq -r '.versions[-1]')
+  MINECRAFT_VERSION=$(curl -fsSL https://api.purpurmc.org/v2/purpur | jq -r '.versions[-1]')
 fi
 
 if [ "$PURPUR_BUILD" == "latest" ]; then
-  PURPUR_BUILD=$(curl -sSL "https://api.purpurmc.org/v2/purpur/\${MINECRAFT_VERSION}" | jq -r '.builds.latest')
+  PURPUR_BUILD=$(curl -fsSL "https://api.purpurmc.org/v2/purpur/\${MINECRAFT_VERSION}" | jq -r '.builds.latest')
 fi
 
 DOWNLOAD_URL="https://api.purpurmc.org/v2/purpur/\${MINECRAFT_VERSION}/\${PURPUR_BUILD}/download"
 echo "Downloading Purpur \${MINECRAFT_VERSION} build \${PURPUR_BUILD}..."
-curl -sSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
+curl -fsSL -o "\${SERVER_JARFILE}" "$DOWNLOAD_URL"
 
 echo "eula=true" > eula.txt
 if grep -q '^server-port=' server.properties 2>/dev/null; then
@@ -468,7 +546,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
     name: 'Forge',
     description: 'Servidor modificado de Minecraft: Java Edition com o carregador de mods Forge.',
     dockerImages: JAVA_IMAGE,
-    startupCommand: STANDARD_STARTUP_COMMAND,
+    startupCommand: MODLOADER_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: JAVA_INSTALL_IMAGE,
     installEntrypoint: INSTALL_ENTRYPOINT,
@@ -496,7 +574,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
     name: 'NeoForge',
     description: 'Servidor modificado de Minecraft: Java Edition com NeoForge, fork do Forge mantido ativamente para versões modernas.',
     dockerImages: JAVA_IMAGE,
-    startupCommand: STANDARD_STARTUP_COMMAND,
+    startupCommand: MODLOADER_STARTUP_COMMAND,
     stopCommand: 'stop',
     installImage: JAVA_INSTALL_IMAGE,
     installEntrypoint: INSTALL_ENTRYPOINT,

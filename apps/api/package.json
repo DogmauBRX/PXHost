@@ -17,7 +17,8 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
-    "cleanup:test-plans": "ts-node prisma/cleanup-test-plans.ts"
+    "cleanup:test-plans": "ts-node prisma/cleanup-test-plans.ts",
+    "sync:preset-templates": "ts-node prisma/sync-preset-templates.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
