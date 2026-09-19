@@ -23,11 +23,12 @@ import (
 )
 
 const (
-	maxMrpackBytes      = int64(2 << 30)
-	maxPackEntries      = 100000
-	maxIndexBytes       = int64(4 << 20)
-	maxExpandedBytes    = int64(10 << 30)
-	maxCompressionRatio = uint64(1000)
+	maxMrpackBytes        = int64(2 << 30)
+	maxPackEntries        = 100000
+	maxIndexBytes         = int64(4 << 20)
+	maxFabricModMetaBytes = int64(1 << 20)
+	maxExpandedBytes      = int64(10 << 30)
+	maxCompressionRatio   = uint64(1000)
 )
 
 type ModpackInstallSpec struct {
@@ -144,6 +145,21 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 		if err := downloadVerified(ctx, f.Downloads[0], dest, f.FileSize, f.Hashes["sha1"], f.Hashes["sha512"]); err != nil {
 			return fmt.Errorf("modpack: file %q: %w", f.Path, err)
 		}
+		// Some client modpacks omit the server environment flag in their
+		// Modrinth index. Fabric mods declare their own runtime environment,
+		// which lets us reliably omit a client-only JAR before it ever reaches
+		// the server. This prevents headless servers from trying to open a GUI.
+		clientOnly, err := isFabricClientOnlyMod(dest)
+		if err != nil {
+			return fmt.Errorf("modpack: inspect Fabric metadata for %q: %w", f.Path, err)
+		}
+		if clientOnly {
+			if err := os.Remove(dest); err != nil {
+				return fmt.Errorf("modpack: remove client-only mod %q: %w", f.Path, err)
+			}
+			progress(30+(i+1)*50/max(1, len(index.Files)), fmt.Sprintf("Ignorando mod exclusivo de cliente (%d/%d)", i+1, len(index.Files)))
+			continue
+		}
 		_ = os.Chown(dest, s.spec.UID, s.spec.UID)
 		progress(30+(i+1)*50/max(1, len(index.Files)), fmt.Sprintf("Baixando arquivos do modpack (%d/%d)", i+1, len(index.Files)))
 	}
@@ -172,6 +188,46 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 	go func() { time.Sleep(time.Hour); _ = os.RemoveAll(oldDir) }()
 	progress(98, "Arquivos ativados")
 	return nil
+}
+
+// isFabricClientOnlyMod reports whether a Fabric mod JAR explicitly declares
+// itself as client-only. Non-Fabric archives and ordinary files remain intact.
+func isFabricClientOnlyMod(filePath string) (bool, error) {
+	if !strings.EqualFold(filepath.Ext(filePath), ".jar") {
+		return false, nil
+	}
+	zr, err := zip.OpenReader(filePath)
+	if err != nil {
+		// A modpack can contain non-ZIP files with a .jar extension; leave them
+		// to the loader rather than rejecting a verified Modrinth artifact.
+		return false, nil
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		if f.Name != "fabric.mod.json" {
+			continue
+		}
+		if f.UncompressedSize64 > uint64(maxFabricModMetaBytes) {
+			return false, fmt.Errorf("fabric.mod.json is too large")
+		}
+		r, err := f.Open()
+		if err != nil {
+			return false, err
+		}
+		var metadata struct {
+			Environment string `json:"environment"`
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(r, maxFabricModMetaBytes)).Decode(&metadata)
+		closeErr := r.Close()
+		if decodeErr != nil {
+			return false, fmt.Errorf("invalid fabric.mod.json: %w", decodeErr)
+		}
+		if closeErr != nil {
+			return false, closeErr
+		}
+		return strings.EqualFold(metadata.Environment, "client"), nil
+	}
+	return false, nil
 }
 
 func allowedModrinthURL(raw string) error {

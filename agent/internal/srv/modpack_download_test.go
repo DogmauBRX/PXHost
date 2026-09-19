@@ -1,6 +1,7 @@
 package srv
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/sha512"
 	"encoding/hex"
@@ -11,6 +12,50 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestIsFabricClientOnlyMod(t *testing.T) {
+	tests := []struct {
+		name        string
+		environment string
+		want        bool
+	}{
+		{name: "client", environment: "client", want: true},
+		{name: "universal", environment: "*", want: false},
+		{name: "server", environment: "server", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "mod.jar")
+			file, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			zw := zip.NewWriter(file)
+			entry, err := zw.Create("fabric.mod.json")
+			if err == nil {
+				_, err = entry.Write([]byte(`{"environment":"` + tt.environment + `"}`))
+			}
+			if closeErr := zw.Close(); err == nil {
+				err = closeErr
+			}
+			if closeErr := file.Close(); err == nil {
+				err = closeErr
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := isFabricClientOnlyMod(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("isFabricClientOnlyMod() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestDownloadVerifiedAcceptsStaleSizeWhenChecksumMatches(t *testing.T) {
 	body := []byte("valid artifact with two extra bytes")
