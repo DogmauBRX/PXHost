@@ -161,10 +161,6 @@ curl -sSL -o fabric-installer.jar "https://maven.fabricmc.net/net/fabricmc/fabri
 java -jar fabric-installer.jar server -mcversion "$MINECRAFT_VERSION" -loader "$FABRIC_LOADER_VERSION" -downloadMinecraft
 rm -f fabric-installer.jar
 
-if [ -f server.jar ] && [ "\${SERVER_JARFILE}" != "server.jar" ]; then
-  mv server.jar "\${SERVER_JARFILE}"
-fi
-
 echo "eula=true" > eula.txt
 if grep -q '^server-port=' server.properties 2>/dev/null; then
   sed -i "s/^server-port=.*/server-port=\${SERVER_PORT}/" server.properties
