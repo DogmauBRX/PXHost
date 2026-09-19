@@ -95,6 +95,16 @@ export interface CreateAgentServerRequest {
   installEntrypoint: string;
   installScript: string;
 }
+export interface InstallAgentModpackRequest {
+  operationId: string;
+  sourceUrl: string;
+  filename: string;
+  size: number;
+  sha1?: string;
+  sha512?: string;
+  diskLimitMb: number;
+}
+
 
 /**
  * The Panel's single outbound client to a Node Agent's control API
@@ -114,6 +124,9 @@ export class AgentClient {
 
   async createServer(nodeId: string, req: CreateAgentServerRequest): Promise<{ state: string }> {
     return this.call(nodeId, 'POST', '/api/servers', req);
+  }
+  async installModpack(nodeId: string, serverUuid: string, req: InstallAgentModpackRequest): Promise<{ operationId: string; status: string }> {
+    return this.call(nodeId, 'POST', `/api/servers/${serverUuid}/modpacks/install`, req);
   }
 
   /**

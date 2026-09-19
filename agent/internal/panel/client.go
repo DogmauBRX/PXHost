@@ -111,6 +111,23 @@ type InstallCompletedRequest struct {
 	ErrorMessage string `json:"errorMessage,omitempty"`
 }
 
+type ModpackProgressRequest struct {
+	OperationID  string `json:"operationId"`
+	Status       string `json:"status"`
+	Progress     int    `json:"progress"`
+	Message      string `json:"message"`
+	BackupID     string `json:"backupId,omitempty"`
+	ErrorMessage string `json:"errorMessage,omitempty"`
+}
+
+func (c *Client) ModpackProgress(ctx context.Context, nodeToken, serverUUID string, req ModpackProgressRequest) error {
+	path := fmt.Sprintf("/api/remote/servers/%s/modpacks/progress", serverUUID)
+	if err := c.post(ctx, path, nodeToken, req, nil); err != nil {
+		return fmt.Errorf("panel: modpack-progress: %w", err)
+	}
+	return nil
+}
+
 // InstallCompleted reports an install run's outcome (architecture doc
 // 4.2/7). The HTTP call that originally requested the install has long
 // since returned 202 — this is the async follow-up that actually moves

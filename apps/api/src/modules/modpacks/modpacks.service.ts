@@ -1,5 +1,10 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { ServerAccessService, type AccessActor } from '../authorization/server-access.service';
+import { PrismaService } from '../../core/prisma/prisma.service';
+import { AgentClient } from '../nodes/agent-client.service';
+import { AuditService } from '../audit/audit.service';
+import { ActivityService } from '../activity/activity.service';
+import type { InstallModpackDto, ModpackProgressDto } from './dto/install-modpack.dto';
 import type { ListModpackVersionsDto, SearchModpacksDto } from './dto/modpack-query.dto';
 import type { ModpackProvider, ModpackSource } from './modpack-provider';
 import { ModrinthProvider } from './modrinth.provider';
@@ -10,9 +15,119 @@ export class ModpacksService {
 
   constructor(
     private readonly access: ServerAccessService,
+    private readonly prisma: PrismaService,
+    private readonly agent: AgentClient,
+    private readonly audit: AuditService,
+    private readonly activity: ActivityService,
     modrinth: ModrinthProvider,
   ) {
     this.providers = new Map([[modrinth.source, modrinth]]);
+  }
+
+  async install(actor: AccessActor, serverId: string, dto: InstallModpackDto) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    if (!can('addons.install')) throw new ForbiddenException('Missing permission: addons.install');
+    if (!server.template?.softwareKind) throw new ConflictException('O software atual do servidor não foi identificado.');
+
+    const runtime = await this.agent.getServerStatus(server.nodeId, server.id);
+    if (runtime.state !== 'offline') throw new ConflictException('Desligue o servidor antes de instalar um modpack.');
+
+    const provider = this.provider(dto.source);
+    const [project, version] = await Promise.all([provider.getProject(dto.projectId), provider.getVersion(dto.versionId)]);
+    if (version.projectId !== dto.projectId) throw new UnprocessableEntityException('A versão selecionada não pertence a este modpack.');
+
+    const minecraftVersion = server.variables[0]?.value;
+    const loader = server.template.softwareKind.toLowerCase();
+    if (!minecraftVersion || !version.minecraftVersions.includes(minecraftVersion) || !version.loaders.includes(loader)) {
+      throw new ConflictException('Escolha uma versão compatível com o Minecraft e o loader atuais do servidor.');
+    }
+    const file = version.files.find((candidate) => candidate.primary && candidate.filename.endsWith('.mrpack'))
+      ?? version.files.find((candidate) => candidate.filename.endsWith('.mrpack'));
+    if (!file) throw new UnprocessableEntityException('Esta versão não possui um pacote .mrpack instalável.');
+    const source = new URL(file.url);
+    if (source.protocol !== 'https:' || source.hostname !== 'cdn.modrinth.com') {
+      throw new UnprocessableEntityException('O arquivo principal não está hospedado no CDN permitido do Modrinth.');
+    }
+
+    const operation = await this.prisma.withRLS({ userId: actor.isAdmin ? null : actor.id, isAdmin: actor.isAdmin }, async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${serverId}))`;
+      const active = await tx.modpackInstallation.findFirst({
+        where: { serverId, status: { in: ['pending', 'downloading', 'installing', 'configuring', 'rolling_back'] } },
+      });
+      if (active && active.updatedAt > new Date(Date.now() - 2 * 60 * 60 * 1_000)) {
+        throw new ConflictException('Já existe uma instalação de modpack em andamento.');
+      }
+      if (active) {
+        await tx.modpackInstallation.update({
+          where: { id: active.id },
+          data: { status: 'failed', progress: 100, message: 'Operação expirada', errorMessage: 'O Agent não concluiu a operação dentro do prazo.', completedAt: new Date() },
+        });
+      }
+      return tx.modpackInstallation.create({ data: {
+        serverId,
+        requestedBy: actor.id,
+        source: dto.source,
+        projectId: dto.projectId,
+        versionId: dto.versionId,
+        projectName: project.name,
+        versionName: version.versionNumber,
+        minecraftVersion,
+        loader,
+        message: 'Aguardando o Agent',
+      } });
+    });
+
+    try {
+      await this.agent.installModpack(server.nodeId, server.id, {
+        operationId: operation.id,
+        sourceUrl: file.url,
+        filename: file.filename,
+        size: file.size,
+        sha1: file.hashes.sha1,
+        sha512: file.hashes.sha512,
+        diskLimitMb: server.diskMb,
+      });
+    } catch (error) {
+      await this.updateOperation(server.id, operation.id, {
+        status: 'failed', progress: 0, message: 'O Agent recusou a instalação', errorMessage: error instanceof Error ? error.message : 'Falha desconhecida',
+      });
+      throw error;
+    }
+    await Promise.allSettled([
+      this.audit.record({ action: 'server.modpack.install', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { operationId: operation.id, source: dto.source, projectId: dto.projectId, versionId: dto.versionId } }),
+      this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.modpack.install', properties: { operationId: operation.id, projectName: project.name, versionName: version.versionNumber } }),
+    ]);
+    return this.latestInstallation(actor, serverId);
+  }
+
+  async latestInstallation(actor: AccessActor, serverId: string) {
+    const { can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    if (!can('addons.catalog.read')) throw new ForbiddenException('Missing permission: addons.catalog.read');
+    return this.prisma.withRLS({ userId: actor.isAdmin ? null : actor.id, isAdmin: actor.isAdmin }, (tx) =>
+      tx.modpackInstallation.findFirst({ where: { serverId }, orderBy: { createdAt: 'desc' } }),
+    );
+  }
+
+  async reportProgress(nodeId: string, serverId: string, dto: ModpackProgressDto) {
+    const server = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+      tx.server.findFirst({ where: { id: serverId, nodeId }, select: { id: true } }),
+    );
+    if (!server) throw new ForbiddenException('Este node não controla o servidor informado.');
+    await this.updateOperation(serverId, dto.operationId, dto);
+  }
+
+  private async updateOperation(serverId: string, operationId: string, dto: Pick<ModpackProgressDto, 'status' | 'progress' | 'message' | 'backupId' | 'errorMessage'>) {
+    await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.modpackInstallation.updateMany({
+      where: { id: operationId, serverId },
+      data: {
+        status: dto.status,
+        progress: Math.max(0, Math.min(100, dto.progress)),
+        message: dto.message,
+        backupId: dto.backupId,
+        errorMessage: dto.errorMessage,
+        completedAt: ['completed', 'failed'].includes(dto.status) ? new Date() : null,
+      },
+    }));
   }
 
   async search(actor: AccessActor, serverId: string, query: SearchModpacksDto) {

@@ -71,7 +71,7 @@ interface ModrinthVersionResponse {
   version_type: 'release' | 'beta' | 'alpha';
   date_published: string;
   downloads: number;
-  files: Array<{ filename: string; size: number; primary: boolean }>;
+  files: Array<{ filename: string; size: number; primary: boolean; url: string; hashes: { sha1?: string; sha512?: string } }>;
 }
 
 interface ModrinthGameVersion {
@@ -163,20 +163,14 @@ export class ModrinthProvider implements ModpackProvider {
       const rows = await this.request<ModrinthVersionResponse[]>(
         `/project/${encodeURIComponent(projectId)}/version?${params.toString()}`,
       );
-      return rows.map((row) => ({
-        source: this.source,
-        versionId: row.id,
-        projectId: row.project_id,
-        name: row.name,
-        versionNumber: row.version_number,
-        minecraftVersions: row.game_versions,
-        loaders: row.loaders.filter((loader) => LOADERS.includes(loader.toLowerCase())),
-        releaseType: row.version_type,
-        publishedAt: row.date_published,
-        downloads: row.downloads,
-        files: row.files.map((file) => ({ filename: file.filename, size: file.size, primary: file.primary })),
-      }));
+      return rows.map((row) => this.normalizeVersion(row));
     });
+  }
+
+  getVersion(versionId: string): Promise<ModpackVersion> {
+    return this.cache.remember('modrinth:version', versionId, VERSION_TTL_SECONDS, async () =>
+      this.normalizeVersion(await this.request<ModrinthVersionResponse>(`/version/${encodeURIComponent(versionId)}`)),
+    );
   }
 
   getMetadata(): Promise<ModpackMetadata> {
@@ -211,6 +205,16 @@ export class ModrinthProvider implements ModpackProvider {
       minecraftVersions: hit.versions,
       loaders: rawCategories.filter((category) => LOADERS.includes(category.toLowerCase())),
       updatedAt: hit.date_modified,
+    };
+  }
+
+  private normalizeVersion(row: ModrinthVersionResponse): ModpackVersion {
+    return {
+      source: this.source, versionId: row.id, projectId: row.project_id, name: row.name,
+      versionNumber: row.version_number, minecraftVersions: row.game_versions,
+      loaders: row.loaders.filter((loader) => LOADERS.includes(loader.toLowerCase())),
+      releaseType: row.version_type, publishedAt: row.date_published, downloads: row.downloads,
+      files: row.files.map((file) => ({ filename: file.filename, size: file.size, primary: file.primary, url: file.url, hashes: file.hashes })),
     };
   }
 

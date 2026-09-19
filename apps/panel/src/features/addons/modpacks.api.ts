@@ -52,6 +52,24 @@ export interface ModpackMetadata {
   categories: string[];
 }
 
+export interface ModpackInstallation {
+  id: string;
+  source: string;
+  projectId: string;
+  versionId: string;
+  projectName: string;
+  versionName: string;
+  minecraftVersion: string;
+  loader: string;
+  status: 'pending' | 'downloading' | 'installing' | 'configuring' | 'rolling_back' | 'completed' | 'failed';
+  progress: number;
+  message: string | null;
+  backupId: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
 export interface SearchModpacksParams {
   query?: string;
   minecraftVersion?: string;
@@ -84,4 +102,15 @@ export function getModpackProject(serverId: string, source: ModpackSource, proje
 
 export function getModpackVersions(serverId: string, source: ModpackSource, projectId: string) {
   return apiFetch<ModpackVersion[]>(`/api/client/servers/${serverId}/modpacks/${source}/${encodeURIComponent(projectId)}/versions`);
+}
+
+export function installModpack(serverId: string, source: ModpackSource, projectId: string, versionId: string) {
+  return apiFetch<ModpackInstallation>(`/api/client/servers/${serverId}/modpacks/installations`, {
+    method: 'POST',
+    body: JSON.stringify({ source, projectId, versionId }),
+  });
+}
+
+export function getLatestModpackInstallation(serverId: string) {
+  return apiFetch<ModpackInstallation | null>(`/api/client/servers/${serverId}/modpacks/installations/latest`);
 }

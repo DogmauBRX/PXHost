@@ -822,8 +822,35 @@ model Server {
   // row here (the default) is simply never exposed publicly, exactly
   // today's behavior.
   publicRoute   PublicRoute?
+  modpackInstallations ModpackInstallation[]
 
   @@map("servers")
+}
+
+model ModpackInstallation {
+  id               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  serverId         String    @map("server_id") @db.Uuid
+  requestedBy      String    @map("requested_by") @db.Uuid
+  source           String
+  projectId        String    @map("project_id")
+  versionId        String    @map("version_id")
+  projectName      String    @map("project_name")
+  versionName      String    @map("version_name")
+  minecraftVersion String    @map("minecraft_version")
+  loader           String
+  status           String    @default("pending")
+  progress         Int       @default(0)
+  message          String?
+  backupId         String?   @map("backup_id")
+  errorMessage     String?   @map("error_message")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId, createdAt])
+  @@map("modpack_installations")
 }
 
 model ServerVariable {

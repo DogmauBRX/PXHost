@@ -44,7 +44,7 @@ export interface ModpackVersion {
   releaseType: 'release' | 'beta' | 'alpha';
   publishedAt: string;
   downloads: number;
-  files: Array<{ filename: string; size: number; primary: boolean }>;
+  files: Array<{ filename: string; size: number; primary: boolean; url: string; hashes: { sha1?: string; sha512?: string } }>;
 }
 
 export interface ModpackSearchResult {
@@ -66,5 +66,6 @@ export interface ModpackProvider {
   search(query: ModpackSearchQuery): Promise<ModpackSearchResult>;
   getProject(projectId: string): Promise<ModpackProject>;
   getVersions(projectId: string, filters?: { minecraftVersion?: string; loader?: string }): Promise<ModpackVersion[]>;
+  getVersion(versionId: string): Promise<ModpackVersion>;
   getMetadata(): Promise<ModpackMetadata>;
 }

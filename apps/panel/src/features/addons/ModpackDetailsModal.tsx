@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, Download, ExternalLink, HardDrive, PackageOpen } from 'lucide-react';
 import { formatBytes, formatDateOnly } from '@/shared/format/datetime';
 import { Alert, Badge, Button, LoadingRow, Modal, Select } from '@/ui/primitives';
 import type { SoftwareKind } from '@/shared/api/types';
-import { getModpackProject, getModpackVersions, type ModpackSource } from './modpacks.api';
+import { getLatestModpackInstallation, getModpackProject, getModpackVersions, installModpack, type ModpackSource } from './modpacks.api';
 
 interface Props {
   serverId: string;
@@ -23,6 +23,7 @@ export function ModpackDetailsModal(props: Props) {
   const [minecraftVersion, setMinecraftVersion] = useState('');
   const [loader, setLoader] = useState('');
   const [versionId, setVersionId] = useState('');
+  const queryClient = useQueryClient();
 
   const projectQuery = useQuery({
     queryKey: ['modpack-project', serverId, source, projectId],
@@ -33,6 +34,11 @@ export function ModpackDetailsModal(props: Props) {
     queryKey: ['modpack-versions', serverId, source, projectId],
     queryFn: () => getModpackVersions(serverId, source, projectId as string),
     enabled: projectId !== null,
+  });
+  const installationQuery = useQuery({
+    queryKey: ['modpack-installation', serverId],
+    queryFn: () => getLatestModpackInstallation(serverId),
+    refetchInterval: (query) => isActive(query.state.data?.status) ? 2_000 : false,
   });
 
   const versions = versionsQuery.data ?? EMPTY_VERSIONS;
@@ -56,6 +62,14 @@ export function ModpackDetailsModal(props: Props) {
     [versions, effectiveMinecraft, effectiveLoader],
   );
   const selectedRelease = releaseOptions.find((v) => v.versionId === versionId) ?? releaseOptions[0];
+  const compatible = Boolean(selectedRelease)
+    && (!serverMinecraftVersion || serverMinecraftVersion === effectiveMinecraft)
+    && (!serverSoftware || serverSoftware === effectiveLoader);
+  const activeInstallation = isActive(installationQuery.data?.status) ? installationQuery.data : null;
+  const installMutation = useMutation({
+    mutationFn: () => installModpack(serverId, source, projectId as string, selectedRelease!.versionId),
+    onSuccess: (value) => queryClient.setQueryData(['modpack-installation', serverId], value),
+  });
 
   const project = projectQuery.data;
   const loading = projectQuery.isLoading || versionsQuery.isLoading;
@@ -70,8 +84,12 @@ export function ModpackDetailsModal(props: Props) {
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Fechar</Button>
-          <Button variant="primary" disabled title="A instalação segura pelo Agent será habilitada na Fase 2">
-            <PackageOpen className="h-4 w-4" /> Instalar Modpack
+          <Button
+            variant="primary"
+            disabled={!canInstall || !compatible || !selectedRelease || Boolean(activeInstallation) || installMutation.isPending}
+            onClick={() => installMutation.mutate()}
+          >
+            <PackageOpen className="h-4 w-4" /> {installMutation.isPending ? 'Iniciando…' : activeInstallation ? 'Instalando…' : 'Instalar Modpack'}
           </Button>
         </>
       }
@@ -128,7 +146,21 @@ export function ModpackDetailsModal(props: Props) {
           </div>
 
           {!canInstall && <Alert tone="warn">Você não possui a permissão de instalar modpacks neste servidor.</Alert>}
-          <Alert tone="info">O catálogo e a seleção de versões já estão ativos. A instalação será liberada somente com o pipeline seguro e transacional do Agent na Fase 2.</Alert>
+          {!compatible && <Alert tone="warn">Esta release não corresponde à versão do Minecraft e ao loader atuais. Troque a seleção ou altere primeiro o software do servidor.</Alert>}
+          {installMutation.isError && <Alert>Não foi possível iniciar a instalação: {installMutation.error.message}</Alert>}
+          {activeInstallation && (
+            <Alert tone="info" title={`${activeInstallation.progress}% · ${statusLabel(activeInstallation.status)}`}>
+              {activeInstallation.message ?? 'Processando instalação…'}
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-3"><div className="h-full rounded-full bg-accent transition-all" style={{ width: `${activeInstallation.progress}%` }} /></div>
+            </Alert>
+          )}
+          {installationQuery.data?.status === 'completed' && installationQuery.data.versionId === selectedRelease?.versionId && (
+            <Alert tone="ok">Modpack instalado com sucesso. O backup de segurança foi mantido.</Alert>
+          )}
+          {installationQuery.data?.status === 'failed' && (
+            <Alert title="Instalação não concluída">{installationQuery.data.message}{installationQuery.data.errorMessage ? `: ${installationQuery.data.errorMessage}` : ''}</Alert>
+          )}
+          <Alert tone="info">O servidor precisa estar desligado. Antes de alterar os arquivos, o Agent cria um backup, valida o pacote e instala em uma área de staging com rollback automático.</Alert>
 
           {project.body && <div><h3 className="mb-2 text-sm font-semibold">Sobre</h3><p className="max-h-48 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-text-muted">{project.body}</p></div>}
         </div>
@@ -147,4 +179,12 @@ function loaderLabel(value: string): string {
 
 function formatCount(value: number): string {
   return new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+}
+
+function isActive(status?: string): boolean {
+  return Boolean(status && ['pending', 'downloading', 'installing', 'configuring', 'rolling_back'].includes(status));
+}
+
+function statusLabel(status: string): string {
+  return ({ pending: 'Na fila', downloading: 'Baixando', installing: 'Instalando', configuring: 'Configurando', rolling_back: 'Restaurando backup' } as Record<string, string>)[status] ?? status;
 }

@@ -55,7 +55,7 @@ describe('ModrinthProvider', () => {
         id: 'version-1', project_id: 'project-1', name: 'Release 32', version_number: 'v32',
         game_versions: ['1.21.1'], loaders: ['fabric'], version_type: 'release',
         date_published: '2026-02-01T00:00:00Z', downloads: 10,
-        files: [{ filename: 'pack.mrpack', size: 1234, primary: true, url: 'https://cdn.modrinth.com/pack.mrpack' }],
+        files: [{ filename: 'pack.mrpack', size: 1234, primary: true, url: 'https://cdn.modrinth.com/pack.mrpack', hashes: { sha1: 'abc' } }],
       }],
     } as Response);
 
@@ -67,7 +67,7 @@ describe('ModrinthProvider', () => {
     expect(versions[0]).toEqual({
       source: 'modrinth', versionId: 'version-1', projectId: 'project-1', name: 'Release 32', versionNumber: 'v32',
       minecraftVersions: ['1.21.1'], loaders: ['fabric'], releaseType: 'release', publishedAt: '2026-02-01T00:00:00Z',
-      downloads: 10, files: [{ filename: 'pack.mrpack', size: 1234, primary: true }],
+      downloads: 10, files: [{ filename: 'pack.mrpack', size: 1234, primary: true, url: 'https://cdn.modrinth.com/pack.mrpack', hashes: { sha1: 'abc' } }],
     });
   });
 
