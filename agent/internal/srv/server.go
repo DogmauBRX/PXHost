@@ -437,6 +437,54 @@ func (s *Server) recreateContainerLocked(ctx context.Context, dc dockerFull) err
 	return nil
 }
 
+// Reinstall swaps the software a registered server runs — a different
+// template, or a different Minecraft version of the same one — by
+// rebuilding the container around a new image/startup command/environment
+// and leaving the caller to re-run the install script afterwards.
+//
+// This is UpdateVariables' bigger sibling and shares its shape for the
+// same reasons: Docker cannot change a container's image or entrypoint in
+// place, so the container is removed and recreated, while the data
+// directory, this Server's identity in the manager, its uid, limits,
+// allocations and console history all survive untouched. The caller
+// (routes' handleReinstallServer) pulls the new image BEFORE calling this
+// and kicks off Install afterwards.
+//
+// Requires the server to be stopped: recreating a container out from
+// under a running game is the same problem UpdateVariables refuses, for
+// the same reason.
+func (s *Server) Reinstall(ctx context.Context, dc dockerFull, image, startupTmpl, stopSignal string, newEnv map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.State != StateOffline {
+		return fmt.Errorf("srv: server %s must be stopped before it can be reinstalled", s.UUID)
+	}
+
+	if s.ContainerID != "" {
+		if err := dc.RemoveContainer(ctx, s.ContainerID, true); err != nil {
+			return fmt.Errorf("srv: removing old container before reinstall: %w", err)
+		}
+		s.ContainerID = ""
+	}
+
+	s.spec.Image = image
+	s.spec.StartupTmpl = startupTmpl
+	s.spec.StopSignal = stopSignal
+	s.spec.Env = newEnv
+
+	cfg, hostCfg, netCfg, err := spec.BuildContainerSpec(s.spec, s.node)
+	if err != nil {
+		return fmt.Errorf("srv: building spec for %s: %w", s.UUID, err)
+	}
+	id, err := dc.CreateContainer(ctx, s.ContainerName, cfg, hostCfg, netCfg)
+	if err != nil {
+		return fmt.Errorf("srv: recreating container for reinstall: %w", err)
+	}
+	s.ContainerID = id
+	return nil
+}
+
 // Remove force-removes the container. It does not touch the server's data
 // directory — deletion of on-disk data is a separate, explicit operation
 // (fsx, later milestone), never implied by removing the container.

@@ -198,6 +198,89 @@ func (s *Server) runInstallAsync(target *srv.Server, image, entrypoint, script s
 	}
 }
 
+// reinstallRequest mirrors the panel's ReinstallAgentServerRequest
+// (apps/api/src/modules/nodes/agent-client.service.ts). Deliberately
+// narrower than createServerRequest: a version change never touches
+// uid/limits/allocations, and the already-registered *srv.Server keeps
+// those from its original Create.
+type reinstallRequest struct {
+	UUID            string            `json:"uuid"`
+	Image           string            `json:"image"`
+	ImageDigest     string            `json:"imageDigest,omitempty"`
+	StartupTemplate string            `json:"startupTemplate"`
+	StopSignal      string            `json:"stopSignal,omitempty"`
+	DeclaredVars    []string          `json:"declaredVariables"`
+	Variables       map[string]string `json:"variables"`
+	InstallImage    string            `json:"installImage"`
+	InstallEntry    string            `json:"installEntrypoint"`
+	InstallScript   string            `json:"installScript"`
+}
+
+// handleReinstallServer swaps a registered server's software in place —
+// the agent half of the panel's "Trocar versão".
+//
+// createServer can never be reused for this: the manager's Register
+// guard 409s on a UUID it already knows, which is precisely the normal
+// case for a server old enough to have a version worth changing. Found
+// live: the panel and the API both shipped this feature, but the agent
+// route they call never existed, so every attempt came back as Go's bare
+// "404 page not found" from the mux.
+func (s *Server) handleReinstallServer(w http.ResponseWriter, r *http.Request) {
+	uuid := pathParam(r, "uuid")
+	var req reinstallRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorResp(w, http.StatusUnprocessableEntity, "INVALID_BODY", err.Error())
+		return
+	}
+	if req.Image == "" || req.StartupTemplate == "" {
+		writeErrorResp(w, http.StatusUnprocessableEntity, "INVALID_BODY", "image and startupTemplate are required")
+		return
+	}
+
+	target, ok := s.manager.Get(uuid)
+	if !ok {
+		writeErrorResp(w, http.StatusNotFound, "SERVER_NOT_FOUND", "no server registered with that uuid")
+		return
+	}
+	if target.State != srv.StateOffline {
+		writeErrorResp(w, http.StatusConflict, "SERVER_RUNNING", "server must be stopped before changing its version")
+		return
+	}
+
+	// SERVER_PORT has to survive the rebuild: it is injected from the
+	// primary allocation, which a reinstall never resends (see
+	// reinstallRequest) — the registered server is the only thing that
+	// still knows it. Dropping it here would write server-port=25565
+	// into server.properties on the next install, which is the exact
+	// "connection refused on every allocation but one" bug buildEnvMap's
+	// own doc comment describes.
+	envMap, err := buildEnvMap(uuid, req.DeclaredVars, req.Variables, target.PrimaryPort())
+	if err != nil {
+		writeErrorResp(w, http.StatusUnprocessableEntity, "INVALID_VARIABLES", err.Error())
+		return
+	}
+
+	image := req.Image
+	if req.ImageDigest != "" {
+		image = image + "@" + req.ImageDigest
+	}
+	if err := s.dc.PullPinned(r.Context(), image, req.ImageDigest); err != nil {
+		writeErrorResp(w, http.StatusBadGateway, "PULL_FAILED", err.Error())
+		return
+	}
+	if err := target.Reinstall(r.Context(), s.dc, image, req.StartupTemplate, req.StopSignal, envMap); err != nil {
+		writeErrorResp(w, http.StatusBadGateway, "REINSTALL_FAILED", err.Error())
+		return
+	}
+
+	writeJSONResp(w, http.StatusAccepted, map[string]any{"uuid": uuid, "state": "installing"})
+
+	// Same "202 now, real answer later" contract as create: everything
+	// below runs on s.bgCtx, and the panel learns the outcome from the
+	// install-completed callback.
+	go s.runInstallAsync(target, req.InstallImage, req.InstallEntry, req.InstallScript)
+}
+
 func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 	uuid := pathParam(r, "uuid")
 	target, ok := s.manager.Get(uuid)

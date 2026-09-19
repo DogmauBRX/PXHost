@@ -132,6 +132,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /api/servers", s.requireNodeToken(http.HandlerFunc(s.handleCreateServer)))
 	mux.Handle("GET /api/servers/{uuid}", s.requireNodeToken(http.HandlerFunc(s.handleGetServer)))
 	mux.Handle("DELETE /api/servers/{uuid}", s.requireNodeToken(http.HandlerFunc(s.handleDeleteServer)))
+	mux.Handle("POST /api/servers/{uuid}/reinstall", s.requireNodeToken(http.HandlerFunc(s.handleReinstallServer)))
 	mux.Handle("POST /api/servers/{uuid}/power", s.requireNodeToken(http.HandlerFunc(s.handlePower)))
 	mux.Handle("PATCH /api/servers/{uuid}/limits", s.requireNodeToken(http.HandlerFunc(s.handleUpdateLimits)))
 	mux.Handle("PATCH /api/servers/{uuid}/suspend", s.requireNodeToken(http.HandlerFunc(s.handleSuspend)))
