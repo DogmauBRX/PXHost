@@ -291,8 +291,19 @@ func (s *Server) Adopt(dc dockerFull, containerID string, running bool) error {
 	s.State = StateRunning
 	memLimitBytes := uint64(s.spec.Limits.MemoryMB) * 1024 * 1024
 	cpuLimitPercent := uint64(s.spec.Limits.CPUPercent)
-	s.collector = stats.NewCollector(dc, containerID, memLimitBytes, cpuLimitPercent, nil, nil)
-	go func() { _ = s.collector.Run(s.bgCtx) }()
+	collector := stats.NewCollector(dc, containerID, memLimitBytes, cpuLimitPercent, nil, nil)
+	s.collector = collector
+	// Same crash watch Start installs — an adopted server is exactly as
+	// able to die on its own as one this process started, and without
+	// this it would report "running" until the next agent restart. This
+	// was the gap: crash detection only covered the Start path, so a
+	// container adopted at boot and killed afterwards stayed "running"
+	// forever, which in turn blocked deleting it (the delete tried to
+	// kill an already-dead container).
+	go func() {
+		_ = collector.Run(s.bgCtx)
+		s.handleStatsStreamEnded(dc)
+	}()
 	return nil
 }
 

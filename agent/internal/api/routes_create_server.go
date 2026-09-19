@@ -331,9 +331,17 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if target.State != srv.StateOffline {
+		// Best-effort, never fatal. Remove below force-removes, which
+		// kills a running container on its own, so this Kill only exists
+		// to tear the console/stats pumps down first — and the one way
+		// it commonly fails is the container ALREADY being stopped.
+		// Found live: a server whose state said "running" while its
+		// container had exited could not be deleted at all, because
+		// Docker answered "cannot kill container: is not running" and
+		// that 502 aborted the whole delete. Refusing to delete a server
+		// because it is *more* stopped than expected is never right.
 		if err := target.Kill(r.Context(), s.dc); err != nil {
-			writeErrorResp(w, http.StatusBadGateway, "KILL_FAILED", err.Error())
-			return
+			s.log.Warn("kill before delete failed; removing anyway", "server", uuid, "err", err)
 		}
 	}
 	if err := target.Remove(r.Context(), s.dc); err != nil {

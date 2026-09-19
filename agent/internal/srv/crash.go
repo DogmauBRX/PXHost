@@ -2,6 +2,7 @@ package srv
 
 import (
 	"context"
+	"log/slog"
 	"time"
 )
 
@@ -100,9 +101,16 @@ func (s *Server) handleStatsStreamEnded(dc dockerFull) {
 	case outcomeExited:
 		s.State = StateOffline
 		s.teardownRuntimeLocked()
+		slog.Default().Info("server stopped on its own", "server", s.UUID, "container", containerID)
 	case outcomeCrashed:
 		s.State = StateCrashed
 		s.teardownRuntimeLocked()
+		slog.Default().Warn("server crashed", "server", s.UUID, "container", containerID, "exit", exitCode)
 	case outcomeIgnore:
+		// Deliberately logged too: when a state looks wrong in the panel,
+		// the useful question is whether this ran at all and decided to
+		// do nothing, or never ran.
+		slog.Default().Debug("stats stream ended, no state change",
+			"server", s.UUID, "state", s.State, "inspectOK", inspectOK, "running", running)
 	}
 }
