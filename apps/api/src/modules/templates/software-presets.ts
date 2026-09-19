@@ -16,6 +16,143 @@ import type { TemplateVariableDto } from './dto/template.dto';
 export const PRESET_KINDS = ['paper', 'fabric', 'quilt', 'vanilla', 'forge', 'neoforge', 'purpur'] as const;
 export type PresetKind = (typeof PRESET_KINDS)[number];
 
+/**
+ * A hand-maintained, hardcoded floor under `SoftwareDiscoveryService`'s
+ * live lookups — every version listed here really shipped for that
+ * software (never an invented/guessed number), newest first. Two
+ * distinct gaps this closes, both found live on a real deployment: (1)
+ * `prisma/seed.ts` used to insert every preset with its raw, uncurated
+ * `MINECRAFT_VERSION` rule (free-text `required|string|max:16`,
+ * `defaultValue: 'latest'`) — a fresh database's client setup screen
+ * showed a free-text box until an admin remembered to run "Atualizar
+ * versões" at least once. (2) even after that, both the setup screen's
+ * own live-discovery fallback (`ServerSetupService.getSetupInfo`) and
+ * the admin's "Atualizar versões" action (`TemplatesService.
+ * refreshMinecraftVersions`) depended ENTIRELY on a third-party API
+ * (fill.papermc.io, launchermeta.mojang.com, ...) answering at that exact
+ * moment — any outage meant free text for the customer, or a hard error
+ * for the admin, with nothing to fall back to. This list is what both of
+ * those now fall back to instead: live data when it's available (still
+ * preferred — this list isn't updated as often as the game itself is
+ * patched), a real, curated, non-empty list when it isn't.
+ *
+ * Scoped per software to its actual supported range — NOT the same list
+ * copy-pasted across every preset: Fabric and Quilt never shipped for 1.12 or earlier,
+ * NeoForge only exists from 1.20.1 onward (it forked FROM Forge at that
+ * version), and Paper/Purpur's oldest published builds stop at 1.8.8
+ * (one patch behind Vanilla/Forge's 1.8.9, a real difference between
+ * those projects' own release histories).
+ */
+// Every stable release each project actually shipped for, newest first —
+// captured from each project's own live API (the same ones
+// SoftwareDiscoveryService queries) on 2026-09-18, deliberately excluding
+// release-candidate/pre-release/beta builds (unlike a live fetch, a
+// hardcoded list has no way to know when an RC gets superseded, so it
+// only ever lists genuinely final releases). Scoped per software to what
+// it actually supports — see this constant's own doc comment above.
+export const KNOWN_MINECRAFT_VERSIONS: Record<PresetKind, string[]> = {
+  vanilla: [
+    '26.3', '26.2', '26.1.2', '26.1.1', '26.1',
+    '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
+    '1.20.6', '1.20.5', '1.20.4', '1.20.3', '1.20.2', '1.20.1', '1.20',
+    '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
+    '1.18.2', '1.18.1', '1.18',
+    '1.17.1', '1.17',
+    '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1', '1.16',
+    '1.15.2', '1.15.1', '1.15',
+    '1.14.4', '1.14.3', '1.14.2', '1.14.1', '1.14',
+    '1.13.2', '1.13.1', '1.13',
+    '1.12.2', '1.12.1', '1.12',
+    '1.11.2', '1.11.1', '1.11',
+    '1.10.2', '1.10.1', '1.10',
+    '1.9.4', '1.9.3', '1.9.2', '1.9.1', '1.9',
+    '1.8.9', '1.8.8', '1.8.7', '1.8.6', '1.8.5', '1.8.4', '1.8.3', '1.8.2', '1.8.1', '1.8',
+    '1.7.10', '1.7.9', '1.7.8', '1.7.7', '1.7.6', '1.7.5', '1.7.4', '1.7.3', '1.7.2',
+    '1.6.4', '1.6.2', '1.6.1',
+    '1.5.2', '1.5.1',
+    '1.4.7', '1.4.6', '1.4.5', '1.4.4', '1.4.2',
+    '1.3.2', '1.3.1',
+    '1.2.5', '1.2.4', '1.2.3', '1.2.2', '1.2.1',
+    '1.1', '1.0',
+  ],
+  paper: [
+    '26.3', '26.2', '26.1.2', '26.1.1',
+    '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.1', '1.21',
+    '1.20.6', '1.20.5', '1.20.4', '1.20.2', '1.20.1', '1.20',
+    '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
+    '1.18.2', '1.18.1', '1.18',
+    '1.17.1', '1.17',
+    '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1',
+    '1.15.2', '1.15.1', '1.15',
+    '1.14.4', '1.14.3', '1.14.2', '1.14.1', '1.14',
+    '1.13.2', '1.13.1', '1.13',
+    '1.12.2', '1.12.1', '1.12',
+    '1.11.2', '1.10.2', '1.9.4', '1.8.8', '1.7.10',
+  ],
+  purpur: [
+    '26.3', '26.2', '26.1.2',
+    '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.1', '1.21',
+    '1.20.6', '1.20.4', '1.20.2', '1.20.1', '1.20',
+    '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
+    '1.18.2', '1.18.1', '1.18',
+    '1.17.1', '1.17',
+    '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1',
+    '1.15.2', '1.15.1', '1.15',
+    '1.14.4', '1.14.3', '1.14.2', '1.14.1',
+  ],
+  fabric: [
+    '26.3', '26.2', '26.1.2', '26.1.1', '26.1',
+    '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
+    '1.20.6', '1.20.5', '1.20.4', '1.20.3', '1.20.2', '1.20.1', '1.20',
+    '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
+    '1.18.2', '1.18.1', '1.18',
+    '1.17.1', '1.17',
+    '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1', '1.16',
+    '1.15.2', '1.15.1', '1.15',
+    '1.14.4', '1.14.3', '1.14.2', '1.14.1', '1.14',
+  ],
+  quilt: [
+    '26.2', '26.1.2', '26.1.1', '26.1',
+    '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
+    '1.20.6', '1.20.5', '1.20.4', '1.20.3', '1.20.2', '1.20.1', '1.20',
+    '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
+    '1.18.2', '1.18.1', '1.18',
+    '1.17.1', '1.17',
+    '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1', '1.16',
+    '1.15.2', '1.15.1', '1.15',
+    '1.14.4', '1.14.3', '1.14.2', '1.14.1', '1.14',
+  ],
+  forge: [
+    '26.2', '26.1.2', '26.1.1', '26.1',
+    '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.1', '1.21',
+    '1.20.6', '1.20.4', '1.20.3', '1.20.2', '1.20.1', '1.20',
+    '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
+    '1.18.2', '1.18.1', '1.18',
+    '1.17.1',
+    '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1',
+    '1.15.2', '1.15.1', '1.15',
+    '1.14.4', '1.14.3', '1.14.2',
+    '1.13.2',
+    '1.12.2', '1.12.1', '1.12',
+    '1.11.2', '1.11',
+    '1.10.2', '1.10',
+    '1.9.4', '1.9',
+    '1.8.9', '1.8.8', '1.8',
+    '1.7.10', '1.7.2',
+    '1.6.4', '1.6.3', '1.6.2', '1.6.1',
+    '1.5.2', '1.5.1', '1.5',
+    '1.4.7', '1.4.6', '1.4.5', '1.4.4', '1.4.3', '1.4.2', '1.4.1', '1.4.0',
+    '1.3.2',
+    '1.2.5', '1.2.4', '1.2.3',
+    '1.1',
+  ],
+  neoforge: [
+    '26.3', '26.2', '26.1.2', '26.1.1', '26.1',
+    '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
+    '1.20.6', '1.20.5', '1.20.4', '1.20.3', '1.20.2', '1.20.1',
+  ],
+};
+
 export interface TemplatePreset {
   name: string;
   description: string;

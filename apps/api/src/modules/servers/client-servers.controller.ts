@@ -3,6 +3,7 @@ import { ClientServersService } from './client-servers.service';
 import { ServerSetupService } from './server-setup.service';
 import { PowerActionDto } from './dto/power.dto';
 import { CompleteServerSetupDto } from './dto/server-setup.dto';
+import { ChangeServerVersionDto } from './dto/change-version.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/guards/jwt-auth.guard';
 
@@ -44,6 +45,12 @@ export class ClientServersController {
   @Get(':id')
   get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.servers.get(user, id);
+  }
+
+  /** Swaps software/version on an already-`ready` server (Trocar Versão) — see ServerSetupService.changeVersion's doc comment for how this differs from the setup flow above. */
+  @Post(':id/change-version')
+  changeVersion(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: ChangeServerVersionDto) {
+    return this.setup.changeVersion(user, id, dto);
   }
 
   /** Cheap, 10s-cached usage snapshot — powers the resource advisory without opening a WebSocket. See ClientServersService.stats's doc comment for the offline/suspended semantics. */
