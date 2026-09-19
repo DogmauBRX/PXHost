@@ -16,6 +16,7 @@ export const SOFTWARE_KINDS = [
   'spigot',
   'bukkit',
   'fabric',
+  'quilt',
   'forge',
   'neoforge',
   'vanilla',
@@ -49,6 +50,7 @@ const LABELS: Record<SoftwareKind, string> = {
   spigot: 'Spigot',
   bukkit: 'Bukkit',
   fabric: 'Fabric',
+  quilt: 'Quilt',
   forge: 'Forge',
   neoforge: 'NeoForge',
   vanilla: 'Vanilla',
@@ -58,7 +60,7 @@ const LABELS: Record<SoftwareKind, string> = {
 };
 
 const PLUGIN_KINDS = new Set<SoftwareKind>(['paper', 'purpur', 'spigot', 'bukkit', 'bungeecord', 'velocity']);
-const MOD_KINDS = new Set<SoftwareKind>(['fabric', 'forge', 'neoforge']);
+const MOD_KINDS = new Set<SoftwareKind>(['fabric', 'quilt', 'forge', 'neoforge']);
 const PROXY_KINDS = new Set<SoftwareKind>(['bungeecord', 'velocity']);
 
 export function describeSoftware(kind: string | null | undefined): SoftwareInfo {

@@ -79,6 +79,24 @@ describe('SoftwareDiscoveryService', () => {
     expect(loaders).toEqual(['0.16.5']);
   });
 
+  it('Quilt game versions only include stable releases', async () => {
+    mockFetchOnce([
+      { version: '1.21.11', stable: true },
+      { version: '26.3-pre-1', stable: false },
+    ]);
+    await expect(service.getVersions('quilt')).resolves.toEqual(['1.21.11']);
+  });
+
+  it('Quilt loader versions exclude prereleases while preserving upstream order', async () => {
+    mockFetchOnce([
+      { version: '0.31.0-beta.4' },
+      { version: '0.30.1' },
+      { version: '0.30.0-rc.1' },
+      { version: '0.29.2' },
+    ]);
+    await expect(service.getBuilds('quilt', '1.21.11')).resolves.toEqual(['0.30.1', '0.29.2']);
+  });
+
   it('Vanilla has no build tier — always [] without ever calling fetch', async () => {
     const builds = await service.getBuilds('vanilla', '1.21.4');
     expect(builds).toEqual([]);

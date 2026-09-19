@@ -24,6 +24,7 @@ const SOFTWARE_OPTIONS: { value: SoftwareKind; label: string }[] = [
   { value: 'spigot', label: 'Spigot' },
   { value: 'bukkit', label: 'Bukkit' },
   { value: 'fabric', label: 'Fabric' },
+  { value: 'quilt', label: 'Quilt' },
   { value: 'forge', label: 'Forge' },
   { value: 'neoforge', label: 'NeoForge' },
   { value: 'vanilla', label: 'Vanilla' },

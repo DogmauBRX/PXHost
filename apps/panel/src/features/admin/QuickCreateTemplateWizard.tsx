@@ -31,6 +31,7 @@ const PRESET_CARDS: PresetCard[] = [
   { kind: 'purpur', label: 'Purpur', description: 'Baseado no Paper, com ajustes extras de performance e gameplay.', hasBuild: true, buildLabel: 'Build do Purpur' },
   { kind: 'vanilla', label: 'Vanilla', description: 'Minecraft oficial, sem plugins nem mods.', hasBuild: false, buildLabel: '' },
   { kind: 'fabric', label: 'Fabric', description: 'Leve e rápido para mods via Fabric Loader.', hasBuild: true, buildLabel: 'Versão do Fabric Loader' },
+  { kind: 'quilt', label: 'Quilt', description: 'Loader moderno compatível com a maioria dos mods Fabric.', hasBuild: true, buildLabel: 'Versão do Quilt Loader' },
   { kind: 'forge', label: 'Forge', description: 'O mod loader mais usado por modpacks tradicionais.', hasBuild: true, buildLabel: 'Versão do Forge' },
   { kind: 'neoforge', label: 'NeoForge', description: 'Fork ativamente mantido do Forge para versões modernas.', hasBuild: true, buildLabel: 'Versão do NeoForge' },
 ];

@@ -34,6 +34,8 @@ export class SoftwareDiscoveryService {
         return this.cached('purpur:versions', () => this.fetchPurpurVersions());
       case 'fabric':
         return this.cached('fabric:versions', () => this.fetchFabricGameVersions());
+      case 'quilt':
+        return this.cached('quilt:versions', () => this.fetchQuiltGameVersions());
       case 'vanilla':
         return this.cached('vanilla:versions', () => this.fetchVanillaVersions());
       case 'forge':
@@ -52,6 +54,8 @@ export class SoftwareDiscoveryService {
         return this.cached(`purpur:builds:${mcVersion}`, () => this.fetchPurpurBuilds(mcVersion));
       case 'fabric':
         return this.cached('fabric:loaders', () => this.fetchFabricLoaderVersions());
+      case 'quilt':
+        return this.cached('quilt:loaders', () => this.fetchQuiltLoaderVersions());
       case 'forge':
         return this.cached(`forge:builds:${mcVersion}`, () => this.fetchForgeBuildsFor(mcVersion));
       case 'neoforge':
@@ -89,7 +93,7 @@ export class SoftwareDiscoveryService {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'gxhost-hosting-panel/0.1.0' } });
       if (!res.ok) throw new Error(`${url} responded ${res.status}`);
       return await res.json();
     } finally {
@@ -153,6 +157,21 @@ export class SoftwareDiscoveryService {
 
   private fetchFabricLoaderVersions(): Promise<string[]> {
     return this.fetchStableVersionList('https://meta.fabricmc.net/v2/versions/loader');
+  }
+
+  // ---- Quilt ----
+
+  private fetchQuiltGameVersions(): Promise<string[]> {
+    return this.fetchStableVersionList('https://meta.quiltmc.org/v3/versions/game');
+  }
+
+  private async fetchQuiltLoaderVersions(): Promise<string[]> {
+    const data = await this.fetchJson('https://meta.quiltmc.org/v3/versions/loader');
+    if (!Array.isArray(data)) return [];
+    return data
+      .filter((entry): entry is { version: string } => typeof entry?.version === 'string')
+      .map((entry) => entry.version)
+      .filter((version) => !/-(?:alpha|beta|rc)/i.test(version));
   }
 
   // ---- Vanilla ----

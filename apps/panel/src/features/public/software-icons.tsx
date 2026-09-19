@@ -21,6 +21,7 @@ const SOFTWARE_ICONS: Record<string, SoftwareIconSpec> = {
   spigot: { icon: Wrench, toneClass: 'bg-high-tint text-high' },
   bukkit: { icon: Package, toneClass: 'bg-info-tint text-info' },
   fabric: { icon: Shirt, toneClass: 'bg-surface-2 text-text-muted' },
+  quilt: { icon: Package, toneClass: 'bg-info-tint text-info' },
   forge: { icon: Hammer, toneClass: 'bg-accent-tint text-accent-strong' },
   neoforge: { icon: Flame, toneClass: 'bg-ok-tint text-ok' },
   bungeecord: { icon: Network, toneClass: 'bg-warn-tint text-warn' },

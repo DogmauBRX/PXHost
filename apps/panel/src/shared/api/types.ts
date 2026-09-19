@@ -34,14 +34,14 @@ export interface ClientAccount {
 // Mirrors apps/api/src/modules/templates/software.ts's describeSoftware()
 // output — the ONE place "/plugins" vs "/mods" is decided. Never re-derive
 // this on the frontend; always read it off the server response.
-export type SoftwareKind = 'paper' | 'purpur' | 'spigot' | 'bukkit' | 'fabric' | 'forge' | 'neoforge' | 'vanilla' | 'bungeecord' | 'velocity' | 'other';
+export type SoftwareKind = 'paper' | 'purpur' | 'spigot' | 'bukkit' | 'fabric' | 'quilt' | 'forge' | 'neoforge' | 'vanilla' | 'bungeecord' | 'velocity' | 'other';
 
 // The 6 software choices the admin "criação rápida" wizard offers as
 // cards (Admin Templates redesign) — a strict subset of `SoftwareKind`,
 // mirroring `apps/api/src/modules/templates/software-presets.ts`'s own
 // `PRESET_KINDS`. Every other kind still exists, just only reachable
 // through the advanced/manual template form.
-export type PresetKind = 'paper' | 'fabric' | 'vanilla' | 'forge' | 'neoforge' | 'purpur';
+export type PresetKind = 'paper' | 'fabric' | 'quilt' | 'vanilla' | 'forge' | 'neoforge' | 'purpur';
 
 export interface SoftwareInfo {
   kind: SoftwareKind | null;

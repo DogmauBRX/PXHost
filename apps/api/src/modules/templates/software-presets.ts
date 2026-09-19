@@ -13,7 +13,7 @@ import type { TemplateVariableDto } from './dto/template.dto';
  * template and a fresh dev database's seeded one are byte-identical,
  * never two hand-maintained versions quietly drifting apart.
  */
-export const PRESET_KINDS = ['paper', 'fabric', 'vanilla', 'forge', 'neoforge', 'purpur'] as const;
+export const PRESET_KINDS = ['paper', 'fabric', 'quilt', 'vanilla', 'forge', 'neoforge', 'purpur'] as const;
 export type PresetKind = (typeof PRESET_KINDS)[number];
 
 export interface TemplatePreset {
@@ -163,6 +163,40 @@ rm -f fabric-installer.jar
 
 if [ -f server.jar ] && [ "\${SERVER_JARFILE}" != "server.jar" ]; then
   mv server.jar "\${SERVER_JARFILE}"
+fi
+
+echo "eula=true" > eula.txt
+if grep -q '^server-port=' server.properties 2>/dev/null; then
+  sed -i "s/^server-port=.*/server-port=\${SERVER_PORT}/" server.properties
+else
+  echo "server-port=\${SERVER_PORT}" >> server.properties
+fi
+echo "Install complete."
+`;
+
+const QUILT_INSTALL_SCRIPT = `#!/bin/bash
+set -euo pipefail
+cd /mnt/server
+
+: "\${MINECRAFT_VERSION:=latest}"
+: "\${QUILT_LOADER_VERSION:=latest}"
+: "\${SERVER_JARFILE:=quilt-server-launch.jar}"
+
+if [ "$MINECRAFT_VERSION" == "latest" ]; then
+  MINECRAFT_VERSION=$(curl -sSL -A "gxhost-hosting-panel/0.1.0" https://meta.quiltmc.org/v3/versions/game | jq -r '[.[] | select(.stable == true)][0].version')
+fi
+if [ "$QUILT_LOADER_VERSION" == "latest" ]; then
+  QUILT_LOADER_VERSION=$(curl -sSL -A "gxhost-hosting-panel/0.1.0" https://meta.quiltmc.org/v3/versions/loader | jq -r '[.[] | select(.version | test("-(alpha|beta|rc)"; "i") | not)][0].version')
+fi
+INSTALLER_URL=$(curl -sSL -A "gxhost-hosting-panel/0.1.0" https://meta.quiltmc.org/v3/versions/installer | jq -r '.[0].url')
+
+echo "Downloading Quilt installer..."
+curl -sSL -o quilt-installer.jar "$INSTALLER_URL"
+java -jar quilt-installer.jar install server "$MINECRAFT_VERSION" "$QUILT_LOADER_VERSION" --download-server --install-dir=.
+rm -f quilt-installer.jar
+
+if [ -f quilt-server-launch.jar ] && [ "\${SERVER_JARFILE}" != "quilt-server-launch.jar" ]; then
+  mv quilt-server-launch.jar "\${SERVER_JARFILE}"
 fi
 
 echo "eula=true" > eula.txt
@@ -381,6 +415,34 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
         envVariable: 'FABRIC_LOADER_VERSION',
         defaultValue: 'latest',
         rules: 'required|string|max:16',
+        isUserViewable: true,
+        isUserEditable: true,
+        sortOrder: 2,
+      },
+      serverMemoryVariable(3),
+    ],
+  },
+  quilt: {
+    name: 'Quilt',
+    description: 'Modded Minecraft: Java Edition server running the Quilt mod loader.',
+    dockerImages: JAVA_IMAGE,
+    startupCommand: STANDARD_STARTUP_COMMAND,
+    stopCommand: 'stop',
+    installImage: JAVA_INSTALL_IMAGE,
+    installEntrypoint: INSTALL_ENTRYPOINT,
+    installScript: QUILT_INSTALL_SCRIPT,
+    softwareKind: 'quilt',
+    versionVariable: 'MINECRAFT_VERSION',
+    buildVariable: 'QUILT_LOADER_VERSION',
+    variables: [
+      jarFileVariable('quilt-server-launch.jar'),
+      minecraftVersionVariable('The version of Minecraft to install. Use "latest" for the newest release.'),
+      {
+        name: 'Quilt Loader Version',
+        description: 'The Quilt loader version to install. Use "latest" for the newest stable release.',
+        envVariable: 'QUILT_LOADER_VERSION',
+        defaultValue: 'latest',
+        rules: 'required|string|max:32',
         isUserViewable: true,
         isUserEditable: true,
         sortOrder: 2,
