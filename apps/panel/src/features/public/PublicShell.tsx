@@ -1,13 +1,35 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
-import { ArrowRight, LayoutDashboard, LogIn, Menu, Sparkles, UserPlus, X } from 'lucide-react';
+import {
+  ArrowRight,
+  BadgeCheck,
+  CreditCard,
+  LayoutDashboard,
+  LogIn,
+  Menu,
+  RefreshCcw,
+  Scale,
+  Share2,
+  ShieldCheck,
+  Sparkles,
+  UserPlus,
+  X,
+} from 'lucide-react';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { Button } from '@/ui/primitives';
 import { Logo } from '@/ui/brand/Logo';
 import { Wordmark } from '@/ui/brand/Wordmark';
 import { CircuitPattern } from '@/ui/brand/CircuitPattern';
 import { AnnouncementBanner } from '@/ui/layout/AnnouncementBanner';
+
+const footerTopics = [
+  { label: 'Pagamentos e segurança', icon: CreditCard },
+  { label: 'Confiança e transparência', icon: BadgeCheck },
+  { label: 'Política de reembolso', icon: RefreshCcw },
+  { label: 'Comunidade e redes', icon: Share2 },
+  { label: 'Termos de uso', icon: Scale },
+];
 
 /**
  * The layout for every public, unauthenticated-facing page (`/`,
@@ -158,22 +180,91 @@ export function PublicShell({ children }: { children: ReactNode }) {
 
       <main>{children}</main>
 
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl flex-col items-center gap-6 px-4 py-10 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:px-6 lg:px-8">
-          <div className="text-center sm:text-left">
-            <p className="text-xs font-medium text-text-muted">Douglas Carvalho da Silveira</p>
-            <p className="text-xs text-text-faint">CNPJ 68.987.329/0001-21</p>
-            <p className="text-xs text-text-faint">Microempreendedor Individual (MEI)</p>
+      <footer className="public-footer">
+        <CircuitPattern className="public-footer__circuit" />
+
+        <div className="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+          <div className="public-footer__cta mb-12 flex flex-col gap-6 rounded-2xl border border-white/10 px-5 py-6 sm:px-7 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+            <div className="flex items-start gap-4">
+              <span className="public-footer__signal mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
+                <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-[0.65rem] font-bold tracking-[0.2em] text-accent uppercase">Infraestrutura GX</p>
+                <h2 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">Seu próximo servidor começa aqui.</h2>
+                <p className="mt-1 max-w-xl text-sm leading-relaxed text-white/50">Deploy rápido, controle completo e uma plataforma feita para acompanhar sua comunidade.</p>
+              </div>
+            </div>
+
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+              <Link
+                to="/plans"
+                className="flex h-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-5 text-sm font-semibold text-white/75 transition-all hover:border-white/20 hover:bg-white/10 hover:text-white"
+              >
+                Explorar planos
+              </Link>
+              <Link
+                to={accessToken ? dashboardTo : '/register'}
+                className="group flex h-11 items-center justify-center gap-2 rounded-xl bg-accent px-5 text-sm font-semibold text-accent-contrast shadow-[0_12px_30px_-16px_var(--color-accent)] transition-all hover:-translate-y-0.5 hover:bg-accent-strong"
+              >
+                {accessToken ? 'Abrir painel' : 'Criar minha conta'}
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+              </Link>
+            </div>
           </div>
 
-          <div className="flex flex-col items-center gap-4 text-center">
-            <div className="flex items-center gap-2">
-              <Logo size={22} />
-              <Wordmark className="text-base" />
+          <div className="grid gap-10 border-b border-white/8 pb-10 md:grid-cols-[1.1fr_0.6fr_1.4fr] lg:gap-16">
+            <div>
+              <Link to="/" search={homeSearch} className="group inline-flex items-center gap-3" aria-label="GXhost — página inicial">
+                <span className="public-footer__logo flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+                  <Logo size={38} />
+                </span>
+                <span className="flex flex-col">
+                  <Wordmark className="text-2xl leading-none" />
+                  <span className="mt-1 text-[0.55rem] font-bold tracking-[0.22em] text-white/35 uppercase">Cloud gaming infrastructure</span>
+                </span>
+              </Link>
+              <p className="mt-5 max-w-sm text-sm leading-6 text-white/45">Hospedagem de servidores Minecraft com desempenho, automação e controle em uma experiência simples.</p>
+              <span className="mt-5 inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-1.5 text-[0.65rem] font-semibold tracking-wide text-emerald-300/80 uppercase">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgb(52_211_153/0.8)]" aria-hidden="true" />
+                Plataforma operacional
+              </span>
             </div>
-            <p className="text-xs text-text-faint">© {new Date().getFullYear()} GXhost. Todos os direitos reservados.</p>
-            <p className="max-w-md text-xs text-text-faint">"Minecraft" é uma marca registrada de Mojang Synergies AB.</p>
-            <p className="max-w-md text-xs text-text-faint">A GXhost não é afiliada, endossada ou patrocinada pela Mojang ou pela Microsoft.</p>
+
+            <nav aria-label="Navegação do rodapé">
+              <p className="mb-4 text-[0.65rem] font-bold tracking-[0.2em] text-white/35 uppercase">Navegar</p>
+              <div className="flex flex-col items-start gap-3 text-sm">
+                <Link to="/" search={homeSearch} className="text-white/55 transition-colors hover:text-accent">Início</Link>
+                <Link to="/plans" className="text-white/55 transition-colors hover:text-accent">Planos</Link>
+                <Link to={accessToken ? dashboardTo : '/login'} className="text-white/55 transition-colors hover:text-accent">
+                  {accessToken ? 'Meu painel' : 'Entrar'}
+                </Link>
+                {!accessToken && <Link to="/register" className="text-white/55 transition-colors hover:text-accent">Criar conta</Link>}
+              </div>
+            </nav>
+
+            <div>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <p className="text-[0.65rem] font-bold tracking-[0.2em] text-white/35 uppercase">Central GX</p>
+                <span className="rounded-full border border-accent/15 bg-accent/5 px-2.5 py-1 text-[0.55rem] font-bold tracking-wider text-accent/80 uppercase">Em construção</span>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {footerTopics.map(({ label, icon: Icon }) => (
+                  <div key={label} className="public-footer__topic flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5" title="Conteúdo em desenvolvimento">
+                    <Icon className="h-3.5 w-3.5 shrink-0 text-accent/65" aria-hidden="true" />
+                    <span className="text-xs font-medium text-white/45">{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4 pt-7 text-[0.68rem] leading-5 text-white/30 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p>© {new Date().getFullYear()} GXhost. Todos os direitos reservados.</p>
+              <p>Hospedagem inteligente para comunidades que querem crescer.</p>
+            </div>
+            <p className="max-w-xl sm:text-right">"Minecraft" é uma marca registrada de Mojang Synergies AB. A GXhost não é afiliada, endossada ou patrocinada pela Mojang ou pela Microsoft.</p>
           </div>
         </div>
       </footer>

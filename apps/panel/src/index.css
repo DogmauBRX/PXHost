@@ -523,6 +523,101 @@ html[data-app-ready] body {
   }
 }
 
+/* Public footer — graphite trust surface that closes the storefront. */
+.public-footer {
+  position: relative;
+  overflow: hidden;
+  border-top: 1px solid rgb(255 255 255 / 0.08);
+  color: #f5f1eb;
+  background:
+    radial-gradient(circle at 12% 10%, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 27rem),
+    radial-gradient(circle at 88% 45%, color-mix(in srgb, var(--color-accent) 5%, transparent), transparent 26rem),
+    linear-gradient(145deg, #171a20 0%, #0e1014 52%, #13161b 100%);
+}
+
+.public-footer::before {
+  position: absolute;
+  top: 0;
+  right: -25%;
+  left: -25%;
+  height: 1px;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 22%, var(--color-accent) 48%, #ffc183 52%, transparent 78%);
+  background-size: 180% 100%;
+  animation: public-header-signal 8s linear infinite;
+}
+
+.public-footer__circuit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.07;
+  pointer-events: none;
+  filter: grayscale(0.45) brightness(1.25);
+  mask-image: linear-gradient(90deg, black 0%, transparent 45%, black 100%);
+  -webkit-mask-image: linear-gradient(90deg, black 0%, transparent 45%, black 100%);
+}
+
+.public-footer__cta {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 8% 50%, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 18rem),
+    linear-gradient(105deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0.018));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 28px 70px -55px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+.public-footer__cta::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-accent) 70%, transparent), transparent);
+}
+
+.public-footer__signal,
+.public-footer__logo {
+  position: relative;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 12px 35px -22px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+.public-footer__signal::after {
+  position: absolute;
+  inset: -4px;
+  content: '';
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border-radius: 0.95rem;
+  animation: public-footer-pulse 3.5s ease-in-out infinite;
+}
+
+.public-footer__topic {
+  transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+
+.public-footer__topic:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 4%, transparent);
+  transform: translateY(-1px);
+}
+
+@keyframes public-footer-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.96); }
+  50% { opacity: 0.8; transform: scale(1.04); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-footer::before,
+  .public-footer__signal::after {
+    animation: none;
+  }
+}
+
 /*
  * The commercial plan card's own "hero" band (PlanCard.tsx) — a solid
  * brand-gradient fill rather than the sidebar's faint tint, since this
