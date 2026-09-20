@@ -94,11 +94,11 @@ export function Sidebar({ sections, panelLabel, settingsTo, area }: SidebarProps
             onClick={toggleSidebarCollapsed}
             aria-label={sidebarCollapsed ? 'Expandir barra lateral' : 'Reduzir barra lateral'}
             title={sidebarCollapsed ? 'Expandir barra lateral' : 'Reduzir barra lateral'}
-            className="absolute top-2.5 right-2.5 z-10 hidden rounded-lg border border-white/10 bg-white/5 p-1.5 text-white/70 backdrop-blur transition-all hover:border-accent/40 hover:bg-accent/15 hover:text-white lg:block"
+            className={`absolute z-10 hidden rounded-lg border border-white/10 bg-white/5 p-1.5 text-white/70 backdrop-blur transition-all hover:border-accent/40 hover:bg-accent/15 hover:text-white lg:block ${sidebarCollapsed ? 'lg:right-1/2 lg:bottom-2.5 lg:translate-x-1/2' : 'top-2.5 right-2.5'}`}
           >
             <Menu className="h-4 w-4" />
           </button>
-          <div className={`relative flex items-center ${sidebarCollapsed ? 'lg:justify-center' : 'gap-3'}`}>
+          <div className={`relative flex items-center transition-transform duration-300 ${sidebarCollapsed ? 'lg:-translate-y-2 lg:justify-center' : 'gap-3'}`}>
             <span className="sidebar-brand__logo-shell flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/5 shadow-lg backdrop-blur-sm">
               <Logo size={38} />
             </span>
