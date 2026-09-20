@@ -8,7 +8,6 @@ import { logout } from '@/features/auth/auth.api';
 import { Avatar } from '@/ui/primitives';
 import { Logo } from '@/ui/brand/Logo';
 import { Wordmark } from '@/ui/brand/Wordmark';
-import { CircuitPattern } from '@/ui/brand/CircuitPattern';
 import type { NavItem, NavSection } from './nav.config';
 
 function NavLink({ item, onNavigate, collapsed }: { item: NavItem; onNavigate: () => void; collapsed: boolean }) {
@@ -85,7 +84,6 @@ export function Sidebar({ sections, panelLabel, settingsTo, area }: SidebarProps
         }`}
       >
         <div className={`sidebar-brand sidebar-brand--graphite flex h-28 shrink-0 flex-col justify-center gap-1 border-b border-white/10 px-5 transition-[padding] duration-300 ${sidebarCollapsed ? 'lg:items-center lg:px-2' : ''}`}>
-          <CircuitPattern className="sidebar-brand__circuit" />
           {/* The "voltar para o site" link used to live here as a bare icon
               overlapping this corner — moved to Topbar as a real labeled
               button next to the theme toggle instead. */}
