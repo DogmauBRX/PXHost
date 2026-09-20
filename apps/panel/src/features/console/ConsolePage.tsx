@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import { Clock, Link2, RefreshCw, Server, Settings2, Wifi } from 'lucide-react';
 import { getServer, getServerDiskUsage } from '@/features/servers/servers.api';
 import { listServerVariables } from '@/features/variables/variables.api';
+import { updateServerHostname } from '@/features/variables/hostname.api';
 import { powerStateLabel } from '@/features/servers/status-labels';
 import { useServerSocket } from '@/shared/realtime/useServerSocket';
+import { ApiError } from '@/shared/api/client';
 import { formatBytes } from '@/shared/format/datetime';
 import { Terminal } from './Terminal';
 import { PowerControls } from './PowerControls';
@@ -51,6 +52,7 @@ const CONN_LABEL: Record<string, string> = {
 };
 
 export function ConsolePage({ serverId }: { serverId: string }) {
+  const queryClient = useQueryClient();
   const { data: server } = useQuery({ queryKey: ['server', serverId], queryFn: () => getServer(serverId) });
   // Same query VariablesPage already makes (shares its cache when the
   // customer has visited both tabs) — MINECRAFT_VERSION is always
@@ -60,6 +62,9 @@ export function ConsolePage({ serverId }: { serverId: string }) {
   const minecraftVersion = variables?.find((v) => v.envVariable === 'MINECRAFT_VERSION')?.value;
   const [powerState, setPowerState] = useState<string | null>(null);
   const [command, setCommand] = useState('');
+  const [editingHostname, setEditingHostname] = useState(false);
+  const [hostnameDraft, setHostnameDraft] = useState('');
+  const [hostnameError, setHostnameError] = useState<string | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const cpuGaugeRef = useRef<GaugeHandle>(null);
   const ramGaugeRef = useRef<GaugeHandle>(null);
@@ -105,6 +110,17 @@ export function ConsolePage({ serverId }: { serverId: string }) {
 
   const displayState = powerState ?? server?.powerState ?? 'offline';
   const connected = connectionState === 'open';
+  const canEditHostname = server?.permissions.includes('hostname.update') ?? false;
+
+  const hostnameMutation = useMutation({
+    mutationFn: (hostname: string | null) => updateServerHostname(serverId, hostname),
+    onSuccess: () => {
+      setEditingHostname(false);
+      setHostnameError(null);
+      void queryClient.invalidateQueries({ queryKey: ['server', serverId] });
+    },
+    onError: (error) => setHostnameError(error instanceof ApiError ? error.message : 'Não foi possível salvar o endereço.'),
+  });
 
   // On-demand only — disk usage is a real filesystem walk on the agent
   // (see ClientServersService.diskUsage's doc comment), not part of the
@@ -152,6 +168,22 @@ export function ConsolePage({ serverId }: { serverId: string }) {
     setCommand('');
   }
 
+  function openHostnameEditor() {
+    setHostnameDraft(server?.customHostname ?? '');
+    setHostnameError(null);
+    setEditingHostname(true);
+  }
+
+  function saveHostname(e: FormEvent) {
+    e.preventDefault();
+    const hostname = hostnameDraft.trim();
+    if (hostname === (server?.customHostname ?? '')) {
+      setEditingHostname(false);
+      return;
+    }
+    hostnameMutation.mutate(hostname === '' ? null : hostname);
+  }
+
   return (
     <div className="space-y-5">
       <section className="overflow-hidden rounded-card border border-border bg-surface shadow-xs">
@@ -179,7 +211,7 @@ export function ConsolePage({ serverId }: { serverId: string }) {
           </div>
 
           {server?.publicAddress && (
-            <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-2/65 p-3.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative flex flex-col gap-3 rounded-xl border border-border bg-surface-2/65 p-3.5 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-center gap-2.5">
                 <Link2 className="h-4 w-4 shrink-0 text-accent-strong" aria-hidden="true" />
                 <div className="min-w-0">
@@ -187,14 +219,47 @@ export function ConsolePage({ serverId }: { serverId: string }) {
                   <p className="truncate font-mono text-sm font-semibold text-text">{server.publicAddress}</p>
                 </div>
               </div>
-              <Link
-                to="/client/servers/$serverId/variables"
-                params={{ serverId }}
-                className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-accent-strong transition hover:text-accent"
-              >
-                <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
-                {server.customHostname ? 'Alterar endereço' : 'Personalizar endereço'}
-              </Link>
+              {canEditHostname && (
+                <button
+                  type="button"
+                  onClick={openHostnameEditor}
+                  className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-accent-strong transition hover:text-accent"
+                >
+                  <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  {server.customHostname ? 'Alterar endereço' : 'Personalizar endereço'}
+                </button>
+              )}
+              {editingHostname && (
+                <form
+                  onSubmit={saveHostname}
+                  className="absolute inset-0 z-10 flex flex-col justify-center gap-3 rounded-xl border border-accent/35 bg-surface p-3.5 shadow-lg sm:flex-row sm:items-center"
+                >
+                  <div className="min-w-0 flex-1">
+                    <label htmlFor="console-custom-hostname" className="text-xs font-semibold text-text">Subdomínio personalizado</label>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Input
+                        id="console-custom-hostname"
+                        autoFocus
+                        value={hostnameDraft}
+                        disabled={hostnameMutation.isPending}
+                        onChange={(event) => { setHostnameDraft(event.target.value.toLowerCase()); setHostnameError(null); }}
+                        placeholder="survival"
+                        aria-describedby="console-hostname-hint"
+                      />
+                      <span className="hidden whitespace-nowrap text-xs text-text-faint sm:inline">Apenas o subdomínio</span>
+                    </div>
+                    <p id="console-hostname-hint" className={`mt-1 text-xs ${hostnameError ? 'text-fail' : 'text-text-faint'}`}>
+                      {hostnameError ?? 'Use letras minúsculas, números e hífens. Deixe vazio para remover.'}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-2 sm:self-end">
+                    <Button type="button" variant="ghost" size="sm" disabled={hostnameMutation.isPending} onClick={() => setEditingHostname(false)}>Cancelar</Button>
+                    <Button type="submit" variant="primary" size="sm" disabled={hostnameMutation.isPending}>
+                      {hostnameMutation.isPending ? 'Salvando…' : 'Salvar endereço'}
+                    </Button>
+                  </div>
+                </form>
+              )}
             </div>
           )}
         </div>
