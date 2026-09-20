@@ -230,10 +230,12 @@ docker compose -f docker-compose.dns.yml up -d postgres
 docker compose -f docker-compose.dns.yml up -d pdns
 ```
 
-Esse `pdns` roda com `PDNS_api: "no"` e `PDNS_webserver: "no"` — um
-secundário nunca precisa da REST API (o backend do GXhost só fala com o
-ns1/primário); ele só recebe zona por transferência (`AXFR`) do ns1,
-restrita ao IP público do ns1 (`PDNS_allow_axfr_ips`).
+Esse `pdns` sobe **sem `environment:` nenhum** — a imagem só lê uma única
+variável de ambiente (`PDNS_AUTH_API_KEY`), e deixá-la fora é justamente
+o que mantém a REST API desligada: um secundário nunca precisa dela (o
+backend do GXhost só fala com o ns1). Todo o resto vai pelo `command:`.
+Ele só recebe a zona por transferência (`AXFR`) do ns1, restrita ao IP
+público do ns1 em `--allow-axfr-ips`/`--allow-notify-from`.
 
 ## 7. Configuração do PowerDNS
 
@@ -294,15 +296,25 @@ curl -X POST http://127.0.0.1:8081/api/v1/servers/localhost/zones \
   -H "Content-Type: application/json" \
   -d '{
     "name": "mc.gxhost.com.br.",
-    "kind": "Native",
+    "kind": "Master",
     "nameservers": ["ns1.gxhost.com.br.", "ns2.gxhost.com.br."]
   }'
 ```
 
-`kind: "Native"` porque a replicação ns1→ns2 aqui é feita via `AXFR`
-configurado manualmente nos dois lados (§6.2), não pelo mecanismo
-`Master`/`Slave` automático do PowerDNS — mais simples de operar com dois
-hosts que não têm rede privada entre si.
+`kind: "Master"`, não `"Native"`. A diferença é só uma: uma zona
+`Native` **nunca envia `NOTIFY`**. Com ela, o ns2 continua servindo a
+versão antiga até o refresh do SOA vencer — uma hora, na configuração
+atual — e como o que se escreve aqui são registros de servidor de jogo
+criados no momento em que o cliente aperta o botão, uma hora de atraso é
+o mesmo que não funcionar. `Master` + `--primary=yes` no ns1 fazem o ns2
+ser avisado em segundos.
+
+Cuidado com o vocabulário, porque o PowerDNS 4.9 usa dois para a mesma
+coisa: na REST API o kind é `"Master"`/`"Slave"`, no `pdnsutil` e nos
+settings de linha de comando é `primary`/`secondary` — e os nomes
+antigos `--master`/`--slave` **não existem mais** como settings. Passar
+um setting inexistente não degrada nada: o `pdns_server` se recusa a
+subir, e aí cai o DNS de todos os servidores de jogo junto.
 
 ## 8. Configuração NS1/NS2
 
@@ -314,14 +326,25 @@ hosts que não têm rede privada entre si.
   responde consultas e recebe `AXFR` do ns1.
 - Cada uma precisa de um **IP público próprio** (são nameservers
   distintos aos olhos da internet — dois `A`/`AAAA` diferentes).
-- No ns1, adicione o IP público do ns2 em `PDNS_allow_axfr_ips` (já no
-  compose, via `PDNS_NS1_PUBLIC_IP`... — ajuste o nome/lado conforme o
-  IP real de cada host antes de subir).
-- Puxe a zona manualmente uma vez no ns2 depois de criá-la no ns1 (ou
-  espere o próximo `NOTIFY`/refresh do SOA):
+- No ns1, o IP público do ns2 entra em **duas** listas do `command:` do
+  serviço `pdns` em `docker-compose.prod.yml`: `--allow-axfr-ips` (quem
+  pode puxar a zona) e `--also-notify` (quem é avisado quando ela muda).
+  São coisas separadas — permitir o AXFR sem notificar significa que o
+  ns2 só descobre uma mudança quando o refresh do SOA vence.
+- Ainda no ns1, `--primary=yes`. É ele que liga o envio de `NOTIFY`;
+  sem isso uma zona `MASTER` nunca notifica ninguém.
+- No ns2, `--secondary=yes` no `docker-compose.dns.yml` (é o que faz o
+  `NOTIFY` recebido virar uma transferência de verdade) e o IP do ns1 em
+  `--allow-notify-from`.
+- Crie a zona no ns2 como secundária, apontando pro ns1 — sem isso não
+  há o que transferir:
   ```bash
-  # do host do ns2, contra o ns1:
-  docker exec <container_pdns_ns2> pdns_control retrieve mc.gxhost.com.br
+  # no host do ns2:
+  docker compose -f docker-compose.dns.yml exec pdns \
+    pdnsutil create-secondary-zone mc.gxhost.com.br <IP_PUBLICO_DO_NS1>
+  # força a primeira cópia em vez de esperar o refresh:
+  docker compose -f docker-compose.dns.yml exec pdns \
+    pdns_control retrieve mc.gxhost.com.br
   ```
 
 ## 9. Configuração no Registro.br
@@ -494,9 +517,12 @@ restaurado de forma totalmente independente do resto do banco.
 1. Suba uma nova instância com `docker-compose.dns.yml` (copie o
    arquivo, ajuste nomes se quiser rodar mais de uma no mesmo compose
    project) em outro host.
-2. Adicione o IP público do host novo em `PDNS_allow_axfr_ips` no ns1.
-3. `pdns_control retrieve mc.gxhost.com.br` no host novo, apontando pro
-   ns1 (mesmo passo do §8).
+2. Acrescente o IP público do host novo ao `--allow-axfr-ips` e ao
+   `--also-notify` do `pdns` em `docker-compose.prod.yml` (ns1) e
+   recarregue: `docker compose -f docker-compose.prod.yml up -d pdns`.
+3. No host novo, `pdnsutil create-secondary-zone mc.gxhost.com.br <IP_ns1>`.
+   A partir daí o ns1 avisa sozinho a cada mudança; para forçar a
+   primeira cópia sem esperar, `pdns_control retrieve mc.gxhost.com.br`.
 4. Adicione o glue record (`ns3.gxhost.com.br` → IP público) no
    Registro.br.
 5. Adicione o registro `NS mc.gxhost.com.br. ns3.gxhost.com.br.` na
@@ -547,10 +573,10 @@ curl http://127.0.0.1:8081/api/v1/servers/localhost/zones/mc.gxhost.com.br./cryp
 
 - A API do PowerDNS (`8081`) **nunca** é publicada em `0.0.0.0` — só
   `127.0.0.1` (mesmo host) e a sub-rede do WireGuard
-  (`PDNS_webserver_allow_from`). Um cliente do GXhost nunca cria
-  registro DNS arbitrário — só os 5 métodos do `DnsProvider`, cada um
-  restrito ao formato exato de SRV/A/AAAA que o próprio GXhost monta,
-  nunca aceitando conteúdo livre vindo do cliente.
+  (`--webserver-allow-from`, no `command:` do serviço). Um cliente do
+  GXhost nunca cria registro DNS arbitrário — só os 5 métodos do
+  `DnsProvider`, cada um restrito ao formato exato de SRV/A/AAAA que o
+  próprio GXhost monta, nunca aceitando conteúdo livre vindo do cliente.
 - A API key (`PUBLIC_GATEWAY_DNS_API_TOKEN`) só existe como variável de
   ambiente — nunca hardcoded, nunca versionada (`.env.production.example`
   só documenta o nome da variável, com o valor em branco).

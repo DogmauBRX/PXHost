@@ -57,7 +57,19 @@ services:
       # bundled gsqlite3 backend, and --launch=gpgsql above leaves two
       # gsqlite3-only settings in that file unrecognized.
       - --ignore-unknown-settings=gsqlite3-dnssec,gsqlite3-database
-      # AXFR from ns1 only — set to ns1's real public IP before starting.
+      # A zone of kind SECONDARY is inert without this: --secondary=yes
+      # is what starts the thread that acts on an incoming NOTIFY and
+      # runs the periodic freshness check. Leave it off and the zone sits
+      # in the database at serial 0 forever, answering SERVFAIL, with
+      # nothing in the log to suggest why.
+      - --secondary=yes
+      # Who may send this nameserver a NOTIFY. The default is "anybody",
+      # which on a public-facing secondary means any stranger can make it
+      # go ask ns1 for a transfer.
+      - --allow-notify-from=${PDNS_NS1_PUBLIC_IP}
+      # Who may pull zones FROM this host. A secondary serves answers,
+      # not transfers, so this is deliberately just ns1 — for symmetry
+      # and for debugging from the primary — rather than the world.
       - --allow-axfr-ips=${PDNS_NS1_PUBLIC_IP}
       - --default-soa-content=@ hostmaster.gxhost.com.br 0 10800 3600 604800 3600
     ports:
