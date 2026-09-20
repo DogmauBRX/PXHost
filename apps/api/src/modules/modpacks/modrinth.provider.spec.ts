@@ -71,6 +71,32 @@ describe('ModrinthProvider', () => {
     });
   });
 
+  it('keeps plugin loaders and requests only plugin projects', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        hits: [{
+          project_id: 'plugin-1', slug: 'example-plugin', title: 'Example Plugin', author: 'Author',
+          icon_url: null, description: 'A Paper plugin', downloads: 100,
+          categories: ['paper', 'bukkit', 'management'], display_categories: ['paper', 'bukkit', 'management'],
+          versions: ['1.21.1'], date_modified: '2026-03-01T00:00:00Z',
+        }],
+        total_hits: 1, offset: 0, limit: 20,
+      }),
+    } as Response);
+
+    const result = await provider.searchPlugins({
+      query: '', minecraftVersion: '1.21.1', loader: 'paper', sort: 'downloads', offset: 0, limit: 20,
+    });
+
+    const calledUrl = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(JSON.parse(calledUrl.searchParams.get('facets')!)).toEqual([
+      ['project_type:plugin'], ['versions:1.21.1'], ['categories:paper'],
+    ]);
+    expect(result.items[0]).toMatchObject({ loaders: ['paper', 'bukkit'], categories: ['management'] });
+  });
+
   it('sends the identifying user agent required by Modrinth', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true, status: 200, json: async () => ({ hits: [], total_hits: 0, offset: 0, limit: 20 }),

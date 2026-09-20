@@ -13,7 +13,9 @@ import type {
 } from './modpack-provider';
 
 const API_BASE = 'https://api.modrinth.com/v2';
-const LOADERS = ['fabric', 'forge', 'neoforge', 'quilt'];
+const MODPACK_LOADERS = ['fabric', 'forge', 'neoforge', 'quilt'];
+const PLUGIN_LOADERS = ['paper', 'purpur', 'spigot', 'bukkit', 'velocity', 'bungeecord', 'waterfall'];
+const ALL_LOADERS = [...MODPACK_LOADERS, ...PLUGIN_LOADERS];
 const SEARCH_TTL_SECONDS = 5 * 60;
 const PROJECT_TTL_SECONDS = 15 * 60;
 const VERSION_TTL_SECONDS = 5 * 60;
@@ -133,7 +135,15 @@ export class ModrinthProvider implements ModpackProvider {
   }
 
   getProject(projectId: string): Promise<ModpackProject> {
-    return this.cache.remember('modrinth:project', projectId, PROJECT_TTL_SECONDS, async () => {
+    return this.getProjectType('modpack', projectId);
+  }
+
+  getPluginProject(projectId: string): Promise<ModpackProject> {
+    return this.getProjectType('plugin', projectId);
+  }
+
+  private getProjectType(projectType: 'modpack' | 'plugin', projectId: string): Promise<ModpackProject> {
+    return this.cache.remember(`modrinth:${projectType}:project`, projectId, PROJECT_TTL_SECONDS, async () => {
       const project = await this.request<ModrinthProjectResponse>(`/project/${encodeURIComponent(projectId)}`);
       let author: string | null = null;
       try {
@@ -156,11 +166,11 @@ export class ModrinthProvider implements ModpackProvider {
         downloads: project.downloads,
         categories,
         minecraftVersions: project.game_versions,
-        loaders: project.loaders.filter((loader) => LOADERS.includes(loader.toLowerCase())),
+        loaders: project.loaders.filter((loader) => ALL_LOADERS.includes(loader.toLowerCase())),
         updatedAt: project.updated,
         publishedAt: project.published,
         gallery: project.gallery.map((item) => item.url),
-        pageUrl: `https://modrinth.com/modpack/${project.slug ?? project.id}`,
+        pageUrl: `https://modrinth.com/${projectType}/${project.slug ?? project.id}`,
       };
     });
   }
@@ -194,8 +204,8 @@ export class ModrinthProvider implements ModpackProvider {
           .filter((item) => item.version_type === 'release')
           .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
           .map((item) => item.version),
-        loaders: [...LOADERS],
-        categories: [...new Set(categories.filter((item) => item.project_type === 'modpack' && !LOADERS.includes(item.name)).map((item) => item.name))].sort(),
+        loaders: [...MODPACK_LOADERS],
+        categories: [...new Set(categories.filter((item) => item.project_type === 'modpack' && !ALL_LOADERS.includes(item.name)).map((item) => item.name))].sort(),
       };
     });
   }
@@ -213,7 +223,7 @@ export class ModrinthProvider implements ModpackProvider {
       downloads: hit.downloads,
       categories: this.contentCategories(rawCategories),
       minecraftVersions: hit.versions,
-      loaders: rawCategories.filter((category) => LOADERS.includes(category.toLowerCase())),
+      loaders: rawCategories.filter((category) => ALL_LOADERS.includes(category.toLowerCase())),
       updatedAt: hit.date_modified,
     };
   }
@@ -222,14 +232,14 @@ export class ModrinthProvider implements ModpackProvider {
     return {
       source: this.source, versionId: row.id, projectId: row.project_id, name: row.name,
       versionNumber: row.version_number, minecraftVersions: row.game_versions,
-      loaders: row.loaders.filter((loader) => LOADERS.includes(loader.toLowerCase())),
+      loaders: row.loaders.filter((loader) => ALL_LOADERS.includes(loader.toLowerCase())),
       releaseType: row.version_type, publishedAt: row.date_published, downloads: row.downloads,
       files: row.files.map((file) => ({ filename: file.filename, size: file.size, primary: file.primary, url: file.url, hashes: file.hashes })),
     };
   }
 
   private contentCategories(categories: string[]): string[] {
-    return [...new Set(categories.filter((category) => !LOADERS.includes(category.toLowerCase())))];
+    return [...new Set(categories.filter((category) => !ALL_LOADERS.includes(category.toLowerCase())))];
   }
 
   private mapSort(sort: ModpackSearchQuery['sort']): string {
