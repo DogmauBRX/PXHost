@@ -83,9 +83,41 @@ services:
       # Set PDNS_BIND_ADDRESS to this nameserver's public IP.
       - "${PDNS_BIND_ADDRESS:-0.0.0.0}:53:53/tcp"
       - "${PDNS_BIND_ADDRESS:-0.0.0.0}:53:53/udp"
+    # `pdnsutil` does NOT read this service's `command:` — it is a
+    # separate binary that only ever reads a config FILE, and the one
+    # baked into the image says `launch=gsqlite3`, pointing at a
+    # throwaway SQLite file inside the container. So every pdnsutil
+    # command run the obvious way (`compose exec pdns pdnsutil ...`)
+    # silently operates on the WRONG database and still reports success:
+    # `create-secondary-zone` prints "Creating secondary zone" and exits
+    # 0, having written a zone the running server will never serve.
+    # Found exactly that way while bringing this nameserver up.
+    #
+    # Settings cannot be passed to pdnsutil on the command line either
+    # (`--launch=gpgsql` is rejected as an unrecognised option), so the
+    # only fix is a config file. It is mounted somewhere of its own,
+    # NOT over /etc/powerdns/pdns.conf, so that nothing here can change
+    # how the running pdns_server starts.
+    #
+    #   docker compose -f docker-compose.dns.yml exec pdns \
+    #     pdnsutil --config-dir=/etc/pdnsutil list-all-zones
+    configs:
+      - source: pdnsutil_conf
+        target: /etc/pdnsutil/pdns.conf
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
   gxhost_pdns_data:
+
+configs:
+  # Only the backend settings — pdnsutil needs to reach the same
+  # database pdns_server does, nothing more.
+  pdnsutil_conf:
+    content: |
+      launch=gpgsql
+      gpgsql-host=postgres
+      gpgsql-dbname=pdns
+      gpgsql-user=pdns
+      gpgsql-password=${PDNS_POSTGRES_PASSWORD}

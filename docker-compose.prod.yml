@@ -208,6 +208,28 @@ services:
       - --primary=yes
       - --allow-axfr-ips=127.0.0.0/8,::1,143.95.213.60
       - --also-notify=143.95.213.60
+    # `pdnsutil` does NOT read the `command:` above — it is a separate
+    # binary that only reads a config FILE, and the image's own says
+    # `launch=gsqlite3`, pointing at a throwaway SQLite file inside the
+    # container. Run the obvious way (`compose exec pdns pdnsutil ...`)
+    # it therefore operates on the WRONG database and STILL REPORTS
+    # SUCCESS — `create-zone` prints its usual line and exits 0, having
+    # written a zone the running server will never serve, while
+    # `list-zone` reads that same phantom back and looks convincing.
+    #
+    # Found while setting up ns2: two different SOAs for one zone name,
+    # one in Postgres (real, being served) and one in SQLite (what
+    # pdnsutil showed). Settings cannot be passed on pdnsutil's command
+    # line either — `--launch=gpgsql` is rejected as unrecognised — so a
+    # config file is the only fix. Mounted somewhere of its own, never
+    # over /etc/powerdns/pdns.conf, so it cannot affect how the running
+    # pdns_server starts.
+    #
+    #   docker compose -f docker-compose.prod.yml exec pdns \
+    #     pdnsutil --config-dir=/etc/pdnsutil list-all-zones
+    configs:
+      - source: pdnsutil_conf
+        target: /etc/pdnsutil/pdns.conf
     ports:
       # Bound to ONE address, not 0.0.0.0 — Ubuntu runs systemd-resolved's
       # stub listener on 127.0.0.53:53, and a wildcard bind collides with
@@ -248,3 +270,14 @@ volumes:
   gxhost_mariadb_data:
   gxhost_caddy_data:
   gxhost_caddy_config:
+
+configs:
+  # Only the backend settings — pdnsutil needs to reach the same
+  # database pdns_server does, nothing more.
+  pdnsutil_conf:
+    content: |
+      launch=gpgsql
+      gpgsql-host=postgres
+      gpgsql-dbname=pdns
+      gpgsql-user=gxhost
+      gpgsql-password=${POSTGRES_PASSWORD}

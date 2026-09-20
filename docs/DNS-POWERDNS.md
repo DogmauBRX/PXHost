@@ -239,6 +239,20 @@ público do ns1 em `--allow-axfr-ips`/`--allow-notify-from`.
 
 ## 7. Configuração do PowerDNS
 
+> **Sempre passe `--config-dir=/etc/pdnsutil` ao `pdnsutil`.** Ele não lê
+> o `command:` do compose — é outro binário, e só lê arquivo de
+> configuração. O que vem na imagem diz `launch=gsqlite3` e aponta para
+> um SQLite descartável dentro do container. Sem essa flag, todo comando
+> opera no banco errado **e mesmo assim reporta sucesso**: o
+> `create-zone` imprime a linha de sempre e sai com 0, tendo criado uma
+> zona que o servidor jamais vai servir, e o `list-zone` lê esse mesmo
+> fantasma de volta, parecendo confirmar. Descoberto ao subir o ns2: dois
+> SOAs diferentes para o mesmo nome de zona, um no Postgres (real, sendo
+> servido) e outro no SQLite (o que o pdnsutil mostrava). Passar
+> `--launch=gpgsql` na linha de comando não resolve — o pdnsutil rejeita
+> a opção. O `pdns_control` não tem esse problema: ele fala com o
+> processo em execução, não com o banco.
+
 ### 7.1. Por que backend `gpgsql` (PostgreSQL) e não SQLite/BIND
 
 O GXhost já roda Postgres em produção — reaproveitar a mesma engine
@@ -350,7 +364,7 @@ subir, e aí cai o DNS de todos os servidores de jogo junto.
   ```bash
   # no host do ns2:
   docker compose -f docker-compose.dns.yml exec pdns \
-    pdnsutil create-secondary-zone mc.gxhost.com.br <IP_PUBLICO_DO_NS1>
+    pdnsutil --config-dir=/etc/pdnsutil \n      create-secondary-zone mc.gxhost.com.br <IP_PUBLICO_DO_NS1>
   # força a primeira cópia em vez de esperar o refresh:
   docker compose -f docker-compose.dns.yml exec pdns \
     pdns_control retrieve mc.gxhost.com.br
@@ -529,7 +543,8 @@ restaurado de forma totalmente independente do resto do banco.
 2. Acrescente o IP público do host novo ao `--allow-axfr-ips` e ao
    `--also-notify` do `pdns` em `docker-compose.prod.yml` (ns1) e
    recarregue: `docker compose -f docker-compose.prod.yml up -d pdns`.
-3. No host novo, `pdnsutil create-secondary-zone mc.gxhost.com.br <IP_ns1>`.
+3. No host novo, `pdnsutil --config-dir=/etc/pdnsutil create-secondary-zone
+   mc.gxhost.com.br <IP_ns1>`.
    A partir daí o ns1 avisa sozinho a cada mudança; para forçar a
    primeira cópia sem esperar, `pdns_control retrieve mc.gxhost.com.br`.
 4. Adicione o glue record (`ns3.gxhost.com.br` → IP público) no
