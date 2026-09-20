@@ -2,9 +2,11 @@ import { create } from 'zustand';
 
 interface UiState {
   sidebarOpen: boolean;
+  sidebarCollapsed: boolean;
   openSidebar: () => void;
   closeSidebar: () => void;
   toggleSidebar: () => void;
+  toggleSidebarCollapsed: () => void;
 }
 
 /**
@@ -17,7 +19,9 @@ interface UiState {
  */
 export const useUiStore = create<UiState>((set, get) => ({
   sidebarOpen: false,
+  sidebarCollapsed: false,
   openSidebar: () => set({ sidebarOpen: true }),
   closeSidebar: () => set({ sidebarOpen: false }),
   toggleSidebar: () => set({ sidebarOpen: !get().sidebarOpen }),
+  toggleSidebarCollapsed: () => set({ sidebarCollapsed: !get().sidebarCollapsed }),
 }));

@@ -406,6 +406,67 @@ html[data-app-ready] body {
   -webkit-mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
 }
 
+/* Graphite command-deck treatment for the collapsible application rail. */
+.sidebar-brand--graphite {
+  background:
+    radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--color-accent) 28%, transparent) 0%, transparent 38%),
+    linear-gradient(145deg, #30343c 0%, #17191e 48%, #24272e 100%);
+  isolation: isolate;
+}
+
+.sidebar-brand--graphite::before {
+  position: absolute;
+  inset: -80% -35%;
+  z-index: 0;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 42%, rgb(255 255 255 / 0.09) 49%, rgb(255 255 255 / 0.02) 54%, transparent 60%);
+  transform: translateX(-42%);
+  animation: sidebar-graphite-scan 6s ease-in-out infinite;
+}
+
+.sidebar-brand--graphite .sidebar-brand__circuit {
+  z-index: -1;
+  opacity: 0.28;
+  filter: grayscale(0.55) brightness(1.45);
+}
+
+.sidebar-brand__logo-shell {
+  position: relative;
+  overflow: hidden;
+  animation: sidebar-logo-float 4s ease-in-out infinite;
+}
+
+.sidebar-brand__logo-shell::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 18px rgb(255 255 255 / 0.08), 0 0 20px color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
+.sidebar-brand__wordmark {
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--color-accent) 25%, transparent));
+}
+
+@keyframes sidebar-graphite-scan {
+  0%, 28% { transform: translateX(-42%); }
+  65%, 100% { transform: translateX(42%); }
+}
+
+@keyframes sidebar-logo-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-brand--graphite::before,
+  .sidebar-brand__logo-shell {
+    animation: none;
+  }
+}
+
 /*
  * The commercial plan card's own "hero" band (PlanCard.tsx) — a solid
  * brand-gradient fill rather than the sidebar's faint tint, since this
