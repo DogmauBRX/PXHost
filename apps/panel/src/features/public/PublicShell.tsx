@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
-import { Menu, Moon, Sun, X } from 'lucide-react';
+import { ArrowRight, LayoutDashboard, LogIn, Menu, Moon, Sparkles, Sun, UserPlus, X } from 'lucide-react';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { useThemeStore } from '@/shared/theme/theme.store';
 import { Button } from '@/ui/primitives';
 import { Logo } from '@/ui/brand/Logo';
 import { Wordmark } from '@/ui/brand/Wordmark';
+import { CircuitPattern } from '@/ui/brand/CircuitPattern';
 import { AnnouncementBanner } from '@/ui/layout/AnnouncementBanner';
 
 /**
@@ -18,8 +19,8 @@ import { AnnouncementBanner } from '@/ui/layout/AnnouncementBanner';
  * transformar o site em um dashboard").
  *
  * A logged-in visitor CAN reach these pages (a customer browsing
- * `/plans` to consider upgrading, e.g.) — the header adapts to "Ir para
- * o painel" instead of Entrar/Criar conta rather than pretending they're
+ * `/plans` to consider upgrading, e.g.) — the header adapts to "Abrir
+ * painel" instead of Entrar/Criar conta rather than pretending they're
  * logged out, but never redirects them away the way `/` itself does for
  * an authenticated user (see app/routes/index.tsx).
  */
@@ -51,48 +52,66 @@ export function PublicShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-bg">
-      <header className="sticky top-0 z-30 border-b border-border bg-surface/80 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <header className="public-header--graphite sticky top-0 z-30 overflow-hidden border-b border-white/10 shadow-[0_12px_35px_-26px_rgba(0,0,0,0.9)]">
+        <CircuitPattern className="public-header__circuit" />
+        <div className="relative mx-auto flex h-[4.75rem] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-4">
-            <Link to="/" search={homeSearch} className="flex items-center gap-3">
-              <Logo size={40} />
-              <Wordmark className="text-2xl" />
+            <Link to="/" search={homeSearch} className="group flex items-center gap-3" aria-label="GXhost — página inicial">
+              <span className="public-header__logo-shell flex h-11 w-11 items-center justify-center rounded-xl border border-white/15 bg-white/5 shadow-lg backdrop-blur-sm transition-transform duration-300 group-hover:-translate-y-0.5">
+                <Logo size={36} />
+              </span>
+              <span className="flex flex-col">
+                <Wordmark className="text-2xl leading-none" />
+                <span className="mt-1 hidden text-[0.57rem] font-bold tracking-[0.2em] text-white/40 uppercase sm:block">Cloud gaming infrastructure</span>
+              </span>
             </Link>
-            <Link to={catalogNavTo} search={onPlans ? homeSearch : undefined} className="hidden md:block">
-              <Button variant="secondary">{catalogNavLabel}</Button>
+            <span className="hidden h-8 w-px bg-white/10 md:block" aria-hidden="true" />
+            <Link
+              to={catalogNavTo}
+              search={onPlans ? homeSearch : undefined}
+              className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-white/70 transition-all hover:border-accent/35 hover:bg-white/10 hover:text-white md:flex"
+            >
+              <Sparkles className="h-4 w-4 text-accent" aria-hidden="true" />
+              {catalogNavLabel}
             </Link>
           </div>
 
           <div className="hidden items-center gap-3 md:flex">
             {accessToken ? (
               <>
-                <span className="max-w-[14rem] truncate text-sm text-text-muted">
-                  Logado em <span className="font-medium text-text">{username}</span>
+                <span className="flex max-w-[15rem] items-center gap-2 rounded-full border border-white/10 bg-black/15 px-3 py-1.5 text-xs text-white/50">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok shadow-[0_0_8px_var(--color-ok)]" aria-hidden="true" />
+                  <span className="truncate">Sessão de <strong className="font-semibold text-white/85">{username}</strong></span>
                 </span>
-                <Link to={dashboardTo}>
-                  <Button variant="primary">Ir para o painel</Button>
+                <Link to={dashboardTo} className="group flex h-10 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-contrast shadow-[0_8px_24px_-12px_var(--color-accent)] transition-all hover:-translate-y-0.5 hover:bg-accent-strong">
+                  <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+                  Abrir painel
+                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
                 </Link>
               </>
             ) : (
               <>
-                <Link to="/login">
-                  <Button variant="ghost">Entrar</Button>
+                <Link to="/login" className="flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white/75 transition-all hover:border-white/20 hover:bg-white/10 hover:text-white">
+                  <LogIn className="h-4 w-4" aria-hidden="true" />
+                  Entrar
                 </Link>
-                <Link to="/register">
-                  <Button variant="primary">Criar conta</Button>
+                <Link to="/register" className="group flex h-10 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-contrast shadow-[0_8px_24px_-12px_var(--color-accent)] transition-all hover:-translate-y-0.5 hover:bg-accent-strong">
+                  <UserPlus className="h-4 w-4" aria-hidden="true" />
+                  Criar conta
+                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
                 </Link>
               </>
             )}
             {/* Separated from the CTA cluster with its own divider — a
                 utility control tucked in the header's own top-right corner,
                 not another button competing with Entrar/Criar conta. */}
-            <span className="h-6 w-px bg-border" aria-hidden="true" />
+            <span className="h-6 w-px bg-white/10" aria-hidden="true" />
             <button
               type="button"
               onClick={toggleTheme}
               aria-label={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
               title={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
-              className="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-2 hover:text-text"
+              className="rounded-xl border border-transparent p-2 text-white/55 transition-colors hover:border-white/10 hover:bg-white/5 hover:text-white"
             >
               {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
             </button>
@@ -102,39 +121,41 @@ export function PublicShell({ children }: { children: ReactNode }) {
             type="button"
             onClick={() => setMobileOpen((v) => !v)}
             aria-label={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
-            className="rounded-lg p-2 text-text-muted hover:bg-surface-2 hover:text-text md:hidden"
+            className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/70 hover:bg-white/10 hover:text-white md:hidden"
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
 
         {mobileOpen && (
-          <div className="border-t border-border bg-surface px-4 py-4 md:hidden">
+          <div className="relative border-t border-white/10 bg-[#17191e]/95 px-4 py-4 backdrop-blur-xl md:hidden">
             <nav className="flex flex-col gap-1">
               <Link
                 to={catalogNavTo}
                 search={onPlans ? homeSearch : undefined}
                 onClick={() => setMobileOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm font-medium text-text hover:bg-surface-2"
+                className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-white/75 hover:bg-white/5 hover:text-white"
               >
+                <Sparkles className="h-4 w-4 text-accent" aria-hidden="true" />
                 {catalogNavLabel}
               </Link>
               {accessToken ? (
                 <Link
                   to={dashboardTo}
                   onClick={() => setMobileOpen(false)}
-                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-text hover:bg-surface-2"
+                  className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/80 hover:bg-white/5 hover:text-white"
                 >
                   {username && (
-                    <span className="block text-xs font-normal text-text-muted">
-                      Logado em <span className="font-medium text-text">{username}</span>
+                    <span className="block text-xs font-normal text-white/45">
+                      Sessão de <span className="font-medium text-white/80">{username}</span>
                     </span>
                   )}
-                  Ir para o painel
+                  Abrir painel
                 </Link>
               ) : (
                 <>
-                  <Link to="/login" onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-text hover:bg-surface-2">
+                  <Link to="/login" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-white/80 hover:bg-white/5 hover:text-white">
+                    <LogIn className="h-4 w-4" aria-hidden="true" />
                     Entrar
                   </Link>
                   <Link to="/register" onClick={() => setMobileOpen(false)} className="mt-1">
@@ -147,7 +168,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={toggleTheme}
-                className="mt-1 flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-text-muted hover:bg-surface-2 hover:text-text"
+                className="mt-1 flex items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-white/55 hover:bg-white/5 hover:text-white"
               >
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                 {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
