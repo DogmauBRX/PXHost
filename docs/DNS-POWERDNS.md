@@ -268,18 +268,27 @@ docker exec -i <container_postgres> psql -U gxhost -d gxhost -c 'CREATE DATABASE
 `POSTGRES_DB: pdns` no seu próprio Postgres dedicado, criado
 automaticamente no primeiro boot desse container.
 
-Com o banco criado, carregue o schema oficial do PowerDNS para `gpgsql`
-(baixar a versão certa da
-[documentação oficial](https://doc.powerdns.com/authoritative/backends/generic-postgresql.html)
-compatível com a imagem `powerdns/pdns-auth-49`):
+Com o banco criado, carregue o schema do PowerDNS para `gpgsql`. Não
+baixe do site: a própria imagem carrega o schema da sua versão, em
+`/usr/local/share/doc/pdns/schema.pgsql.sql`. Usar o da imagem elimina
+a chance de pegar um schema de versão diferente da do binário que vai
+lê-lo — um erro que não aparece na hora, só quando alguma coluna que a
+versão nova espera não existe.
 
 ```bash
 # ns1 (banco compartilhado com o resto da stack, já criado acima):
-docker exec -i <container_postgres> psql -U gxhost -d pdns < schema.pgsql.sql
+docker run --rm --entrypoint cat powerdns/pdns-auth-49:latest \
+  /usr/local/share/doc/pdns/schema.pgsql.sql \
+  | docker compose -f docker-compose.prod.yml exec -T postgres psql -q -U gxhost -d pdns
 
 # ns2 (banco dedicado do docker-compose.dns.yml, já existe por padrão):
-docker exec -i <container_postgres_dns> psql -U pdns -d pdns < schema.pgsql.sql
+docker run --rm --entrypoint cat powerdns/pdns-auth-49:latest \
+  /usr/local/share/doc/pdns/schema.pgsql.sql \
+  | docker compose -f docker-compose.dns.yml exec -T postgres psql -q -U pdns -d pdns
 ```
+
+Confere com `\dt`: sete tabelas (`domains`, `records`, `comments`,
+`domainmetadata`, `cryptokeys`, `supermasters`, `tsigkeys`).
 
 Depois disso, `docker compose up -d pdns` sobe normalmente — sem esse
 passo, o container inicia mas toda zona/registro falha com erro de
