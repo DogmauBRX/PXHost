@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { Terminal as XTerm } from '@xterm/xterm';
-import { Clock, RefreshCw, Settings2 } from 'lucide-react';
+import { Clock, Link2, RefreshCw, Server, Settings2, Wifi } from 'lucide-react';
 import { getServer, getServerDiskUsage } from '@/features/servers/servers.api';
 import { listServerVariables } from '@/features/variables/variables.api';
 import { powerStateLabel } from '@/features/servers/status-labels';
@@ -154,48 +154,58 @@ export function ConsolePage({ serverId }: { serverId: string }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold tracking-tight text-text">{server?.name ?? '…'}</h1>
-          <StatusBadge status={displayState} label={powerStateLabel(displayState)} />
-          {liveUptimeMs != null && (
-            <span className="inline-flex items-center gap-2 text-lg font-medium text-text-muted">
-              <Clock className="h-5 w-5" aria-hidden="true" />
-              Ativo há {formatUptime(liveUptimeMs)}
+      <section className="overflow-hidden rounded-card border border-border bg-surface shadow-xs">
+        <div className="flex flex-col gap-5 p-5 sm:p-6">
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/12 text-accent-strong">
+                <Server className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h1 className="truncate text-2xl font-semibold tracking-tight text-text">{server?.name ?? '…'}</h1>
+                  <StatusBadge status={displayState} label={powerStateLabel(displayState)} />
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-muted">
+                  {server?.template && <span className="font-medium text-text-muted">{server.template.name}{minecraftVersion ? ` ${minecraftVersion}` : ''}</span>}
+                  {liveUptimeMs != null && <span className="inline-flex items-center gap-1.5"><Clock className="h-4 w-4" aria-hidden="true" />Ativo há {formatUptime(liveUptimeMs)}</span>}
+                </div>
+              </div>
+            </div>
+            <span className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${connected ? 'border-ok/25 bg-ok/10 text-ok' : 'border-border bg-surface-2 text-text-faint'}`}>
+              <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
+              {CONN_LABEL[connectionState]}
             </span>
+          </div>
+
+          {server?.publicAddress && (
+            <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-2/65 p-3.5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <Link2 className="h-4 w-4 shrink-0 text-accent-strong" aria-hidden="true" />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-text-faint">Endereço para conexão</p>
+                  <p className="truncate font-mono text-sm font-semibold text-text">{server.publicAddress}</p>
+                </div>
+              </div>
+              <Link
+                to="/client/servers/$serverId/variables"
+                params={{ serverId }}
+                className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-accent-strong transition hover:text-accent"
+              >
+                <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                {server.customHostname ? 'Alterar endereço' : 'Personalizar endereço'}
+              </Link>
+            </div>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          {server?.template && (
-            <span className="text-sm font-medium text-text-muted">
-              {server.template.name}
-              {minecraftVersion ? ` ${minecraftVersion}` : ''}
-            </span>
-          )}
-          <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${connected ? 'text-ok' : 'text-text-faint'}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-ok' : 'bg-text-faint'}`} />
-            {CONN_LABEL[connectionState]}
-          </span>
+        <div className="flex flex-col gap-3 border-t border-border bg-surface-2/35 px-5 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-text">Controles de energia</p>
+            <p className="mt-0.5 text-xs text-text-faint">As ações são aplicadas imediatamente ao servidor.</p>
+          </div>
+          <PowerControls state={displayState} permissions={permissions} onAction={sendPower} />
         </div>
-      </div>
-
-      {server?.publicAddress && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-text-muted">
-          <span>
-            Endereço do servidor: <span className="font-mono font-medium text-text">{server.publicAddress}</span>
-          </span>
-          <Link
-            to="/client/servers/$serverId/variables"
-            params={{ serverId }}
-            className="inline-flex items-center gap-1 text-xs font-medium text-accent-strong hover:underline"
-          >
-            <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
-            {server.customHostname ? 'Alterar endereço personalizado' : 'Escolher endereço personalizado'}
-          </Link>
-        </div>
-      )}
-
-      <PowerControls state={displayState} permissions={permissions} onAction={sendPower} />
+      </section>
 
       {lastError && <Alert>{lastError}</Alert>}
 
