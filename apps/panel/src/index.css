@@ -132,10 +132,9 @@ html[data-theme="dark"] {
  * A wallpaper across every page — not a decoration competing with
  * content, since every card/table sits on opaque `bg-surface` above it,
  * but genuinely visible in the gutters/empty space rather than a barely-
- * there tint. Three layers: two opposing brand-orange mesh-gradient
- * glows (top-left + bottom-right, so the viewport reads as "designed"
- * from any scroll position, not just the very top of a page) and an
- * accent-tinted dot grid for texture in between. All three use
+ * there tint. The composition uses opposing brand-orange mesh glows
+ * together with long, restrained circuit traces, so the viewport reads as
+ * a technical surface instead of a repetitive dot matrix. All layers use
  * `color-mix()` against the theme's own tokens, so light/dark and any
  * future palette swap need no changes here. `background-attachment:
  * fixed` pins every layer to the viewport — the page (not `<main>`)
@@ -147,9 +146,8 @@ html[data-theme="dark"] {
  * `main()` awaits `bootstrapAuth()` — a network round trip — before its
  * first render, so on every reload there's a real gap with `#root`
  * empty and nothing yet on screen to sit "behind"; without this gate,
- * that gap showed the full-strength dot grid on its own, ungrounded by
- * any card or text, which read as a stray-orange-dots bug rather than
- * texture. The flat `--color-bg` base colour (this app's existing
+ * that gap showed the full-strength pattern on its own, ungrounded by
+ * any card or text. The flat `--color-bg` base colour (this app's existing
  * anti-flash doctrine — see index.html's inline theme script) still
  * applies immediately either way, so there is no white/blank flash.
  */
@@ -163,12 +161,14 @@ body {
 
 html[data-app-ready] body {
   background-image:
-    radial-gradient(60% 55% at 8% -10%, color-mix(in srgb, var(--color-accent) 24%, transparent) 0%, transparent 70%),
-    radial-gradient(50% 48% at 100% 105%, color-mix(in srgb, var(--color-accent) 18%, transparent) 0%, transparent 70%),
-    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--color-accent) 45%, transparent) 1.5px, transparent 0);
-  background-size: 100% 100%, 100% 100%, 32px 32px;
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-attachment: fixed, fixed, fixed;
+    radial-gradient(68% 58% at 3% -14%, color-mix(in srgb, var(--color-accent) 22%, transparent) 0%, transparent 70%),
+    radial-gradient(58% 54% at 104% 106%, color-mix(in srgb, var(--color-accent) 16%, transparent) 0%, transparent 72%),
+    linear-gradient(132deg, transparent 0 22%, color-mix(in srgb, var(--color-accent) 15%, transparent) 22.05% 22.16%, transparent 22.22% 55%, color-mix(in srgb, var(--color-accent) 10%, transparent) 55.05% 55.12%, transparent 55.2%),
+    linear-gradient(90deg, transparent 0 13%, color-mix(in srgb, var(--color-accent) 13%, transparent) 13.04% 13.12%, transparent 13.2% 74%, color-mix(in srgb, var(--color-accent) 9%, transparent) 74.04% 74.1%, transparent 74.18%),
+    linear-gradient(0deg, transparent 0 18%, color-mix(in srgb, var(--color-accent) 12%, transparent) 18.04% 18.11%, transparent 18.18% 67%, color-mix(in srgb, var(--color-accent) 8%, transparent) 67.04% 67.1%, transparent 67.18%);
+  background-size: 100% 100%, 100% 100%, 760px 520px, 440px 340px, 520px 420px;
+  background-repeat: no-repeat, no-repeat, repeat, repeat, repeat;
+  background-attachment: fixed, fixed, fixed, fixed, fixed;
 }
 
 ::selection {
