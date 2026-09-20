@@ -175,8 +175,16 @@ services:
       - --webserver-allow-from=127.0.0.1,172.18.0.0/16,10.10.0.0/24
       - --default-soa-content=@ hostmaster.gxhost.com.br 0 10800 3600 604800 3600
     ports:
-      - "53:53/tcp"
-      - "53:53/udp"
+      # Bound to ONE address, not 0.0.0.0 — Ubuntu runs systemd-resolved's
+      # stub listener on 127.0.0.53:53, and a wildcard bind collides with
+      # it ("address already in use", found live on first boot). Pinning
+      # the host's own public address sidesteps that without touching the
+      # host's resolver, which is load-bearing for everything else on this
+      # box (Docker pulls, ACME, the payment provider's API). Set
+      # PDNS_BIND_ADDRESS to this VPS's public IP; the 0.0.0.0 fallback is
+      # only for a host that has no stub listener in the way.
+      - "${PDNS_BIND_ADDRESS:-0.0.0.0}:53:53/tcp"
+      - "${PDNS_BIND_ADDRESS:-0.0.0.0}:53:53/udp"
       # Deliberately NOT published to 0.0.0.0 — only reachable over the
       # compose network (this VPS's own api/worker) or, if ns1 and the
       # app VPS are ever split apart, bind this to the WireGuard
