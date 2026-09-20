@@ -568,6 +568,8 @@ html[data-app-ready] body {
 }
 
 .landing-accent-text {
+  padding-bottom: 0.12em;
+  line-height: 1.06;
   color: transparent;
   background: linear-gradient(90deg, #ff8a35 0%, #ff5f0f 38%, #ffc078 72%, #ff7a22 100%);
   background-size: 220% 100%;
