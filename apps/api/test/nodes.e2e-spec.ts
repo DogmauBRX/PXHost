@@ -653,4 +653,115 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     // in it — an expectation of 400 here would be testing the test
     // harness, not the contract.
   });
+
+  /**
+   * Reconciliation used to run in ONE direction: the agent tore down a
+   * container with no matching server, but nothing noticed a server whose
+   * container was gone. It sat in `installing` forever while every
+   * operation on it answered SERVER_NOT_FOUND. These pin down the rules
+   * the panel applies, including the two it must NOT apply.
+   */
+  describe('node inventory reconciliation', () => {
+    let ownerId: string;
+    let token: string;
+    const made: string[] = [];
+
+    const asAdmin = <T>(fn: (tx: Parameters<Parameters<PrismaService['withRLS']>[1]>[0]) => Promise<T>) =>
+      prisma.withRLS({ userId: null, isAdmin: true }, fn);
+
+    // `updatedAt` is @updatedAt, so Prisma overwrites any value passed on
+    // create — it has to be forced afterwards with raw SQL. Every case
+    // here depends on the row being OLDER than the grace window, which is
+    // exactly what stops a freshly-dispatched server being condemned.
+    async function makeServer(status: string, ageMinutes: number): Promise<string> {
+      const shortId = Math.random().toString(36).slice(2, 10);
+      const id = await asAdmin((tx) =>
+        tx.server.create({
+          data: { shortId, ownerId, nodeId, name: `inv-${shortId}`, memoryMb: 1024, diskMb: 5120, status: 'setup_pending' },
+          select: { id: true },
+        }),
+      ).then((s) => s.id);
+      await asAdmin((tx) =>
+        tx.$executeRaw`UPDATE servers SET status = ${status}, updated_at = NOW() - (${ageMinutes} * INTERVAL '1 minute') WHERE id = ${id}::uuid`,
+      );
+      made.push(id);
+      return id;
+    }
+
+    const statusOf = (id: string) =>
+      asAdmin((tx) => tx.server.findUniqueOrThrow({ where: { id }, select: { status: true } })).then((s) => s.status);
+
+    const report = (uuids: string[]) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/remote/nodes/servers/inventory',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { serverUuids: uuids },
+      });
+
+    beforeAll(async () => {
+      const owner = await prisma.user.findFirstOrThrow({ where: { email: `nodes-admin-${suffix}@gxhost.local` }, select: { id: true } });
+      ownerId = owner.id;
+      const bt = JSON.parse((await authed(`/api/admin/nodes/${nodeId}/bootstrap-token`, { method: 'POST' })).body).token;
+      const redeemed = await app.inject({
+        method: 'POST',
+        url: '/api/remote/nodes/bootstrap',
+        payload: { token: bt, hostname: 'e2e-inventory-host' },
+      });
+      token = JSON.parse(redeemed.body).nodeToken;
+    });
+
+    afterAll(async () => {
+      await asAdmin((tx) => tx.server.deleteMany({ where: { id: { in: made } } }));
+    });
+
+    it('moves a stuck `installing` server the node does not have to install_failed', async () => {
+      const stuck = await makeServer('installing', 60);
+      const res = await report([]);
+      expect(res.statusCode).toBe(201);
+      expect(await statusOf(stuck)).toBe('install_failed');
+    });
+
+    it('leaves a server the node DOES report alone', async () => {
+      const healthy = await makeServer('installing', 60);
+      await report([healthy]);
+      expect(await statusOf(healthy)).toBe('installing');
+    });
+
+    /**
+     * The race this window exists for: the API's create call and the
+     * agent's Register are not atomic, so a server dispatched moments ago
+     * is legitimately absent. Condemning it would break every new server.
+     */
+    it('never touches a server younger than the grace window', async () => {
+      const fresh = await makeServer('installing', 1);
+      await report([]);
+      expect(await statusOf(fresh)).toBe('installing');
+    });
+
+    /** `setup_pending` has no container BY DESIGN — no template chosen yet. */
+    it('never touches a setup_pending server', async () => {
+      const pending = await makeServer('setup_pending', 60);
+      await report([]);
+      expect(await statusOf(pending)).toBe('setup_pending');
+    });
+
+    /**
+     * A `ready` server whose container vanished is broken too, but its
+     * world data is on disk and the fix is recreating a container, not
+     * re-running an install. Rewriting the status would erase that
+     * distinction, so it is reported and audited, never mutated.
+     */
+    it('flags but does NOT rewrite a ready server that went missing', async () => {
+      const ready = await makeServer('ready', 60);
+      const res = await report([]);
+      expect(JSON.parse(res.body).flagged).toBeGreaterThan(0);
+      expect(await statusOf(ready)).toBe('ready');
+    });
+
+    it('rejects an inventory report with no node token', async () => {
+      const res = await app.inject({ method: 'POST', url: '/api/remote/nodes/servers/inventory', payload: { serverUuids: [] } });
+      expect(res.statusCode).toBe(401);
+    });
+  });
 });

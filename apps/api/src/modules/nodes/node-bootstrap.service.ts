@@ -10,6 +10,13 @@ import { deriveHealthStatus } from './nodes.service';
 
 const BOOTSTRAP_TTL_SECONDS = 30 * 60; // 30 min, single-use
 const HEARTBEAT_INTERVAL_SECONDS = 15;
+// How long a server may be absent from a node's reported inventory before
+// the sweep treats it as genuinely missing. Sized well above the agent's
+// own 5-minute orphan-reconcile interval so a server only ever gets
+// flagged after at least one full tick it could have appeared in, and
+// comfortably above the create dispatch's own window (the API's create
+// call and the agent's Register are not atomic).
+const INVENTORY_GRACE_MS = 15 * 60 * 1000;
 
 /**
  * The node provisioning handshake (architecture doc 4.2/7): an admin
@@ -295,6 +302,69 @@ export class NodeBootstrapService {
       tx.server.findMany({ where: { nodeId }, select: { id: true } }),
     );
     return { serverUuids: servers.map((s) => s.id) };
+  }
+
+  /**
+   * The second half of the reconciliation loop, which did not exist
+   * before: `listServerUuids` above tells the agent what SHOULD be on a
+   * node, and the agent's sweep tears down containers that shouldn't be.
+   * Nothing ever checked the reverse — a server this panel still lists
+   * whose container is gone from the node. It sat in `installing` forever
+   * (there is no stuck-install watchdog either) while every operation on
+   * it answered SERVER_NOT_FOUND, with no way back short of manual
+   * intervention. Seen live on a real server stuck `installing` for 12
+   * hours after its container was removed and the agent restarted —
+   * that restart rebuilds the agent's registry from Docker labels alone,
+   * so a server with no container is simply forgotten.
+   *
+   * Only `installing` is auto-transitioned, and only to `install_failed`
+   * — a recoverable state the client can already retry from
+   * (ServerSetupService.complete accepts it). A `ready` server whose
+   * container vanished is also broken, but its world data is still on
+   * disk and the fix is recreating a container, not re-running an
+   * install; rewriting its status would erase that distinction, so it is
+   * audited and logged for an operator instead of mutated.
+   * `setup_pending` is skipped entirely — it has no container BY DESIGN.
+   */
+  async reconcileNodeInventory(nodeId: string, reportedUuids: string[]): Promise<{ flagged: number }> {
+    const present = new Set(reportedUuids);
+    // A server dispatched seconds ago is legitimately not on the node yet
+    // (the API's create call and the agent's Register are not atomic) and
+    // this sweep runs every 5 minutes. Without this window a brand-new
+    // server would race straight into 'install_failed' on the first tick.
+    const cutoff = new Date(Date.now() - INVENTORY_GRACE_MS);
+
+    const candidates = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+      tx.server.findMany({
+        where: { nodeId, status: { in: ['installing', 'ready', 'suspended'] }, updatedAt: { lt: cutoff } },
+        select: { id: true, name: true, status: true },
+      }),
+    );
+
+    const missing = candidates.filter((c) => !present.has(c.id));
+    if (missing.length === 0) return { flagged: 0 };
+
+    const stuckInstalls = missing.filter((m) => m.status === 'installing');
+    if (stuckInstalls.length > 0) {
+      await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+        tx.server.updateMany({
+          where: { id: { in: stuckInstalls.map((s) => s.id) }, nodeId, status: 'installing' },
+          data: { status: 'install_failed' },
+        }),
+      );
+    }
+
+    for (const m of missing) {
+      this.logger.warn(`server ${m.id} (${m.name}) is '${m.status}' on the panel but absent from node ${nodeId}`);
+      await this.audit.record({
+        action: 'node.inventory.server_missing',
+        targetType: 'server',
+        targetId: m.id,
+        metadata: { nodeId, previousStatus: m.status, transitionedTo: m.status === 'installing' ? 'install_failed' : null },
+      });
+    }
+
+    return { flagged: missing.length };
   }
 
   /**

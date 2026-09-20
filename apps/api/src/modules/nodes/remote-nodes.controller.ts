@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { NodeBootstrapService } from './node-bootstrap.service';
-import { BootstrapRequestDto, HeartbeatDto } from './dto/node.dto';
+import { BootstrapRequestDto, HeartbeatDto, NodeInventoryDto } from './dto/node.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { NodeAuthGuard, AuthenticatedNode } from './guards/node-auth.guard';
 
@@ -46,5 +46,17 @@ export class RemoteNodesController {
   listServers(@Req() req: FastifyRequest) {
     const node = (req as unknown as { node: AuthenticatedNode }).node;
     return this.bootstrap.listServerUuids(node.id);
+  }
+
+  /**
+   * The agent reporting what it ACTUALLY holds — the return leg of the
+   * GET above, which alone only ever let the agent tear containers down.
+   * See NodeBootstrapService.reconcileNodeInventory's doc comment.
+   */
+  @Post('servers/inventory')
+  @UseGuards(NodeAuthGuard)
+  reportInventory(@Req() req: FastifyRequest, @Body() dto: NodeInventoryDto) {
+    const node = (req as unknown as { node: AuthenticatedNode }).node;
+    return this.bootstrap.reconcileNodeInventory(node.id, dto.serverUuids);
   }
 }

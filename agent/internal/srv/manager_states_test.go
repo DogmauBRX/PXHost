@@ -75,3 +75,58 @@ func TestStatesOnEmptyManagerReportsNothing(t *testing.T) {
 		t.Errorf("States() on an empty manager returned %v, want no entries", got)
 	}
 }
+
+// UUIDs is the panel's only way to learn that one of ITS servers has no
+// container here. Its contract differs from States on purpose, and the
+// difference is what these pin down.
+func TestUUIDsReportsBusyServersToo(t *testing.T) {
+	m := NewManager()
+	idle := registerTestServer(t, m, "11111111-1111-4111-8111-111111111111")
+	busy := registerTestServer(t, m, "22222222-2222-4222-8222-222222222222")
+
+	busy.mu.Lock()
+	defer busy.mu.Unlock()
+
+	got := m.UUIDs()
+
+	// States omits a busy server (its STATE is ambiguous mid-transition).
+	// UUIDs must not: "does this server exist here at all" has an
+	// unambiguous answer even while Docker works, and omitting it would
+	// tell the panel to flag a perfectly healthy server as missing.
+	if len(got) != 2 {
+		t.Fatalf("UUIDs() returned %d entries, want 2 (busy servers included): %v", len(got), got)
+	}
+	seen := map[string]bool{}
+	for _, u := range got {
+		seen[u] = true
+	}
+	if !seen[idle.UUID] || !seen[busy.UUID] {
+		t.Errorf("UUIDs() = %v, want both %s and %s", got, idle.UUID, busy.UUID)
+	}
+}
+
+func TestUUIDsOnEmptyManagerIsEmptyNotNil(t *testing.T) {
+	// The caller sends this straight to the panel as `serverUuids`, where
+	// an empty list MEANS "this node holds nothing" and drives real
+	// decisions. A nil that marshalled to JSON `null` instead would be a
+	// different message entirely.
+	got := NewManager().UUIDs()
+	if got == nil {
+		t.Fatal("UUIDs() returned nil; an empty node must report an empty list, never null")
+	}
+	if len(got) != 0 {
+		t.Errorf("UUIDs() = %v, want no entries", got)
+	}
+}
+
+func TestUUIDsDropsRemovedServer(t *testing.T) {
+	// The exact sequence behind the bug this feature exists for: a
+	// container goes away, so the server leaves the registry, and the
+	// panel must be able to see that it is gone.
+	m := NewManager()
+	s := registerTestServer(t, m, "33333333-3333-4333-8333-333333333333")
+	m.Remove(s.UUID)
+	if got := m.UUIDs(); len(got) != 0 {
+		t.Errorf("UUIDs() = %v after Remove, want no entries", got)
+	}
+}

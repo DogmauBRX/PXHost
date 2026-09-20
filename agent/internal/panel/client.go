@@ -359,3 +359,26 @@ func truncate(b []byte, n int) string {
 	}
 	return string(b[:n]) + "..."
 }
+
+// InventoryRequest is this node's COMPLETE list of registered servers —
+// see srv.Manager.UUIDs for why the agent reports raw inventory and lets
+// the panel decide what an absence means.
+type InventoryRequest struct {
+	// Never `omitempty`: an empty list is MEANINGFUL here ("this node
+	// holds no servers at all"), unlike every telemetry field above where
+	// absence means "no data this tick". Dropping the key would make a
+	// genuinely empty node indistinguishable from an agent too old to
+	// send one — and the panel must never guess between those two.
+	ServerUUIDs []string `json:"serverUuids"`
+}
+
+// ReportInventory tells the panel exactly which servers this node holds,
+// closing the second half of the reconciliation loop that ListServers
+// opens. Best-effort like every other background report: a failure is
+// logged by the caller and retried on the next sweep.
+func (c *Client) ReportInventory(ctx context.Context, nodeToken string, req InventoryRequest) error {
+	if err := c.post(ctx, "/api/remote/nodes/servers/inventory", nodeToken, req, nil); err != nil {
+		return fmt.Errorf("panel: report-inventory: %w", err)
+	}
+	return nil
+}

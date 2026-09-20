@@ -487,6 +487,24 @@ export class HeartbeatDto {
  */
 export const SERVER_POWER_STATES = ['offline', 'starting', 'running', 'stopping', 'crashed'] as const;
 
+/**
+ * The node's COMPLETE inventory of registered servers — see
+ * srv.Manager.UUIDs in the agent for why the agent reports raw inventory
+ * and never decides what an absence means.
+ */
+export class NodeInventoryDto {
+  /**
+   * Required, never optional: an EMPTY array is meaningful here ("this
+   * node holds no servers"), so it must be distinguishable from an agent
+   * too old to send the field at all — which simply never calls this
+   * endpoint. Making it optional would collapse those two into one and
+   * risk condemning every server on a healthy node.
+   */
+  @IsArray()
+  @IsUUID('all', { each: true })
+  serverUuids!: string[];
+}
+
 export class ServerPowerStateDto {
   @IsUUID()
   uuid!: string;

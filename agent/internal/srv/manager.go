@@ -89,3 +89,34 @@ func (m *Manager) States() map[string]State {
 	}
 	return out
 }
+
+// UUIDs is the agent's COMPLETE inventory: every server it has registered,
+// whether or not it is busy. Deliberately distinct from States above,
+// which omits a server mid-Docker-call — for "does this server exist on
+// this node at all?" an omission must never be ambiguous.
+//
+// The panel needs this because reconciliation used to run in ONE
+// direction only: ReconcileOrphans tears down a CONTAINER with no
+// matching server on the panel, but nothing ever noticed the reverse —
+// a server the panel still lists whose container is gone from the node.
+// Such a server sits in `installing` forever (there is no stuck-install
+// watchdog either) while every operation on it answers
+// SERVER_NOT_FOUND, with no path back short of manual intervention. Seen
+// live: a container removed during debugging, then an agent restart,
+// which rebuilds this registry from Docker labels alone and so forgot
+// the server entirely.
+//
+// The agent deliberately reports raw inventory and draws no conclusion:
+// a `setup_pending` server has no container BY DESIGN (no template
+// chosen yet), and only the panel knows a server's status. Deciding here
+// would mean teaching the agent the panel's lifecycle — and getting it
+// wrong would condemn healthy servers.
+func (m *Manager) UUIDs() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]string, 0, len(m.servers))
+	for uuid := range m.servers {
+		out = append(out, uuid)
+	}
+	return out
+}

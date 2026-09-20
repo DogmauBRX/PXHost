@@ -564,6 +564,17 @@ func runReconcileLoop(ctx context.Context, manager *srv.Manager, nf config.NodeF
 		if len(removed) > 0 {
 			fmt.Printf("orphan reconcile: removed %d orphaned container(s) with no matching server: %v\n", len(removed), removed)
 		}
+
+		// The OTHER direction, which nothing used to check: tell the panel
+		// exactly which servers this node actually holds, so it can notice
+		// one of its OWN rows whose container is gone. Reported after the
+		// sweep above, so a container this tick just removed is already out
+		// of the manager rather than being claimed as present. Best-effort:
+		// a failure here must never discard the sweep that already
+		// succeeded.
+		if err := client.ReportInventory(reqCtx, tokenStore.Get(), panel.InventoryRequest{ServerUUIDs: manager.UUIDs()}); err != nil {
+			fmt.Printf("orphan reconcile: failed to report inventory (will retry in %s): %v\n", orphanReconcileInterval, err)
+		}
 	}
 
 	reconcile()
