@@ -75,9 +75,19 @@ export class AssistantService {
           }
         : null,
       primaryAllocation: primary ? { ip: primary.ip, port: primary.port } : null,
+      // Same `dnsAutomationActive` argument ClientServersService passes —
+      // without it the assistant would tell a customer `host:port` while
+      // the panel next to it shows the bare hostname, and a support answer
+      // that contradicts the UI is worse than either form alone.
       publicAddress:
         server.publicRoute && server.publicRoute.state === 'active'
-          ? derivePublicAddress(server.publicRoute.gateway.publicHost, server.shortId, server.publicRoute.publicPort, this.config.get<string>('PUBLIC_GATEWAY_HOSTNAME_ZONE'))
+          ? derivePublicAddress(
+              server.publicRoute.gateway.publicHost,
+              server.shortId,
+              server.publicRoute.publicPort,
+              this.config.get<string>('PUBLIC_GATEWAY_HOSTNAME_ZONE'),
+              this.config.get<string>('PUBLIC_GATEWAY_DNS_PROVIDER') === 'powerdns',
+            )
           : null,
       permissions,
     };
