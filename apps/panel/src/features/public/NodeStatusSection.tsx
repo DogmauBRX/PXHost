@@ -58,14 +58,15 @@ export function NodeStatusSection() {
   const hasStatus = !isError && !!status;
 
   return (
-    <section className="mx-auto max-w-6xl px-4 pb-20 sm:px-6 lg:px-8">
+    <section className="mx-auto max-w-7xl border-t border-white/8 px-4 py-24 sm:px-6 lg:px-8">
       <div className="mx-auto mb-10 max-w-xl text-center">
-        <h2 className="text-2xl font-bold text-text sm:text-3xl">Status da infraestrutura</h2>
-        <p className="mt-3 text-text-muted">Disponibilidade em tempo real da nossa infraestrutura.</p>
+        <span className="font-mono text-xs font-semibold tracking-[0.18em] text-accent uppercase">Sinal público</span>
+        <h2 className="mt-3 text-3xl font-bold tracking-tight text-text sm:text-4xl">Status da infraestrutura</h2>
+        <p className="mt-3 text-text-muted">Disponibilidade atualizada automaticamente a cada 30 segundos.</p>
       </div>
 
       {isError && (
-        <div className="mx-auto max-w-md rounded-card border border-border bg-surface p-5 text-center">
+        <div className="landing-feature-panel mx-auto max-w-md rounded-2xl border border-border p-6 text-center">
           <Badge tone="warn">
             <span className="inline-flex items-center gap-1">
               <TriangleAlert className="h-3.5 w-3.5" aria-hidden="true" />
@@ -79,7 +80,7 @@ export function NodeStatusSection() {
       )}
 
       {!isError && !hasStatus && (
-        <div className="mx-auto max-w-md rounded-card border border-border bg-surface p-5 text-center">
+        <div className="landing-feature-panel mx-auto max-w-md rounded-2xl border border-border p-6 text-center">
           <Badge tone="fail">
             <span className="inline-flex items-center gap-1">
               <CircleX className="h-3.5 w-3.5" aria-hidden="true" />
@@ -94,7 +95,7 @@ export function NodeStatusSection() {
           const meta = STATUS_META[status.status];
           const Icon = meta.icon;
           return (
-            <div className="mx-auto max-w-md rounded-card border border-border bg-surface p-5 text-center">
+            <div className="landing-feature-panel mx-auto max-w-md rounded-2xl border border-border p-6 text-center">
               <Badge tone={meta.tone}>
                 <span className="inline-flex items-center gap-1">
                   <Icon className="h-3.5 w-3.5" aria-hidden="true" />

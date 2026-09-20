@@ -60,6 +60,17 @@ export function ServerSetupPage({ serverId }: { serverId: string }) {
       // own, no navigation call needed.
       void queryClient.invalidateQueries({ queryKey: ['server', serverId] });
       void queryClient.invalidateQueries({ queryKey: ['server-setup', serverId] });
+      // ServerSetupService.complete writes the REAL MINECRAFT_VERSION
+      // (and every other declared variable) synchronously, in the same
+      // transaction that flips status to 'installing' — found live:
+      // without this, a `['server-variables', serverId]` query fetched
+      // even once before this point (e.g. this tab was already open,
+      // or a route prefetch) kept serving that stale snapshot forever
+      // afterward, since nothing else ever invalidated it — the Console
+      // page's software/version label and the Configurações tab both
+      // read this same query and both showed the wrong version even
+      // after the real install finished.
+      void queryClient.invalidateQueries({ queryKey: ['server-variables', serverId] });
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : 'Não foi possível concluir a configuração. Tente novamente em instantes.'),
   });

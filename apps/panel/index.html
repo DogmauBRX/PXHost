@@ -19,17 +19,11 @@
     <meta property="og:description" content="Hospedagem de servidores Minecraft com RAM, CPU e armazenamento dedicados, vagas limitadas por capacidade real e um painel completo." />
     <meta property="og:type" content="website" />
     <!--
-      Applies the saved theme before the first paint. This cannot live in
-      main.tsx: that awaits bootstrapAuth() (a network round trip) before
-      rendering, so a dark-mode user would stare at a white page for the
-      whole refresh call. Light needs no attribute — it is the default.
+      The site only ships a dark theme — set before first paint so nothing
+      ever flashes the (unstyled) light default the `@theme` block emits.
     -->
     <script>
-      try {
-        if (localStorage.getItem('gxhost.theme') === 'dark') document.documentElement.dataset.theme = 'dark';
-      } catch (e) {
-        /* storage blocked — fall through to the light default */
-      }
+      document.documentElement.dataset.theme = 'dark';
     </script>
   </head>
   <body>

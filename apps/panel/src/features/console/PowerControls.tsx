@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { OctagonAlert, Play, RotateCcw, Square } from 'lucide-react';
 import { Button } from '@/ui/primitives/Button';
 import type { PowerAction } from '@/shared/api/types';
 
@@ -41,12 +42,15 @@ export function PowerControls({ state, permissions, onAction }: PowerControlsPro
   return (
     <div className="flex items-center gap-2">
       <Button variant="primary" disabled={!canStart || !has('start')} onClick={() => onAction('start')}>
+        <Play className="h-4 w-4" aria-hidden="true" />
         {LABEL.start}
       </Button>
       <Button variant="secondary" disabled={!canStop || !has('restart')} onClick={() => onAction('restart')}>
+        <RotateCcw className="h-4 w-4" aria-hidden="true" />
         {LABEL.restart}
       </Button>
       <Button variant="secondary" disabled={!canStop || !has('stop')} onClick={() => onAction('stop')}>
+        <Square className="h-3.5 w-3.5" aria-hidden="true" />
         {LABEL.stop}
       </Button>
       <Button
@@ -55,6 +59,7 @@ export function PowerControls({ state, permissions, onAction }: PowerControlsPro
         onClick={handleKillClick}
         title={armedKill ? 'Clique novamente para confirmar' : undefined}
       >
+        <OctagonAlert className="h-4 w-4" aria-hidden="true" />
         {armedKill ? 'Confirmar?' : LABEL.kill}
       </Button>
     </div>

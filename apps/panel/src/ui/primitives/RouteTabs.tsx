@@ -1,6 +1,6 @@
-import { Fragment } from 'react';
 import { Link, useMatchRoute } from '@tanstack/react-router';
 import type { LinkProps } from '@tanstack/react-router';
+import type { LucideIcon } from 'lucide-react';
 
 export interface RouteTab {
   to: LinkProps['to'];
@@ -9,12 +9,9 @@ export interface RouteTab {
   exact?: boolean;
   /** "Somar e agrupar" (client-features Fase 7): nothing is ever removed, tabs are just visually clustered. Omit on every item to render the old flat, unlabeled bar. */
   group?: 'basico' | 'avancado';
+  /** Small visual anchor for fast recognition in server navigation. */
+  icon?: LucideIcon;
 }
-
-const GROUP_LABEL: Record<NonNullable<RouteTab['group']>, string> = {
-  basico: 'Básico',
-  avancado: 'Avançado',
-};
 
 interface RouteTabsProps {
   items: readonly RouteTab[];
@@ -29,48 +26,32 @@ interface RouteTabsProps {
  */
 export function RouteTabs({ items, params, className = '' }: RouteTabsProps) {
   const matchRoute = useMatchRoute();
-
   return (
-    <div className={`-mb-px flex items-center gap-1 overflow-x-auto border-b border-border ${className}`}>
-      {items.map((tab, i) => {
+    <nav
+      aria-label="Navegação do servidor"
+      className={`-mb-px flex items-center gap-1 overflow-x-auto border-b border-border bg-gradient-to-r from-surface via-surface-2/70 to-surface [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className}`}
+    >
+      {items.map((tab) => {
         const active = Boolean(
           matchRoute({ to: tab.to, params, fuzzy: tab.exact ? false : undefined } as never),
         );
-        const showGroupLabel = tab.group && tab.group !== items[i - 1]?.group;
-        // A vertical rule between groups, not just a margin — found live
-        // (screenshot) the plain-text "AVANÇADO" label alone read as more
-        // tabs, not a section break. Only between groups, never before the
-        // first one.
-        const showDivider = showGroupLabel && i > 0;
         return (
-          <Fragment key={String(tab.to)}>
-            {showDivider && <span className="mx-2 h-5 w-px shrink-0 self-center bg-border" aria-hidden="true" />}
-            {showGroupLabel && (
-              // Same pill language as Badge/StatusBadge's neutral tone
-              // (rounded, muted fill) so it reads as "this is a label,"
-              // not one more clickable tab — but sized up from Badge's
-              // own tiny 0.68rem (not just reusing that component
-              // directly) since this sits inline with 0.875rem tab text
-              // and needs to hold its own next to it, not disappear.
-              <span className="mr-1 shrink-0 self-center rounded-full bg-surface-2 px-2.5 py-1 text-xs font-semibold tracking-wide text-text-muted uppercase">
-                {GROUP_LABEL[tab.group!]}
-              </span>
-            )}
-            <Link
+          <Link
+              key={String(tab.to)}
               to={tab.to}
               params={params as never}
               aria-current={active ? 'page' : undefined}
-              className={`shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+              className={`group relative flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-all duration-200 ${
                 active
-                  ? 'border-accent text-accent-strong'
-                  : 'border-transparent text-text-muted hover:border-border-strong hover:text-text'
+                  ? 'bg-accent-tint text-accent-strong shadow-xs ring-1 ring-accent/20 after:absolute after:right-3 after:bottom-0 after:left-3 after:h-0.5 after:rounded-full after:bg-accent'
+                  : 'text-text-muted hover:bg-surface-2 hover:text-text'
               }`}
             >
+              {tab.icon && <tab.icon className={`h-4 w-4 transition-transform duration-200 group-hover:scale-110 ${active ? 'text-accent-strong' : 'text-text-faint group-hover:text-text-muted'}`} aria-hidden="true" />}
               {tab.label}
-            </Link>
-          </Fragment>
+          </Link>
         );
       })}
-    </div>
+    </nav>
   );
 }

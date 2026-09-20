@@ -363,17 +363,61 @@ func (s *Server) UpdateVariables(ctx context.Context, dc dockerFull, newEnv map[
 	defer s.mu.Unlock()
 
 	if s.State != StateOffline {
-		return fmt.Errorf("srv: server %s must be stopped before its variables can be updated", s.UUID)
+		return fmt.Errorf("%w: server %s", ErrServerNotStopped, s.UUID)
 	}
 
+	s.spec.Env = newEnv
+	return s.recreateContainerLocked(ctx, dc)
+}
+
+// Reinstall swaps a stopped server's image/startup command/environment and
+// recreates its container — the mechanism a version change (Vanilla ⇄
+// Paper, or just a different curated Minecraft version) needs. It is
+// deliberately NOT built on top of Create: this server's UUID is already
+// registered in the manager by the time a version change can happen (a
+// server only reaches `ready` — changeVersion's own precondition — after
+// its ORIGINAL Create already ran), and manager.Register unconditionally
+// rejects a UUID it already knows (see routes_create_server.go's
+// SERVER_EXISTS guard). Calling the create path again for a reinstall
+// would always 409 there and never touch the container at all — found
+// live: ServerSetupService.changeVersion did exactly that before this
+// method existed, silently leaving the server stuck reporting
+// `installing` forever because the agent had nothing left to call back
+// about. This method instead mutates the ALREADY-REGISTERED *Server in
+// place (same remove-then-recreate mechanism UpdateVariables already
+// uses for Docker's immutable image/env), so no Register call — and thus
+// no SERVER_EXISTS guard — is ever involved.
+//
+// The caller is responsible for running Install() afterward, exactly
+// like the create flow's own handler does after its Create() call — this
+// only rebuilds the container shell.
+func (s *Server) Reinstall(ctx context.Context, dc dockerFull, image, startupTemplate, stopSignal string, newEnv map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.State != StateOffline {
+		return fmt.Errorf("%w: server %s", ErrServerNotStopped, s.UUID)
+	}
+
+	s.spec.Image = image
+	s.spec.StartupTmpl = startupTemplate
+	s.spec.StopSignal = stopSignal
+	s.spec.Env = newEnv
+	return s.recreateContainerLocked(ctx, dc)
+}
+
+// recreateContainerLocked removes the current container (if any) and
+// creates a new one from s.spec — the shared tail of UpdateVariables and
+// Reinstall, both of which mutate s.spec first and then need Docker's
+// immutable-image/immutable-env container replaced with one that matches.
+// Must be called with mu held.
+func (s *Server) recreateContainerLocked(ctx context.Context, dc dockerFull) error {
 	if s.ContainerID != "" {
 		if err := dc.RemoveContainer(ctx, s.ContainerID, true); err != nil {
 			return fmt.Errorf("srv: removing old container before recreate: %w", err)
 		}
 		s.ContainerID = ""
 	}
-
-	s.spec.Env = newEnv
 
 	cfg, hostCfg, netCfg, err := spec.BuildContainerSpec(s.spec, s.node)
 	if err != nil {

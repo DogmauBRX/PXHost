@@ -1,13 +1,28 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { PackageOpen } from 'lucide-react';
 import { getServer } from '@/features/servers/servers.api';
 import { Alert, LoadingRow, PageHeader } from '@/ui/primitives';
 import { ADDON_SOURCES } from './sources';
 import type { AddonContext } from './addons.types';
 import { ModpacksPanel } from './ModpacksPanel';
+import { getLatestModpackInstallation, getModpackProject, type ModpackSource } from './modpacks.api';
 
 export function AddonsPage({ serverId }: { serverId: string }) {
   const { data: server, isLoading, isError } = useQuery({ queryKey: ['server', serverId], queryFn: () => getServer(serverId) });
+  const installation = useQuery({
+    queryKey: ['modpack-installation', serverId],
+    queryFn: () => getLatestModpackInstallation(serverId),
+  });
+  const installedModpack = installation.data?.status === 'completed' && installation.data.source === 'modrinth'
+    ? installation.data
+    : null;
+  const installedProject = useQuery({
+    queryKey: ['modpack-project', serverId, installedModpack?.source, installedModpack?.projectId],
+    queryFn: () => getModpackProject(serverId, installedModpack!.source as ModpackSource, installedModpack!.projectId),
+    enabled: Boolean(installedModpack),
+    staleTime: 60 * 60 * 1000,
+  });
   const [sourceId, setSourceId] = useState(ADDON_SOURCES[0].id);
   const [contentType, setContentType] = useState<'mods' | 'modpacks'>('mods');
 
@@ -57,6 +72,27 @@ export function AddonsPage({ serverId }: { serverId: string }) {
             </button>
           ))}
         </div>
+      )}
+
+      {contentType === 'mods' && installedModpack && (
+        <section className="mb-5 overflow-hidden rounded-card border border-accent/35 bg-accent/5 shadow-xs" aria-label="Modpack instalado">
+          <div className="flex items-center gap-3 p-4 sm:p-5">
+            {installedProject.data?.icon ? (
+              <img src={installedProject.data.icon} alt="" className="h-14 w-14 shrink-0 rounded-xl object-cover shadow-sm" />
+            ) : (
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent-strong">
+                <PackageOpen className="h-7 w-7" aria-hidden="true" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-accent-strong">Modpack instalado</p>
+              <h2 className="truncate text-lg font-semibold text-text">{installedModpack.projectName}</h2>
+              <p className="mt-0.5 text-sm text-text-muted">
+                {installedModpack.versionName} · Minecraft {installedModpack.minecraftVersion} · {installedModpack.loader === 'neoforge' ? 'NeoForge' : installedModpack.loader.charAt(0).toUpperCase() + installedModpack.loader.slice(1)}
+              </p>
+            </div>
+          </div>
+        </section>
       )}
 
       {contentType === 'mods' && available.length > 1 && (

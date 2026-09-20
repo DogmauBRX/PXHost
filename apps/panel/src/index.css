@@ -30,18 +30,23 @@
      bem forte a luminosidade branca"). Every step below is still
      clearly "light mode," just a few points darker than the previous
      pass, and the relative spacing between bg/surface/surface-2/field
-     is preserved so hover/elevation logic elsewhere needs no changes. */
-  --color-bg: #eef0f3;
-  --color-surface: #f9fafb;
-  --color-surface-2: #e9ecf0;
+     is preserved so hover/elevation logic elsewhere needs no changes.
+     Follow-up ("deixe ele menos claro, tipo um acinzentado"): pushed a
+     further ~20pt darker still, and flattened the slight cool blue cast
+     the old hexes carried (R<G<B, e.g. the old bg #eef0f3) to genuinely
+     neutral R=G=B grays — "grayish" specifically, not just "darker
+     light-blue." Same preserved relative spacing as before. */
+  --color-bg: #e8e8e8;
+  --color-surface: #f5f5f5;
+  --color-surface-2: #dfdfdf;
   /* Inputs need their own token: on light, `surface-2` is also the row-hover
      colour, so fields would read as hovered rows inside a white card. */
-  --color-field: #f5f6f8;
-  --color-border: #e4e7ec;
-  --color-border-strong: #cdd3dc;
+  --color-field: #efefef;
+  --color-border: #d8d8d8;
+  --color-border-strong: #bababa;
   --color-text: #14181f;
-  --color-text-muted: #596274;
-  --color-text-faint: #8a93a3;
+  --color-text-muted: #565b63;
+  --color-text-faint: #82868d;
 
   /* Orange is the brand accent, used for fills and active state — not as a
      wash over the whole UI. The accent/accent-strong split exists because
@@ -401,6 +406,123 @@ html[data-app-ready] body {
   -webkit-mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
 }
 
+/* Graphite command-deck treatment for the collapsible application rail. */
+.sidebar-brand--graphite {
+  background:
+    radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--color-accent) 28%, transparent) 0%, transparent 38%),
+    linear-gradient(145deg, #30343c 0%, #17191e 48%, #24272e 100%);
+  isolation: isolate;
+}
+
+.sidebar-brand--graphite::before {
+  position: absolute;
+  inset: -80% -35%;
+  z-index: 0;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 42%, rgb(255 255 255 / 0.09) 49%, rgb(255 255 255 / 0.02) 54%, transparent 60%);
+  transform: translateX(-42%);
+  animation: sidebar-graphite-scan 6s ease-in-out infinite;
+}
+
+.sidebar-brand--graphite .sidebar-brand__circuit {
+  z-index: -1;
+  opacity: 0.28;
+  filter: grayscale(0.55) brightness(1.45);
+}
+
+.sidebar-brand__logo-shell {
+  position: relative;
+  overflow: hidden;
+  animation: sidebar-logo-float 4s ease-in-out infinite;
+}
+
+.sidebar-brand__logo-shell::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 18px rgb(255 255 255 / 0.08), 0 0 20px color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
+.sidebar-brand__wordmark {
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--color-accent) 25%, transparent));
+}
+
+@keyframes sidebar-graphite-scan {
+  0%, 28% { transform: translateX(-42%); }
+  65%, 100% { transform: translateX(42%); }
+}
+
+@keyframes sidebar-logo-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-brand--graphite::before,
+  .sidebar-brand__logo-shell {
+    animation: none;
+  }
+}
+
+/* Public navigation: a slim graphite command bar with a restrained scan. */
+.public-header--graphite {
+  background:
+    radial-gradient(circle at 18% -120%, color-mix(in srgb, var(--color-accent) 25%, transparent) 0%, transparent 45%),
+    linear-gradient(110deg, #202329 0%, #121419 55%, #1b1e24 100%);
+}
+
+.public-header--graphite::after {
+  position: absolute;
+  right: -20%;
+  bottom: 0;
+  left: -20%;
+  height: 1px;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 20%, var(--color-accent) 48%, color-mix(in srgb, var(--color-accent) 25%, transparent) 55%, transparent 80%);
+  background-size: 180% 100%;
+  animation: public-header-signal 7s linear infinite;
+}
+
+.public-header__circuit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.12;
+  pointer-events: none;
+  filter: grayscale(0.4) brightness(1.35);
+  mask-image: linear-gradient(90deg, black 0%, transparent 72%);
+  -webkit-mask-image: linear-gradient(90deg, black 0%, transparent 72%);
+}
+
+.public-header__logo-shell {
+  position: relative;
+  overflow: hidden;
+}
+
+.public-header__logo-shell::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 16px rgb(255 255 255 / 0.08), 0 0 18px color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+
+@keyframes public-header-signal {
+  to { background-position: -180% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-header--graphite::after {
+    animation: none;
+  }
+}
+
 /*
  * The commercial plan card's own "hero" band (PlanCard.tsx) — a solid
  * brand-gradient fill rather than the sidebar's faint tint, since this
@@ -421,6 +543,163 @@ html[data-app-ready] body {
   width: 100%;
   height: 100%;
   opacity: 0.4;
+}
+
+/* Landing command surface — intentionally graphite in both themes. */
+.landing-command {
+  --color-bg: #0f1115;
+  --color-surface: #181b21;
+  --color-surface-2: #121419;
+  --color-text: #f5f1eb;
+  --color-text-muted: #a3aab5;
+  --color-text-faint: #68717d;
+  --color-border: rgb(255 255 255 / 0.09);
+  --color-border-strong: rgb(255 255 255 / 0.16);
+  color: var(--color-text);
+  background:
+    radial-gradient(circle at 50% 6%, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent 30rem),
+    #0f1115;
+}
+
+.landing-section {
+  background:
+    linear-gradient(90deg, transparent, rgb(255 255 255 / 0.025) 50%, transparent),
+    #121419;
+}
+
+.landing-accent-text {
+  padding-bottom: 0.12em;
+  line-height: 1.06;
+  color: transparent;
+  background: linear-gradient(90deg, #ff8a35 0%, #ff5f0f 38%, #ffc078 72%, #ff7a22 100%);
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  filter: drop-shadow(0 0 24px rgb(255 103 24 / 0.13));
+  animation: landing-accent-flow 7s ease-in-out infinite;
+}
+
+.landing-hero__orb {
+  position: absolute;
+  width: 24rem;
+  height: 24rem;
+  pointer-events: none;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  filter: blur(130px);
+  opacity: 0.07;
+  animation: landing-orb-drift 10s ease-in-out infinite alternate;
+}
+
+.landing-hero__orb--one {
+  top: -8rem;
+  left: -9rem;
+}
+
+.landing-hero__orb--two {
+  right: -8rem;
+  bottom: -10rem;
+  width: 30rem;
+  height: 30rem;
+  animation-delay: -5s;
+}
+
+.landing-network-stage {
+  animation: landing-stage-breathe 7s ease-in-out infinite;
+}
+
+.landing-stat-chip {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+
+.landing-stat-chip:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 32%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
+  transform: translateY(-2px);
+}
+
+.landing-feature-panel {
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--color-accent) 9%, transparent), transparent 45%),
+    linear-gradient(145deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0.018));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 24px 70px -50px rgb(0 0 0 / 0.85);
+}
+
+.landing-feature-panel::after,
+.landing-benefit-card::after {
+  position: absolute;
+  top: 0;
+  left: -45%;
+  width: 32%;
+  height: 1px;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+  animation: landing-card-scan 8s linear infinite;
+}
+
+.landing-benefit-card {
+  background: linear-gradient(150deg, rgb(255 255 255 / 0.04), rgb(255 255 255 / 0.015));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+  transition: transform 220ms ease, border-color 220ms ease, background-color 220ms ease;
+}
+
+.landing-benefit-card:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  background-color: color-mix(in srgb, var(--color-accent) 4%, transparent);
+  transform: translateY(-4px);
+}
+
+.landing-capacity-panel {
+  background:
+    radial-gradient(circle at 8% 50%, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent 28%),
+    linear-gradient(120deg, #1b1d22, #13151a);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.045), 0 30px 70px -55px var(--color-accent);
+}
+
+.landing-capacity-panel::before {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  opacity: 0.16;
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.055) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(90deg, black, transparent 55%);
+  -webkit-mask-image: linear-gradient(90deg, black, transparent 55%);
+}
+
+@keyframes landing-accent-flow {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes landing-orb-drift {
+  to { transform: translate3d(4rem, 2rem, 0) scale(1.08); }
+}
+
+@keyframes landing-stage-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes landing-card-scan {
+  0% { transform: translateX(0); opacity: 0; }
+  12% { opacity: 0.8; }
+  38%, 100% { transform: translateX(470%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-accent-text,
+  .landing-hero__orb,
+  .landing-network-stage,
+  .landing-feature-panel::after,
+  .landing-benefit-card::after {
+    animation: none;
+  }
 }
 
 /*

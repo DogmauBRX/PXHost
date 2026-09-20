@@ -3,6 +3,7 @@ import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { AnnouncementBanner } from './AnnouncementBanner';
 import { ADMIN_NAV_SECTIONS, CLIENT_NAV_SECTIONS } from './nav.config';
+import { useUiStore } from '@/shared/stores/ui.store';
 
 /**
  * Fixed left rail + fluid content column.
@@ -25,6 +26,7 @@ import { ADMIN_NAV_SECTIONS, CLIENT_NAV_SECTIONS } from './nav.config';
  * system, not one product with some menu items hidden.
  */
 export function AppShell({ children, area }: { children: ReactNode; area: 'admin' | 'client' }) {
+  const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const sections = area === 'admin' ? ADMIN_NAV_SECTIONS : CLIENT_NAV_SECTIONS;
   const panelLabel = area === 'admin' ? 'ADMIN PANEL' : 'CLIENT PANEL';
   const settingsTo = area === 'admin' ? '/admin/settings' : '/client/settings';
@@ -36,7 +38,7 @@ export function AppShell({ children, area }: { children: ReactNode; area: 'admin
   return (
     <div className="min-h-screen">
       <Sidebar sections={sections} panelLabel={panelLabel} settingsTo={settingsTo} area={area} />
-      <div className="lg:pl-64">
+      <div className={`transition-[padding] duration-300 ${sidebarCollapsed ? 'lg:pl-[5.25rem]' : 'lg:pl-72'}`}>
         <Topbar />
         <AnnouncementBanner />
         <main className="mx-auto w-full max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>

@@ -162,7 +162,7 @@ export function ModpackDetailsModal(props: Props) {
           )}
           <Alert tone="info">O servidor precisa estar desligado. Antes de alterar os arquivos, o Agent cria um backup, valida o pacote e instala em uma área de staging com rollback automático.</Alert>
 
-          {project.body && <div><h3 className="mb-2 text-sm font-semibold">Sobre</h3><p className="max-h-48 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-text-muted">{project.body}</p></div>}
+          {project.body && <div><h3 className="mb-2 text-sm font-semibold">Sobre</h3><p className="whitespace-pre-wrap text-sm leading-6 text-text-muted">{project.body}</p></div>}
         </div>
       )}
     </Modal>

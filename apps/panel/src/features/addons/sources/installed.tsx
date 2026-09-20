@@ -15,7 +15,16 @@ export function InstalledPanel({ serverId, ctx }: AddonSourcePanelProps) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ name: string; isDir: boolean } | null>(null);
 
-  const { data: entries, isLoading, isError } = useQuery({ queryKey: ['files', serverId, dir], queryFn: () => listFiles(serverId, dir) });
+  const { data: entries, isLoading, error } = useQuery({ queryKey: ['files', serverId, dir], queryFn: () => listFiles(serverId, dir) });
+
+  // A pasta de addons só passa a existir depois que o software roda pela
+  // primeira vez (ou que alguém envia o primeiro arquivo), e o agente
+  // responde 404 para um diretório inexistente (routes_files.go:
+  // os.IsNotExist -> NOT_FOUND). Isso significa "não há nada instalado",
+  // não uma falha — mostrar o alerta vermelho aqui assustava à toa em um
+  // servidor recém-criado. Qualquer OUTRO erro (agente fora do ar, falta
+  // de permissão) continua sendo tratado como erro de verdade.
+  const dirDoesNotExist = error instanceof ApiError && error.status === 404;
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: ['files', serverId, dir] });
@@ -44,7 +53,7 @@ export function InstalledPanel({ serverId, ctx }: AddonSourcePanelProps) {
   }
 
   if (isLoading) return <LoadingRow />;
-  if (isError) return <Alert>Não foi possível carregar {ctx.software.addonDirDisplay}.</Alert>;
+  if (error && !dirDoesNotExist) return <Alert>Não foi possível carregar {ctx.software.addonDirDisplay}.</Alert>;
 
   const noun = ctx.software.addonNoun === 'mod' ? 'mod' : 'plugin';
 
@@ -55,7 +64,7 @@ export function InstalledPanel({ serverId, ctx }: AddonSourcePanelProps) {
       {!entries || entries.length === 0 ? (
         <EmptyState
           icon={Package}
-          title={`Nenhum ${noun} instalado ainda`}
+          title={`Não há ${noun}s instalados`}
           description={`Envie um arquivo na aba "Enviar arquivo" para instalar seu primeiro ${noun}.`}
         />
       ) : (

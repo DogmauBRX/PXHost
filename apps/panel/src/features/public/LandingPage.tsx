@@ -1,11 +1,10 @@
-import { Archive, CalendarClock, Database, FolderOpen, ServerCog, ShieldCheck, TerminalSquare, Ticket, Zap } from 'lucide-react';
+import { Archive, CalendarClock, Cpu, Database, FolderOpen, Gauge, HardDrive, Radio, ServerCog, ShieldCheck, TerminalSquare, Ticket, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Seo } from './Seo';
 import { NetworkAnimation } from './NetworkAnimation';
 import { ServerProvisionAnimation } from './ServerProvisionAnimation';
 import { HeroCircuitBackground } from './HeroCircuitBackground';
 import { BrazilLatencyMap } from './BrazilLatencyMap';
-import { CircuitDivider } from './CircuitDivider';
 import { NodeStatusSection } from './NodeStatusSection';
 
 // Only capabilities the platform actually has today (commercial plan
@@ -25,14 +24,6 @@ const BENEFITS: { icon: LucideIcon; title: string; description: string }[] = [
   { icon: CalendarClock, title: 'Agendamentos automáticos', description: 'Programe reinícios, backups e outras tarefas para rodar sozinhas.' },
 ];
 
-/**
- * Deliberately no CTA anywhere on this page (found live: an earlier
- * version had "Ver planos"/"Conhecer a plataforma" buttons) — this is
- * purely informational for now: what the platform is, and its
- * performance/security/reliability posture. `/plans` and account
- * creation are still reachable via the header, just not pushed from
- * here.
- */
 export function LandingPage() {
   return (
     <>
@@ -42,104 +33,131 @@ export function LandingPage() {
         path="/"
       />
 
-      {/* `min-h-[calc(100vh-4rem)]` — the header above this (PublicShell.tsx)
-          is a fixed `h-16` (4rem), so this fills exactly the rest of the
-          first screen on load: the visitor sees only the hero message and
-          the network diagram at first, with the next section (and its
-          Brazil map) needing a scroll to reach — not peeking in half-cut
-          at the bottom of the viewport (found live). */}
-      <section className="network-hero relative flex min-h-[calc(100vh-4rem)] items-center overflow-hidden px-4 py-20 sm:px-6 sm:py-28 lg:px-8">
-        <HeroCircuitBackground className="network-hero__circuit pointer-events-none absolute inset-0 h-full w-full" />
-        <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-14 lg:grid-cols-[1fr_1.2fr] lg:gap-10">
-          <div className="hero-message-outline text-center lg:text-left">
-            <h1 className="font-display text-5xl leading-tight font-bold tracking-tight text-text sm:text-6xl lg:text-7xl">Hospedagem de servidores Minecraft</h1>
-            <p className="font-display mt-3 text-2xl font-semibold text-accent-strong">Sua infraestrutura. Sob seu controle.</p>
-            {/* [-webkit-text-stroke:0] overrides the `.hero-message-outline`
-                stroke this paragraph would otherwise inherit from the wrapper
-                div — asked to keep the outline on the headline/tagline but
-                drop it here, where the smaller text made the stroke read as
-                clutter rather than emphasis. */}
-            <p className="font-display mx-auto mt-5 max-w-xl text-base font-medium text-text-muted [-webkit-text-stroke:0] lg:mx-0">
-              Performance dedicada, segurança em camadas e confiabilidade — infraestrutura real, sem overselling, para a sua comunidade.
-            </p>
-          </div>
-          <NetworkAnimation />
-        </div>
-      </section>
+      <div className="landing-command overflow-hidden">
+        <section className="network-hero relative flex min-h-[calc(100vh-4.75rem)] items-center overflow-hidden px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+          <HeroCircuitBackground className="network-hero__circuit pointer-events-none absolute inset-0 h-full w-full" />
+          <div className="landing-hero__orb landing-hero__orb--one" aria-hidden="true" />
+          <div className="landing-hero__orb landing-hero__orb--two" aria-hidden="true" />
 
-      <section className="relative border-t border-border bg-surface-2/40 px-4 py-20 sm:px-6 lg:px-8">
-        {/* No `max-w-*` cap on this grid (every other section on the page
-            has one) — the divider is centered on the full section width,
-            so each column needs to BE half of that same full width for
-            its own centered content to land in the middle of its half
-            rather than pulled toward the narrower center of a capped,
-            mx-auto'd container (found live: with a cap, both blocks sat
-            noticeably closer to the divider than to the section's outer
-            edges). */}
-        <CircuitDivider className="pointer-events-none absolute inset-y-0 left-1/2 hidden h-full w-10 -translate-x-1/2 lg:block" />
-        <div className="grid grid-cols-1 items-center gap-16 lg:grid-cols-2 lg:gap-32">
-          <div className="flex flex-col items-center text-center">
-            <div className="mb-8 max-w-md">
-              <h2 className="text-2xl font-bold text-text sm:text-3xl">Veja seu servidor entrar no ar</h2>
-              <p className="mt-3 text-lg text-text-muted">
-                Recursos reservados, aplicados de verdade — do provisionamento ao status <span className="text-ok">online</span>.
-              </p>
-            </div>
-            <ServerProvisionAnimation />
-          </div>
-
-          <div className="flex flex-col items-center text-center">
-            <BrazilLatencyMap />
-            <div className="mt-6 max-w-md">
-              <h3 className="text-2xl font-bold text-text sm:text-3xl">Cobertura em todo o território nacional</h3>
-              <p className="mt-3 text-lg text-text-muted">
-                Nodes distribuídos pelo Brasil garantem <span className="text-accent-strong">baixa latência</span> para os jogadores da sua
-                comunidade, não importa de onde eles se conectam.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:px-8">
-        <div className="mx-auto mb-12 max-w-xl text-center">
-          <h2 className="text-2xl font-bold text-text sm:text-3xl">Velocidade, segurança e confiabilidade</h2>
-          <p className="mt-3 text-text-muted">Tudo que sustenta o seu servidor Minecraft por trás dos panos.</p>
-        </div>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {BENEFITS.map(({ icon: Icon, title, description }) => (
-            <div key={title} className="rounded-card border border-border bg-surface p-6">
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-xl bg-accent-tint">
-                <Icon className="h-8 w-8 text-accent-strong" aria-hidden="true" />
+          <div className="relative mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-14">
+            <div className="text-center lg:text-left">
+              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-accent/25 bg-accent/10 px-3 py-1.5 font-mono text-[0.68rem] font-semibold tracking-[0.16em] text-accent uppercase">
+                <Radio className="h-3.5 w-3.5" aria-hidden="true" />
+                Infraestrutura GX online
               </div>
-              <h3 className="text-base font-semibold text-text">{title}</h3>
-              <p className="mt-1.5 text-sm text-text-muted">{description}</p>
+              <h1 className="font-display text-5xl leading-[0.98] font-bold tracking-[-0.045em] text-text sm:text-6xl lg:text-[5rem]">
+                Seu mundo online.
+                <span className="landing-accent-text mt-2 block">Sem gargalos.</span>
+              </h1>
+              <p className="mt-6 text-xl font-semibold text-text sm:text-2xl">Hospedagem Minecraft sob seu controle.</p>
+              <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-text-muted lg:mx-0">
+                Recursos reservados, painel completo e infraestrutura distribuída para sua comunidade jogar com estabilidade — sem overselling.
+              </p>
+
+              <div className="mt-8 grid grid-cols-3 gap-2 sm:max-w-lg sm:gap-3 lg:mx-0">
+                {[
+                  { icon: Cpu, value: 'CPU', label: 'reservada' },
+                  { icon: HardDrive, value: 'NVMe', label: 'rápido' },
+                  { icon: ShieldCheck, value: '24/7', label: 'isolamento' },
+                ].map(({ icon: Icon, value, label }) => (
+                  <div key={value} className="landing-stat-chip rounded-xl border border-white/10 bg-white/[0.035] px-3 py-3 text-left backdrop-blur-sm">
+                    <Icon className="mb-2 h-4 w-4 text-accent" aria-hidden="true" />
+                    <strong className="block font-mono text-sm text-text">{value}</strong>
+                    <span className="text-[0.68rem] text-text-faint">{label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
-      </section>
 
-      {/* "Quadro indicativo" explaining the vagas model (commercial plan
-          §7/§19: availability is always backend-computed, never invented
-          by the frontend) — purely informational, same as everything
-          else on this page now. */}
-      <section className="mx-auto max-w-6xl px-4 pb-20 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-4 rounded-card border border-accent/30 bg-accent-tint p-6 sm:flex-row sm:items-start sm:gap-5 sm:p-8">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface text-accent-strong shadow-sm">
-            <Ticket className="h-5 w-5" aria-hidden="true" />
+            <div className="landing-network-stage relative">
+              <div className="absolute top-[12%] left-[7%] z-10 rounded-full border border-white/10 bg-[#111318]/85 px-3 py-1 font-mono text-[0.6rem] tracking-wider text-text-faint uppercase backdrop-blur">
+                GX network / live flow
+              </div>
+              <NetworkAnimation />
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-semibold text-text">Nossa hospedagem funciona por vagas</h2>
-            <p className="mt-2 text-sm text-text-muted">
-              Cada plano tem um número de vagas de acordo com a capacidade real dos nossos servidores — nunca vendemos além do que temos hardware
-              para entregar. Quando as vagas de um plano se esgotam, ele fica indisponível até que uma vaga seja liberada. É assim que garantimos
-              que todo servidor ativo recebe de verdade a RAM, o CPU e o disco que o plano promete, sem superlotação.
-            </p>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <NodeStatusSection />
+        <section className="landing-section relative border-y border-white/8 px-4 py-24 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-7xl">
+            <div className="mb-12 grid gap-5 lg:grid-cols-[0.65fr_1fr] lg:items-end">
+              <div>
+                <span className="font-mono text-xs font-semibold tracking-[0.18em] text-accent uppercase">Operação inteligente</span>
+                <h2 className="mt-3 text-3xl font-bold tracking-tight text-text sm:text-4xl">Da implantação à conexão.</h2>
+              </div>
+              <p className="max-w-2xl text-base leading-7 text-text-muted lg:justify-self-end">
+                Uma experiência feita para reduzir atrito: recursos aplicados de verdade, acompanhamento visual e cobertura nacional.
+              </p>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-2">
+              <article className="landing-feature-panel group relative overflow-hidden rounded-[1.75rem] border border-white/10 p-6 sm:p-8">
+                <div className="mb-8 flex items-start justify-between gap-4">
+                  <div>
+                    <span className="font-mono text-[0.65rem] tracking-[0.16em] text-ok uppercase">Provisionamento</span>
+                    <h3 className="mt-2 text-2xl font-bold text-text">Do zero ao online</h3>
+                    <p className="mt-2 max-w-md text-sm leading-6 text-text-muted">CPU, memória e armazenamento preparados enquanto você acompanha cada etapa.</p>
+                  </div>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-ok/20 bg-ok/10 text-ok"><Gauge className="h-5 w-5" /></span>
+                </div>
+                <ServerProvisionAnimation />
+              </article>
+
+              <article className="landing-feature-panel group relative overflow-hidden rounded-[1.75rem] border border-white/10 p-6 sm:p-8">
+                <div className="grid items-center gap-2 sm:grid-cols-[0.9fr_1.1fr]">
+                  <div>
+                    <span className="font-mono text-[0.65rem] tracking-[0.16em] text-accent uppercase">Rede nacional</span>
+                    <h3 className="mt-2 text-2xl font-bold text-text">Perto de quem joga</h3>
+                    <p className="mt-3 text-sm leading-6 text-text-muted">Nodes distribuídos pelo Brasil ajudam a manter baixa latência para jogadores de diferentes regiões.</p>
+                  </div>
+                  <BrazilLatencyMap />
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section className="relative px-4 py-24 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-7xl">
+            <div className="mx-auto mb-14 max-w-2xl text-center">
+              <span className="font-mono text-xs font-semibold tracking-[0.18em] text-accent uppercase">Painel de comando</span>
+              <h2 className="mt-3 text-3xl font-bold tracking-tight text-text sm:text-4xl">Tudo o que mantém seu servidor em movimento.</h2>
+              <p className="mt-4 text-text-muted">Controle técnico com uma interface simples, do console aos backups.</p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {BENEFITS.map(({ icon: Icon, title, description }, index) => (
+                <article key={title} className="landing-benefit-card group relative overflow-hidden rounded-2xl border border-white/10 p-5">
+                  <span className="absolute top-4 right-4 font-mono text-[0.6rem] text-white/20">0{index + 1}</span>
+                  <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl border border-accent/20 bg-accent/10 text-accent transition-transform duration-300 group-hover:-translate-y-1 group-hover:rotate-3">
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <h3 className="text-base font-semibold text-text">{title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-text-muted">{description}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-7xl px-4 pb-24 sm:px-6 lg:px-8">
+          <div className="landing-capacity-panel relative overflow-hidden rounded-[1.75rem] border border-accent/25 p-6 sm:p-8">
+            <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-accent/25 bg-accent/10 text-accent shadow-[0_0_25px_-10px_var(--color-accent)]">
+                <Ticket className="h-6 w-6" aria-hidden="true" />
+              </div>
+              <div className="flex-1">
+                <span className="font-mono text-[0.65rem] tracking-[0.16em] text-accent uppercase">Capacidade real</span>
+                <h2 className="mt-1 text-xl font-semibold text-text">Hospedagem por vagas, sem superlotação</h2>
+                <p className="mt-2 max-w-4xl text-sm leading-6 text-text-muted">
+                  Cada plano respeita a capacidade física disponível. Quando as vagas terminam, novas ativações pausam até existir recurso livre — assim RAM, CPU e disco continuam entregando o que foi contratado.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <NodeStatusSection />
+      </div>
     </>
   );
 }

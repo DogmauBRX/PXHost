@@ -66,7 +66,7 @@ export function Modal({ open, onClose, title, description, size = 'md', footer, 
       // stylesheet's dialog:modal centering — found live: without it the
       // panel scrolled away with the page instead of staying put in the
       // viewport, once the redesign made the document itself the scroller.
-      className={`fixed inset-0 m-auto max-h-[85vh] w-[calc(100vw-2rem)] rounded-card border border-border bg-surface p-0 text-text shadow-lg backdrop:bg-black/40 ${sizeClasses[size]}`}
+      className={`fixed inset-0 m-auto max-h-[85vh] w-[calc(100vw-2rem)] overflow-hidden rounded-card border border-border bg-surface p-0 text-text shadow-lg backdrop:bg-black/40 ${sizeClasses[size]}`}
     >
       {/* flex column with a min-h-0 scrolling body — not fixed vh splits
           between header/body/footer, which would overflow the dialog's own

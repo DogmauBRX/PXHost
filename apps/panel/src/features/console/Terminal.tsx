@@ -4,23 +4,12 @@ import type { ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { readToken } from '@/shared/theme/tokens';
-import { THEME_CHANGE_EVENT } from '@/shared/theme/theme.store';
 
 interface TerminalProps {
   onReady: (term: XTerm) => void;
   disabled?: boolean;
 }
 
-/**
- * The terminal stays dark in both themes.
- *
- * That is deliberate, not an oversight: game-server output is ANSI-coloured
- * for a dark background, and the default bright ANSI ramp (yellow, cyan) is
- * close to unreadable on white. Every comparable product — Pterodactyl,
- * Cloudways — keeps a dark console inside a light panel for the same reason.
- * Only the accent (cursor/selection) follows the theme, so the terminal still
- * reads as part of the product.
- */
 function buildTheme(): ITheme {
   return {
     background: '#12161b',
@@ -75,16 +64,7 @@ export function Terminal({ onReady, disabled }: TerminalProps) {
     const resizeObserver = new ResizeObserver(() => fit.fit());
     resizeObserver.observe(containerRef.current);
 
-    // xterm can swap its palette in place, so this needs no teardown — and
-    // listens to a DOM event rather than React state so the streaming path
-    // never re-renders (see THEME_CHANGE_EVENT's own doc comment).
-    const onThemeChange = () => {
-      if (termRef.current) termRef.current.options.theme = buildTheme();
-    };
-    window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
-
     return () => {
-      window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
       resizeObserver.disconnect();
       term.dispose();
       termRef.current = null;
