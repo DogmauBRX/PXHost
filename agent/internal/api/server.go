@@ -16,12 +16,12 @@ import (
 
 // Server is the agent's HTTP + WebSocket control surface.
 type Server struct {
-	manager   *srv.Manager
-	dc        *dockerx.Client
-	verifier  *auth.TokenVerifier
+	manager    *srv.Manager
+	dc         *dockerx.Client
+	verifier   *auth.TokenVerifier
 	node       spec.Node // node-local config, needed to register/create servers dynamically (M5)
 	nodeUUID   string
-	tokenStore *TokenStore // hot-swappable — see tokenstore.go; rotation (M13) updates this, not a plain field
+	tokenStore *TokenStore   // hot-swappable — see tokenstore.go; rotation (M13) updates this, not a plain field
 	panel      *panel.Client // nil if node.json has no panel_url (standalone mode); install-completion callbacks are skipped, not fatal
 	// bgCtx is the process-lifetime context (cancelled on SIGINT/SIGTERM,
 	// never per-request) that async work — specifically Install() and its
@@ -68,7 +68,7 @@ type Config struct {
 	Node             spec.Node
 	NodeUUID         string
 	TokenStore       *TokenStore // shared secret for REST calls, both directions — see tokenstore.go
-	PanelURL         string // empty = standalone mode, no install-completion callbacks
+	PanelURL         string      // empty = standalone mode, no install-completion callbacks
 	BgCtx            context.Context
 	WSOriginPatterns []string
 	Logger           *slog.Logger
@@ -137,7 +137,6 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("PATCH /api/servers/{uuid}/limits", s.requireNodeToken(http.HandlerFunc(s.handleUpdateLimits)))
 	mux.Handle("PATCH /api/servers/{uuid}/suspend", s.requireNodeToken(http.HandlerFunc(s.handleSuspend)))
 	mux.Handle("PATCH /api/servers/{uuid}/variables", s.requireNodeToken(http.HandlerFunc(s.handleUpdateVariables)))
-	mux.Handle("POST /api/servers/{uuid}/reinstall", s.requireNodeToken(http.HandlerFunc(s.handleReinstallServer)))
 	mux.Handle("POST /api/servers/{uuid}/modpacks/install", s.requireNodeToken(http.HandlerFunc(s.handleModpackInstall)))
 
 	// The WS endpoint is NOT gated by requireNodeToken: per architecture

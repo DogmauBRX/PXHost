@@ -435,6 +435,19 @@ func (s *Server) recreateContainerLocked(ctx context.Context, dc dockerFull) err
 		}
 		s.ContainerID = ""
 	}
+	// Also clear by NAME, which is deterministic ("gxhost-" + uuid). An
+	// earlier attempt that died between creating the container and
+	// recording its id leaves one behind that this Server no longer has a
+	// handle for — Docker then refuses the create below with "name already
+	// in use", which turns a retryable failure into a permanent one. Found
+	// live: a reinstall dispatch whose context was cancelled mid-flight
+	// left exactly that, and every retry afterwards failed the same way.
+	// Same defence, and the same reasoning, as Create's.
+	//
+	// It sits in the shared helper rather than in Reinstall alone because
+	// UpdateVariables reaches this code by the same route and can die at
+	// the same point.
+	_ = dc.RemoveContainer(ctx, s.ContainerName, true)
 
 	cfg, hostCfg, netCfg, err := spec.BuildContainerSpec(s.spec, s.node)
 	if err != nil {
@@ -443,61 +456,6 @@ func (s *Server) recreateContainerLocked(ctx context.Context, dc dockerFull) err
 	id, err := dc.CreateContainer(ctx, s.ContainerName, cfg, hostCfg, netCfg)
 	if err != nil {
 		return fmt.Errorf("srv: recreating container: %w", err)
-	}
-	s.ContainerID = id
-	return nil
-}
-
-// Reinstall swaps the software a registered server runs — a different
-// template, or a different Minecraft version of the same one — by
-// rebuilding the container around a new image/startup command/environment
-// and leaving the caller to re-run the install script afterwards.
-//
-// This is UpdateVariables' bigger sibling and shares its shape for the
-// same reasons: Docker cannot change a container's image or entrypoint in
-// place, so the container is removed and recreated, while the data
-// directory, this Server's identity in the manager, its uid, limits,
-// allocations and console history all survive untouched. The caller
-// (routes' handleReinstallServer) pulls the new image BEFORE calling this
-// and kicks off Install afterwards.
-//
-// Requires the server to be stopped: recreating a container out from
-// under a running game is the same problem UpdateVariables refuses, for
-// the same reason.
-func (s *Server) Reinstall(ctx context.Context, dc dockerFull, image, startupTmpl, stopSignal string, newEnv map[string]string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.State != StateOffline {
-		return fmt.Errorf("srv: server %s must be stopped before it can be reinstalled", s.UUID)
-	}
-
-	if s.ContainerID != "" {
-		if err := dc.RemoveContainer(ctx, s.ContainerID, true); err != nil {
-			return fmt.Errorf("srv: removing old container before reinstall: %w", err)
-		}
-		s.ContainerID = ""
-	}
-	// Also clear by NAME, which is deterministic ("gxhost-" + uuid). An
-	// earlier attempt that died between creating the container and
-	// recording its id leaves one behind that this Server no longer has a
-	// handle for — Docker would then refuse the create below with "name
-	// already in use", making the failure permanent instead of
-	// retryable. Same defence, and the same reasoning, as Create's.
-	_ = dc.RemoveContainer(ctx, s.ContainerName, true)
-
-	s.spec.Image = image
-	s.spec.StartupTmpl = startupTmpl
-	s.spec.StopSignal = stopSignal
-	s.spec.Env = newEnv
-
-	cfg, hostCfg, netCfg, err := spec.BuildContainerSpec(s.spec, s.node)
-	if err != nil {
-		return fmt.Errorf("srv: building spec for %s: %w", s.UUID, err)
-	}
-	id, err := dc.CreateContainer(ctx, s.ContainerName, cfg, hostCfg, netCfg)
-	if err != nil {
-		return fmt.Errorf("srv: recreating container for reinstall: %w", err)
 	}
 	s.ContainerID = id
 	return nil
