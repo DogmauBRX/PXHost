@@ -42,7 +42,7 @@ export function AssistantPage() {
         <p className="mt-1 text-sm text-text-muted">Tire dúvidas sobre o dia a dia do seu servidor.</p>
       </PageHeader>
 
-      <div className="flex h-[calc(100vh-260px)] min-h-[420px] flex-col rounded-card border border-border bg-surface p-4">
+      <div className="assistant-command-console flex h-[calc(100vh-260px)] min-h-[420px] flex-col rounded-card border border-border bg-surface p-4">
         {/* Keyed by server: switching servers should start a fresh conversation, not carry the old one's transcript into a different context. */}
         <AssistantChat key={activeServerId} serverId={activeServerId} />
       </div>

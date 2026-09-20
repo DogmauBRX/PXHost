@@ -10,9 +10,11 @@ interface PageHeaderProps {
 /** Title + one-line explanation + right-aligned actions. Every page opens with one. */
 export function PageHeader({ title, subtitle, actions, children }: PageHeaderProps) {
   return (
-    <div className="mb-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="page-header mb-6">
+      <div className="page-header__beam" aria-hidden="true" />
+      <div className="relative flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
+          <span className="page-header__eyebrow"><span aria-hidden="true" />PAINEL GX · CONTROLE</span>
           <h1 className="text-xl font-semibold tracking-tight text-text">{title}</h1>
           {subtitle && <p className="mt-1 text-sm text-text-muted">{subtitle}</p>}
         </div>

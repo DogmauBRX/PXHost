@@ -311,7 +311,7 @@ export function SettingsPage() {
     <>
       <PageHeader title="Configurações" subtitle="Preferências e dados da sua conta." />
 
-      <div className="grid max-w-3xl gap-6">
+      <div className="grid max-w-5xl gap-6">
         <ProfileCard />
         <BillingCard />
         <ChangePasswordCard />

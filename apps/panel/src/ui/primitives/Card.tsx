@@ -7,7 +7,7 @@ import type { HTMLAttributes, ReactNode } from 'react';
  * container — so `CardBody` owns it.
  */
 export function Card({ className = '', ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={`rounded-card border border-border bg-surface shadow-xs ${className}`} {...props} />;
+  return <div className={`panel-card rounded-card border border-border bg-surface shadow-xs ${className}`} {...props} />;
 }
 
 export function CardHeader({ className = '', ...props }: HTMLAttributes<HTMLDivElement>) {

@@ -22,7 +22,7 @@ interface StatCardProps {
 
 export function StatCard({ label, value, icon: Icon, tone = 'accent', hint, loading }: StatCardProps) {
   return (
-    <div className="rounded-card border border-border bg-surface p-5 shadow-xs">
+    <div className="stat-command-card rounded-card border border-border bg-surface p-5 shadow-xs">
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-medium text-text-muted">{label}</p>
         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconTone[tone]}`}>

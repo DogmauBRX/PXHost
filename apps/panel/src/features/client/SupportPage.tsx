@@ -8,7 +8,7 @@ export function SupportPage() {
       <PageHeader title="Suporte" subtitle="Fale com a equipe pelo canal oficial da GXhost." />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
-        <section className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+        <section className="support-command-card rounded-2xl border border-border bg-surface p-6 shadow-sm">
           <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-accent/20 bg-accent/10 text-accent">
             <LifeBuoy className="h-5 w-5" aria-hidden="true" />
           </span>
@@ -22,7 +22,7 @@ export function SupportPage() {
           </a>
         </section>
 
-        <aside className="rounded-2xl border border-border bg-surface-2 p-6">
+        <aside className="support-security-card rounded-2xl border border-border bg-surface-2 p-6">
           <div className="flex items-center gap-2 text-sm font-semibold text-text"><ShieldCheck className="h-4 w-4 text-ok" />Sua segurança primeiro</div>
           <p className="mt-3 text-sm leading-6 text-text-muted">Nunca envie sua senha, códigos de acesso ou dados do cartão. A equipe poderá solicitar apenas informações para localizar sua conta e diagnosticar o serviço.</p>
           <Link to="/central" hash="suporte" className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:text-accent-strong">

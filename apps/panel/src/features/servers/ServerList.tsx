@@ -75,11 +75,11 @@ export function ServerList({ limit }: { limit?: number } = {}) {
             key={s.id}
             to="/client/servers/$serverId"
             params={{ serverId: s.id }}
-            className="group flex flex-col gap-4 rounded-card border border-border bg-surface p-5 shadow-xs transition hover:border-accent/40 hover:shadow-sm"
+            className="server-command-card group flex flex-col gap-4 rounded-card border border-border bg-surface p-5 shadow-xs transition hover:border-accent/40 hover:shadow-sm"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2">
-                <span className={`h-2 w-2 shrink-0 rounded-full ${POWER_DOT[s.powerState] ?? 'bg-text-faint'}`} aria-hidden="true" />
+                <span className={`server-command-card__status h-2 w-2 shrink-0 rounded-full ${POWER_DOT[s.powerState] ?? 'bg-text-faint'}`} aria-hidden="true" />
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-text transition-colors group-hover:text-accent-strong">{s.name}</p>
                   <p className="mt-0.5 font-mono text-xs text-text-faint">{s.shortId}</p>
@@ -104,7 +104,7 @@ export function ServerList({ limit }: { limit?: number } = {}) {
                     </span>
                   )}
                   {displayAddress && (
-                    <span className="inline-flex items-center gap-1">
+                    <span className="server-command-card__address inline-flex items-center gap-1">
                       <span className="font-mono">{displayAddress}</span>
                       <button
                         type="button"
@@ -125,7 +125,8 @@ export function ServerList({ limit }: { limit?: number } = {}) {
               )
             )}
 
-            <div className="flex items-center justify-end border-t border-border pt-3 text-xs text-text-muted">
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-3 text-xs text-text-muted">
+              <span className="font-mono text-[0.62rem] font-bold tracking-[0.14em] text-text-faint uppercase">Recursos reservados</span>
               <span className="inline-flex items-center gap-1.5 font-mono tabular-nums">
                 <MemoryStick className="h-3.5 w-3.5" aria-hidden="true" />
                 {s.memoryMb} MB
