@@ -167,12 +167,21 @@ export function Sidebar({ sections, panelLabel, settingsTo, area }: SidebarProps
         </nav>
 
         <div className="shrink-0 border-t border-border bg-gradient-to-b from-surface-2/50 to-surface p-3">
-          <div className={`flex items-center gap-3 rounded-2xl border border-border bg-surface/90 p-3 shadow-xs ${sidebarCollapsed ? 'lg:justify-center lg:border-transparent lg:bg-transparent lg:p-1 lg:shadow-none' : ''}`}>
+          <div className={`relative flex items-center gap-3 rounded-2xl border border-border bg-surface/90 p-3 shadow-xs ${sidebarCollapsed ? 'lg:justify-center lg:border-transparent lg:bg-transparent lg:p-1 lg:shadow-none' : ''}`}>
             <span className="rounded-xl ring-2 ring-accent/10"><Avatar name={user?.username} email={user?.email} size="md" /></span>
             <div className={`min-w-0 flex-1 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
               <p className="truncate text-sm font-medium text-text">{user?.username ?? '—'}</p>
               <p className="truncate text-xs text-text-muted">{user?.email ?? ''}</p>
             </div>
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              aria-label="Sair da conta"
+              title="Sair da conta"
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/80 bg-surface-2/55 text-text-muted transition-all hover:border-fail/30 hover:bg-fail-tint hover:text-fail ${sidebarCollapsed ? 'lg:absolute lg:-bottom-1 lg:-right-1 lg:h-7 lg:w-7 lg:bg-surface' : ''}`}
+            >
+              <LogOut className="h-4 w-4" aria-hidden="true" />
+            </button>
           </div>
           <div className={`mt-2 flex gap-1 ${sidebarCollapsed ? 'lg:flex-col lg:items-center' : area === 'client' ? 'justify-end' : ''}`}>
             {area === 'admin' && (
@@ -186,15 +195,6 @@ export function Sidebar({ sections, panelLabel, settingsTo, area }: SidebarProps
                 <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Configurações</span>
               </Link>
             )}
-            <button
-              type="button"
-              onClick={() => void handleLogout()}
-              aria-label="Sair"
-              title="Sair"
-              className="rounded-xl px-3 py-2 text-text-muted transition-colors hover:bg-fail-tint hover:text-fail"
-            >
-              <LogOut className="h-4 w-4" aria-hidden="true" />
-            </button>
           </div>
         </div>
       </aside>
