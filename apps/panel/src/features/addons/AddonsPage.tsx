@@ -1,18 +1,20 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { PackageOpen } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { PackageOpen, Trash2 } from 'lucide-react';
 import { getServer } from '@/features/servers/servers.api';
-import { Alert, LoadingRow, PageHeader } from '@/ui/primitives';
+import { Alert, Button, ConfirmDialog, LoadingRow, PageHeader } from '@/ui/primitives';
 import { ADDON_SOURCES } from './sources';
 import type { AddonContext } from './addons.types';
 import { ModpacksPanel } from './ModpacksPanel';
-import { getLatestModpackInstallation, getModpackProject, type ModpackSource } from './modpacks.api';
+import { getLatestModpackInstallation, getModpackProject, uninstallLatestModpack, type ModpackSource } from './modpacks.api';
 
 export function AddonsPage({ serverId }: { serverId: string }) {
+  const queryClient = useQueryClient();
   const { data: server, isLoading, isError } = useQuery({ queryKey: ['server', serverId], queryFn: () => getServer(serverId) });
   const installation = useQuery({
     queryKey: ['modpack-installation', serverId],
     queryFn: () => getLatestModpackInstallation(serverId),
+    refetchInterval: (query) => isInstallationActive(query.state.data?.status) ? 2_000 : false,
   });
   const installedModpack = installation.data?.status === 'completed' && installation.data.source === 'modrinth'
     ? installation.data
@@ -25,6 +27,24 @@ export function AddonsPage({ serverId }: { serverId: string }) {
   });
   const [sourceId, setSourceId] = useState(ADDON_SOURCES[0].id);
   const [contentType, setContentType] = useState<'mods' | 'modpacks'>('mods');
+  const [confirmUninstall, setConfirmUninstall] = useState(false);
+  const uninstall = useMutation({
+    mutationFn: () => uninstallLatestModpack(serverId),
+    onSuccess: async () => {
+      setConfirmUninstall(false);
+      queryClient.setQueryData(['modpack-installation', serverId], null);
+      await queryClient.invalidateQueries({ queryKey: ['files', serverId] });
+    },
+  });
+
+  // The Agent installs a modpack asynchronously. Refresh the list as soon
+  // as the operation completes, including when this page stayed open while
+  // the server was being prepared.
+  useEffect(() => {
+    if (installation.data?.status === 'completed' && server?.software.addonDir) {
+      void queryClient.invalidateQueries({ queryKey: ['files', serverId, server.software.addonDir] });
+    }
+  }, [installation.data?.status, queryClient, server?.software.addonDir, serverId]);
 
   if (isLoading) return <LoadingRow />;
   if (isError || !server) return <Alert>Não foi possível carregar este servidor.</Alert>;
@@ -47,6 +67,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
   const active = available.find((s) => s.id === sourceId) ?? available[0];
   const isModsServer = software.addonNoun === 'mod';
   const canViewModpacks = server.role !== 'subuser' || permissions.includes('addons.catalog.read');
+  const canUninstallModpack = server.role !== 'subuser' || permissions.includes('addons.install');
 
   return (
     <>
@@ -84,14 +105,20 @@ export function AddonsPage({ serverId }: { serverId: string }) {
                 <PackageOpen className="h-7 w-7" aria-hidden="true" />
               </div>
             )}
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold uppercase tracking-wide text-accent-strong">Modpack instalado</p>
               <h2 className="truncate text-lg font-semibold text-text">{installedModpack.projectName}</h2>
               <p className="mt-0.5 text-sm text-text-muted">
                 {installedModpack.versionName} · Minecraft {installedModpack.minecraftVersion} · {installedModpack.loader === 'neoforge' ? 'NeoForge' : installedModpack.loader.charAt(0).toUpperCase() + installedModpack.loader.slice(1)}
               </p>
             </div>
+            {canUninstallModpack && (
+              <Button variant="danger" size="sm" className="shrink-0" onClick={() => setConfirmUninstall(true)}>
+                <Trash2 className="h-4 w-4" /> Remover modpack
+              </Button>
+            )}
           </div>
+          {uninstall.isError && <Alert className="mx-4 mb-4" title="Não foi possível remover o modpack">{uninstall.error.message}</Alert>}
         </section>
       )}
 
@@ -115,6 +142,21 @@ export function AddonsPage({ serverId }: { serverId: string }) {
       )}
 
       {contentType === 'modpacks' && isModsServer && canViewModpacks ? <ModpacksPanel serverId={serverId} ctx={ctx} /> : active && <active.Panel serverId={serverId} ctx={ctx} />}
+
+      <ConfirmDialog
+        open={confirmUninstall}
+        title="Remover modpack"
+        message={`Remover ${installedModpack?.projectName ?? 'este modpack'}? O servidor precisa estar desligado. Os arquivos voltarão para o backup criado antes da instalação; alterações feitas depois dela também serão revertidas.`}
+        confirmLabel={uninstall.isPending ? 'Removendo…' : 'Remover e restaurar backup'}
+        tone="danger"
+        loading={uninstall.isPending}
+        onConfirm={() => uninstall.mutate()}
+        onCancel={() => setConfirmUninstall(false)}
+      />
     </>
   );
+}
+
+function isInstallationActive(status?: string): boolean {
+  return Boolean(status && ['pending', 'downloading', 'installing', 'configuring', 'rolling_back'].includes(status));
 }

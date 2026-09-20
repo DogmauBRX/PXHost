@@ -125,6 +125,45 @@ export class ModpacksService {
     );
   }
 
+  /**
+   * A modpack installation always creates a backup before it replaces the
+   * server tree. Uninstalling restores that exact snapshot instead of trying
+   * to guess which files belong to a pack (overrides can replace configs,
+   * worlds, or arbitrary paths). This is intentionally only available while
+   * the server is offline, like a normal backup restore.
+   */
+  async uninstallLatest(actor: AccessActor, serverId: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    if (!can('addons.install')) throw new ForbiddenException('Missing permission: addons.install');
+
+    const installation = await this.prisma.withRLS(
+      { userId: actor.isAdmin ? null : actor.id, isAdmin: actor.isAdmin },
+      (tx) => tx.modpackInstallation.findFirst({ where: { serverId, status: 'completed' }, orderBy: { createdAt: 'desc' } }),
+    );
+    if (!installation) throw new ConflictException('Não há um modpack instalado para remover.');
+    if (!installation.backupId) throw new ConflictException('O backup de segurança desta instalação não está disponível para remoção segura.');
+
+    const runtime = await this.agent.getServerStatus(server.nodeId, server.id);
+    if (runtime.state !== 'offline') throw new ConflictException('Desligue o servidor antes de remover o modpack.');
+
+    await this.agent.restoreBackup(server.nodeId, server.id, installation.backupId);
+    await this.prisma.withRLS({ userId: actor.isAdmin ? null : actor.id, isAdmin: actor.isAdmin }, (tx) =>
+      tx.modpackInstallation.update({
+        where: { id: installation.id },
+        data: {
+          status: 'uninstalled',
+          progress: 100,
+          message: 'Modpack removido; backup anterior restaurado.',
+          completedAt: new Date(),
+        },
+      }),
+    );
+    await Promise.allSettled([
+      this.audit.record({ action: 'server.modpack.uninstall', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { operationId: installation.id, backupId: installation.backupId } }),
+      this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.modpack.uninstall', properties: { operationId: installation.id, projectName: installation.projectName, backupId: installation.backupId } }),
+    ]);
+  }
+
   async reportProgress(nodeId: string, serverId: string, dto: ModpackProgressDto) {
     const server = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
       tx.server.findFirst({ where: { id: serverId, nodeId }, select: { id: true } }),

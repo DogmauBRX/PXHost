@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Folder, Package } from 'lucide-react';
+import { Folder, Package, RefreshCw } from 'lucide-react';
 import { deleteFile, listFiles, mintDownloadLink } from '@/features/files/files.api';
 import { formatBytes, formatDateTimeShort as formatDate } from '@/shared/format/datetime';
 import { ApiError } from '@/shared/api/client';
@@ -15,7 +15,7 @@ export function InstalledPanel({ serverId, ctx }: AddonSourcePanelProps) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ name: string; isDir: boolean } | null>(null);
 
-  const { data: entries, isLoading, error } = useQuery({ queryKey: ['files', serverId, dir], queryFn: () => listFiles(serverId, dir) });
+  const { data: entries, isLoading, error, isFetching, refetch } = useQuery({ queryKey: ['files', serverId, dir], queryFn: () => listFiles(serverId, dir) });
 
   // A pasta de addons só passa a existir depois que o software roda pela
   // primeira vez (ou que alguém envia o primeiro arquivo), e o agente
@@ -68,50 +68,58 @@ export function InstalledPanel({ serverId, ctx }: AddonSourcePanelProps) {
           description={`Envie um arquivo na aba "Enviar arquivo" para instalar seu primeiro ${noun}.`}
         />
       ) : (
-        <TableWrap>
-          <Table>
-            <THead>
-              <TR>
-                <TH>Nome</TH>
-                <TH className="text-right">Tamanho</TH>
-                <TH>Modificado</TH>
-                <TH />
-              </TR>
-            </THead>
-            <TBody>
-              {entries.map((e) => (
-                <TR key={e.name}>
-                  <TD>
-                    <span className="inline-flex items-center gap-2">
-                      {e.isDir ? (
-                        <Folder className="h-4 w-4 text-text-faint" aria-hidden="true" />
-                      ) : (
-                        <Package className="h-4 w-4 text-text-faint" aria-hidden="true" />
-                      )}
-                      {e.name}
-                    </span>
-                  </TD>
-                  <TD className="text-right font-mono text-xs text-text-faint">{e.isDir ? '' : formatBytes(e.size)}</TD>
-                  <TD className="text-xs text-text-faint">{formatDate(e.modTime)}</TD>
-                  <TD>
-                    <div className="flex justify-end gap-1">
-                      {!e.isDir && (
-                        <Button variant="ghost" size="sm" onClick={() => void handleDownload(e.name)}>
-                          Baixar
-                        </Button>
-                      )}
-                      {canDelete && (
-                        <Button variant="ghost" size="sm" onClick={() => setDeleteTarget({ name: e.name, isDir: e.isDir })}>
-                          Remover
-                        </Button>
-                      )}
-                    </div>
-                  </TD>
+        <>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-text-muted">{entries.filter((entry) => !entry.isDir).length} {noun}{entries.filter((entry) => !entry.isDir).length === 1 ? '' : 's'} instalado{entries.filter((entry) => !entry.isDir).length === 1 ? '' : 's'}</p>
+            <Button variant="ghost" size="sm" disabled={isFetching} onClick={() => void refetch()}>
+              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} /> Atualizar
+            </Button>
+          </div>
+          <TableWrap>
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Nome</TH>
+                  <TH className="text-right">Tamanho</TH>
+                  <TH>Modificado</TH>
+                  <TH />
                 </TR>
-              ))}
-            </TBody>
-          </Table>
-        </TableWrap>
+              </THead>
+              <TBody>
+                {entries.map((e) => (
+                  <TR key={e.name}>
+                    <TD>
+                      <span className="inline-flex items-center gap-2">
+                        {e.isDir ? (
+                          <Folder className="h-4 w-4 text-text-faint" aria-hidden="true" />
+                        ) : (
+                          <Package className="h-4 w-4 text-text-faint" aria-hidden="true" />
+                        )}
+                        {e.name}
+                      </span>
+                    </TD>
+                    <TD className="text-right font-mono text-xs text-text-faint">{e.isDir ? '' : formatBytes(e.size)}</TD>
+                    <TD className="text-xs text-text-faint">{formatDate(e.modTime)}</TD>
+                    <TD>
+                      <div className="flex justify-end gap-1">
+                        {!e.isDir && (
+                          <Button variant="ghost" size="sm" onClick={() => void handleDownload(e.name)}>
+                            Baixar
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button variant="ghost" size="sm" onClick={() => setDeleteTarget({ name: e.name, isDir: e.isDir })}>
+                            Remover
+                          </Button>
+                        )}
+                      </div>
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </TableWrap>
+        </>
       )}
 
       <ConfirmDialog

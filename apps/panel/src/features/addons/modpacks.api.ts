@@ -61,7 +61,7 @@ export interface ModpackInstallation {
   versionName: string;
   minecraftVersion: string;
   loader: string;
-  status: 'pending' | 'downloading' | 'installing' | 'configuring' | 'rolling_back' | 'completed' | 'failed';
+  status: 'pending' | 'downloading' | 'installing' | 'configuring' | 'rolling_back' | 'completed' | 'failed' | 'uninstalled';
   progress: number;
   message: string | null;
   backupId: string | null;
@@ -113,4 +113,8 @@ export function installModpack(serverId: string, source: ModpackSource, projectI
 
 export function getLatestModpackInstallation(serverId: string) {
   return apiFetch<ModpackInstallation | null>(`/api/client/servers/${serverId}/modpacks/installations/latest`);
+}
+
+export function uninstallLatestModpack(serverId: string) {
+  return apiFetch<void>(`/api/client/servers/${serverId}/modpacks/installations/latest`, { method: 'DELETE' });
 }
