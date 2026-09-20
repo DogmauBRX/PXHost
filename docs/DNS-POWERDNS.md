@@ -370,39 +370,53 @@ subir, e aí cai o DNS de todos os servidores de jogo junto.
     pdns_control retrieve mc.gxhost.com.br
   ```
 
-## 9. Configuração no Registro.br
+## 9. Delegação: tudo na Cloudflare, nada no Registro.br
 
 `mc.gxhost.com.br` é um **subdomínio** de `gxhost.com.br` — não precisa
-ser registrado como domínio próprio, só delegado. No painel do
-Registro.br (ou onde `gxhost.com.br` estiver registrado):
+ser registrado como domínio próprio, só delegado. E como
+`gxhost.com.br` inteiro é servido pela Cloudflare (isso continua — §0),
+**a configuração toda acontece lá**. No Registro.br não há nada a fazer.
 
-1. **Glue records** (necessário porque `ns1.gxhost.com.br`/
-   `ns2.gxhost.com.br` estão *dentro* do próprio domínio que delegam —
-   sem glue record, o resolver cai num loop: "para saber o IP de
-   ns1.gxhost.com.br eu preciso perguntar a... ns1.gxhost.com.br").
-   No painel do Registro.br: **DNS > Glue records / Servidores DNS
-   adicionais** (nome varia por registrador), cadastre:
-   - `ns1.gxhost.com.br` → IP público do ns1
-   - `ns2.gxhost.com.br` → IP público do ns2
-2. **Delegação do subdomínio `mc`**: como `gxhost.com.br` inteiro já usa
-   a Cloudflare como DNS autoritativa (isso continua — §0), a delegação
-   de `mc.gxhost.com.br` para o PowerDNS acontece **dentro da própria
-   Cloudflare**, não no Registro.br: crie, na zona `gxhost.com.br` já
-   existente na Cloudflare, registros **NS** para o subdomínio:
+Na zona `gxhost.com.br` da Cloudflare, dois tipos de registro:
+
+1. **O endereço de cada nameserver**, como registro `A` comum:
+   ```
+   ns1.gxhost.com.br.   A   <IP público do ns1>
+   ns2.gxhost.com.br.   A   <IP público do ns2>
+   ```
+   Estes precisam ficar **cinza (DNS only)**, nunca laranja. Um
+   nameserver atrás do proxy da Cloudflare responderia com um IP da
+   Cloudflare, que não fala DNS na porta 53 — a delegação inteira
+   pararia de funcionar.
+2. **A delegação do subdomínio**, como registros `NS`:
    ```
    mc.gxhost.com.br.   NS   ns1.gxhost.com.br.
    mc.gxhost.com.br.   NS   ns2.gxhost.com.br.
    ```
-   (Cloudflare permite delegar um subdomínio para nameservers externos
-   via registro NS comum — não precisa de "orange cloud"/proxy nesse
-   registro, ele é só delegação.) Os glue records do passo 1 continuam
-   necessários independentemente disso, porque `ns1`/`ns2` são hosts
-   dentro do próprio `gxhost.com.br`.
+   Registro `NS` não tem proxy; é só delegação.
+
+### Por que NÃO há glue record aqui
+
+Uma versão anterior deste runbook mandava cadastrar glue records no
+Registro.br, com o argumento de que `ns1`/`ns2` estão "dentro do próprio
+domínio que delegam" e sem glue o resolver cairia num loop. Esse loop
+não existe nesta topologia, e a instrução era errada.
+
+Glue é necessário quando o nameserver tem nome **dentro da zona que ele
+mesmo serve** — aí, para descobrir o IP dele, seria preciso perguntar a
+ele. Aqui a zona delegada é `mc.gxhost.com.br` e os nameservers se
+chamam `ns1/ns2.gxhost.com.br`: nomes na zona **pai**, que quem responde
+é a Cloudflare. O resolver pergunta o IP do ns1 à Cloudflare, recebe, e
+só então vai falar com o ns1 sobre `mc`. Nenhuma circularidade.
+
+Glue só entraria em cena se um dia `gxhost.com.br` inteiro fosse
+delegado para nameservers próprios — aí sim o registrador precisaria
+carregar os endereços deles.
 
 ## 10. Como testar DNS
 
 ```bash
-# Resolve o glue/NS corretamente?
+# A delegação e o endereço dos nameservers resolvem?
 dig NS mc.gxhost.com.br
 dig A ns1.gxhost.com.br
 dig A ns2.gxhost.com.br
@@ -547,8 +561,9 @@ restaurado de forma totalmente independente do resto do banco.
    mc.gxhost.com.br <IP_ns1>`.
    A partir daí o ns1 avisa sozinho a cada mudança; para forçar a
    primeira cópia sem esperar, `pdns_control retrieve mc.gxhost.com.br`.
-4. Adicione o glue record (`ns3.gxhost.com.br` → IP público) no
-   Registro.br.
+4. Na zona `gxhost.com.br` da Cloudflare, adicione o `A` de
+   `ns3.gxhost.com.br` → IP público, **cinza (DNS only)**. Não há nada a
+   fazer no Registro.br (§9).
 5. Adicione o registro `NS mc.gxhost.com.br. ns3.gxhost.com.br.` na
    zona `gxhost.com.br` na Cloudflare (mesmo passo do §9.2).
 6. Opcional: atualize o array `nameservers` retornado pela zona no
