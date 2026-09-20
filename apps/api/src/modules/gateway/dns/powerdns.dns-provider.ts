@@ -5,9 +5,23 @@ import type { AddressRecordInput, DnsProvider, SrvRecordInput } from './dns-prov
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
+/**
+ * How long one fetched view of the zone may be reused to answer "is this
+ * record already what I want?".
+ *
+ * GatewayService.reconcileOnce walks every route back to back, so a
+ * few seconds is enough for one pass to read the zone once instead of
+ * once per record, while staying far below the 30s between passes — a
+ * record changed behind our back is still repaired on the next one.
+ * Any write we make ourselves drops the snapshot immediately, so this
+ * can never serve a view we know to be stale.
+ */
+const ZONE_SNAPSHOT_TTL_MS = 5_000;
+
 interface PowerDnsRRSet {
   name: string;
   type: string;
+  ttl?: number;
   records?: { content: string; disabled?: boolean }[];
 }
 
@@ -129,9 +143,66 @@ export class PowerDnsProvider implements DnsProvider {
         const text = await res.text().catch(() => res.statusText);
         throw new ServiceUnavailableException(`PowerDNS API PATCH zone failed (${res.status}): ${text}`);
       }
+      this.zoneSnapshot = null;
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  /**
+   * The zone as last seen, reused for at most ZONE_SNAPSHOT_TTL_MS. Only
+   * ever consulted to decide whether a write can be skipped — never to
+   * answer a question whose wrong answer would be visible to a customer
+   * (isHostnameAvailable deliberately still reads fresh).
+   */
+  private zoneSnapshot: { at: number; zone: PowerDnsZone } | null = null;
+
+  private async snapshotZone(): Promise<PowerDnsZone> {
+    const now = Date.now();
+    if (this.zoneSnapshot && now - this.zoneSnapshot.at < ZONE_SNAPSHOT_TTL_MS) return this.zoneSnapshot.zone;
+    const zone = await this.getZone();
+    this.zoneSnapshot = { at: now, zone };
+    return zone;
+  }
+
+  /**
+   * Whether the zone already holds exactly this rrset, so the REPLACE
+   * would be a no-op.
+   *
+   * This exists because "no-op" is not free here. PowerDNS applies
+   * SOA-EDIT-API to every PATCH, changed content or not, so each
+   * pointless write bumps the zone's serial — and a bumped serial is
+   * what makes a primary notify its secondaries. Found live right after
+   * ns2 came up: GatewayService re-ensures every route's A and SRV on
+   * each 30s reconcile pass even when nothing changed, which with seven
+   * routes moved the serial 14 every 30 seconds and had ns2 pulling a
+   * full AXFR of identical data roughly every 75 seconds, ~2900 times a
+   * day. Nothing was broken by it, which is exactly why it went
+   * unnoticed while there was no secondary and nobody reading serials.
+   *
+   * Errs toward writing: if the zone cannot be read, or anything about
+   * the comparison is uncertain, this answers false and the PATCH goes
+   * ahead. A redundant write costs a serial bump; a wrongly skipped one
+   * would leave a customer's server unresolvable, so the two are not
+   * remotely equal and the tie never goes to skipping.
+   */
+  private async rrsetIsCurrent(name: string, type: string, ttl: number, contents: string[]): Promise<boolean> {
+    let zone: PowerDnsZone;
+    try {
+      zone = await this.snapshotZone();
+    } catch (err) {
+      this.logger.warn(`could not read zone to compare ${type} ${name}, writing anyway: ${(err as Error).message}`);
+      return false;
+    }
+
+    const existing = zone.rrsets.find((r) => r.name === name && r.type === type);
+    if (!existing || existing.ttl !== ttl) return false;
+
+    // disabled records answer nothing, so they are not part of what
+    // "already correct" means.
+    const have = (existing.records ?? []).filter((r) => !r.disabled).map((r) => r.content).sort();
+    const want = [...contents].sort();
+    return have.length === want.length && have.every((c, i) => c === want[i]);
   }
 
   private async getZone(): Promise<PowerDnsZone> {
@@ -159,6 +230,11 @@ export class PowerDnsProvider implements DnsProvider {
 
   async ensureSrv(input: SrvRecordInput): Promise<void> {
     this.assertInZone(this.srvName(input.hostname));
+    const content = `0 0 ${input.port} ${this.fqdn(input.target)}`;
+    if (await this.rrsetIsCurrent(this.fqdn(this.srvName(input.hostname)), 'SRV', 60, [content])) {
+      this.logger.debug(`SRV record already current for ${input.hostname}, not rewriting`);
+      return;
+    }
     await this.patchRrsets([
       {
         name: this.fqdn(this.srvName(input.hostname)),
@@ -169,7 +245,7 @@ export class PowerDnsProvider implements DnsProvider {
         // format; priority/weight are meaningless with exactly one
         // target, so both are fixed at 0, same as CloudflareDnsProvider
         // already chose.
-        records: [{ content: `0 0 ${input.port} ${this.fqdn(input.target)}`, disabled: false }],
+        records: [{ content, disabled: false }],
       },
     ]);
     this.logger.log(`SRV record ensured for ${input.hostname} -> ${input.target}:${input.port}`);
@@ -194,6 +270,10 @@ export class PowerDnsProvider implements DnsProvider {
     const type = isIPv4(input.ip) ? 'A' : isIPv6(input.ip) ? 'AAAA' : null;
     if (!type) {
       this.logger.warn(`ensureAddressRecord skipped for ${input.hostname}: "${input.ip}" is not a literal IPv4/IPv6 address`);
+      return;
+    }
+    if (await this.rrsetIsCurrent(this.fqdn(input.hostname), type, 60, [input.ip])) {
+      this.logger.debug(`${type} record already current for ${input.hostname}, not rewriting`);
       return;
     }
     await this.patchRrsets([
