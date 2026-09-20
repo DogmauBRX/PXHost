@@ -1,3 +1,4 @@
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Archive, CalendarClock, Cpu, Database, FolderOpen, Gauge, HardDrive, Radio, ServerCog, ShieldCheck, TerminalSquare, Ticket, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Seo } from './Seo';
@@ -5,7 +6,40 @@ import { NetworkAnimation } from './NetworkAnimation';
 import { ServerProvisionAnimation } from './ServerProvisionAnimation';
 import { HeroCircuitBackground } from './HeroCircuitBackground';
 import { BrazilLatencyMap } from './BrazilLatencyMap';
-import { NodeStatusSection } from './NodeStatusSection';
+
+const LazyNodeStatusSection = lazy(() =>
+  import('./NodeStatusSection').then((module) => ({ default: module.NodeStatusSection })),
+);
+
+function DeferredNodeStatusSection() {
+  const markerRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const marker = markerRef.current;
+    if (!marker || visible) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        setVisible(true);
+        observer.disconnect();
+      },
+      { rootMargin: '500px 0px' },
+    );
+    observer.observe(marker);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  return (
+    <div ref={markerRef} className="min-h-40">
+      {visible && (
+        <Suspense fallback={<div className="h-40" aria-hidden="true" />}>
+          <LazyNodeStatusSection />
+        </Suspense>
+      )}
+    </div>
+  );
+}
 
 // Only capabilities the platform actually has today (commercial plan
 // §3: "não inventar funcionalidades que o sistema ainda não possui") —
@@ -156,7 +190,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        <NodeStatusSection />
+        <DeferredNodeStatusSection />
       </div>
     </>
   );

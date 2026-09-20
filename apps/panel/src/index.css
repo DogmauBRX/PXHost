@@ -685,6 +685,13 @@ html[data-app-ready] body {
     #0f1115;
 }
 
+.landing-command > section:not(.network-hero),
+.landing-command > div,
+.plans-command .plans-comparison {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 720px;
+}
+
 .landing-section {
   background:
     linear-gradient(90deg, transparent, rgb(255 255 255 / 0.025) 50%, transparent),
@@ -823,6 +830,26 @@ html[data-app-ready] body {
   .landing-feature-panel::after,
   .landing-benefit-card::after {
     animation: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .landing-hero__orb,
+  .plans-command__glow {
+    display: none;
+  }
+
+  .landing-network-stage {
+    animation: none;
+  }
+
+  .network-panel {
+    backdrop-filter: blur(12px);
+  }
+
+  .network-hero__circuit,
+  .plans-command__circuit {
+    opacity: 0.26;
   }
 }
 
