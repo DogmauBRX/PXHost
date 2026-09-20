@@ -545,6 +545,161 @@ html[data-app-ready] body {
   opacity: 0.4;
 }
 
+/* Landing command surface — intentionally graphite in both themes. */
+.landing-command {
+  --color-bg: #0f1115;
+  --color-surface: #181b21;
+  --color-surface-2: #121419;
+  --color-text: #f5f1eb;
+  --color-text-muted: #a3aab5;
+  --color-text-faint: #68717d;
+  --color-border: rgb(255 255 255 / 0.09);
+  --color-border-strong: rgb(255 255 255 / 0.16);
+  color: var(--color-text);
+  background:
+    radial-gradient(circle at 50% 6%, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent 30rem),
+    #0f1115;
+}
+
+.landing-section {
+  background:
+    linear-gradient(90deg, transparent, rgb(255 255 255 / 0.025) 50%, transparent),
+    #121419;
+}
+
+.landing-accent-text {
+  color: transparent;
+  background: linear-gradient(90deg, #ff8a35 0%, #ff5f0f 38%, #ffc078 72%, #ff7a22 100%);
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  filter: drop-shadow(0 0 24px rgb(255 103 24 / 0.13));
+  animation: landing-accent-flow 7s ease-in-out infinite;
+}
+
+.landing-hero__orb {
+  position: absolute;
+  width: 24rem;
+  height: 24rem;
+  pointer-events: none;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  filter: blur(130px);
+  opacity: 0.07;
+  animation: landing-orb-drift 10s ease-in-out infinite alternate;
+}
+
+.landing-hero__orb--one {
+  top: -8rem;
+  left: -9rem;
+}
+
+.landing-hero__orb--two {
+  right: -8rem;
+  bottom: -10rem;
+  width: 30rem;
+  height: 30rem;
+  animation-delay: -5s;
+}
+
+.landing-network-stage {
+  animation: landing-stage-breathe 7s ease-in-out infinite;
+}
+
+.landing-stat-chip {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+
+.landing-stat-chip:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 32%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
+  transform: translateY(-2px);
+}
+
+.landing-feature-panel {
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--color-accent) 9%, transparent), transparent 45%),
+    linear-gradient(145deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0.018));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 24px 70px -50px rgb(0 0 0 / 0.85);
+}
+
+.landing-feature-panel::after,
+.landing-benefit-card::after {
+  position: absolute;
+  top: 0;
+  left: -45%;
+  width: 32%;
+  height: 1px;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+  animation: landing-card-scan 8s linear infinite;
+}
+
+.landing-benefit-card {
+  background: linear-gradient(150deg, rgb(255 255 255 / 0.04), rgb(255 255 255 / 0.015));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+  transition: transform 220ms ease, border-color 220ms ease, background-color 220ms ease;
+}
+
+.landing-benefit-card:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  background-color: color-mix(in srgb, var(--color-accent) 4%, transparent);
+  transform: translateY(-4px);
+}
+
+.landing-capacity-panel {
+  background:
+    radial-gradient(circle at 8% 50%, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent 28%),
+    linear-gradient(120deg, #1b1d22, #13151a);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.045), 0 30px 70px -55px var(--color-accent);
+}
+
+.landing-capacity-panel::before {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  opacity: 0.16;
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.055) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(90deg, black, transparent 55%);
+  -webkit-mask-image: linear-gradient(90deg, black, transparent 55%);
+}
+
+@keyframes landing-accent-flow {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes landing-orb-drift {
+  to { transform: translate3d(4rem, 2rem, 0) scale(1.08); }
+}
+
+@keyframes landing-stage-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes landing-card-scan {
+  0% { transform: translateX(0); opacity: 0; }
+  12% { opacity: 0.8; }
+  38%, 100% { transform: translateX(470%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-accent-text,
+  .landing-hero__orb,
+  .landing-network-stage,
+  .landing-feature-panel::after,
+  .landing-benefit-card::after {
+    animation: none;
+  }
+}
+
 /*
  * The landing page's own hero background. It used to reuse `.login-hero`
  * (the auth screens' drifting aurora-blob glow) — but that class has no
