@@ -370,6 +370,36 @@ subir, e aí cai o DNS de todos os servidores de jogo junto.
     pdns_control retrieve mc.gxhost.com.br
   ```
 
+### 8.1. O que está montado hoje (2026-09-20)
+
+O resto desta seção descreve o procedimento; isto aqui registra onde ele
+foi parar, que é o que falta quando alguém precisa mexer meses depois.
+
+| | ns1 | ns2 |
+|---|---|---|
+| Host | `143.95.164.255` (`ssh vps`) | `143.95.213.60` (`ssh vps2`) |
+| Diretório | `/opt/gxhost` (checkout git) | `/opt/gxhost-ns2` (**não** é git) |
+| Compose | `docker-compose.prod.yml` | `docker-compose.dns.yml` |
+| Postgres | compartilhado com a stack, banco `pdns` | dedicado, só do nameserver |
+| REST API | sim, é quem o painel escreve | não, deliberadamente |
+| Kind da zona | `MASTER` | `SLAVE`, primário `143.95.164.255` |
+
+O ns2 não é um checkout git de propósito: ele precisa de exatamente um
+arquivo de compose e um `.env` com a senha do Postgres dele, e clonar o
+repositório inteiro num nameserver público significaria manter o código
+da plataforma numa máquina que não tem motivo para conhecê-lo. Para
+atualizar, copie o compose:
+
+```bash
+scp docker-compose.dns.yml vps2:/opt/gxhost-ns2/
+ssh vps2 "cd /opt/gxhost-ns2 && docker compose -f docker-compose.dns.yml up -d"
+```
+
+O `.env` do ns2 tem três variáveis: `PDNS_POSTGRES_PASSWORD` (gerada na
+instalação, só existe lá), `PDNS_NS1_PUBLIC_IP` e `PDNS_BIND_ADDRESS`
+— esta última é o IP público **do próprio ns2**, por causa do
+systemd-resolved (§7).
+
 ## 9. Delegação: tudo na Cloudflare, nada no Registro.br
 
 `mc.gxhost.com.br` é um **subdomínio** de `gxhost.com.br` — não precisa
