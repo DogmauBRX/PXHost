@@ -515,14 +515,24 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     let serverB: string;
     let otherNodeId: string;
     let foreignServer: string;
+    // Its own token, not the outer `nodeToken`: the re-bootstrap test
+    // above deliberately revokes that one, so reusing it here would 401
+    // on every request and prove nothing about power state.
+    let token: string;
 
     const asAdmin = <T>(fn: (tx: Parameters<Parameters<PrismaService['withRLS']>[1]>[0]) => Promise<T>) =>
       prisma.withRLS({ userId: null, isAdmin: true }, fn);
 
+    // `setup_pending` purely to satisfy the `servers_setup_consistency`
+    // check without dragging a template/plan fixture into this suite:
+    // that constraint ties `status` to template_id/docker_image/
+    // startup_command, none of which the heartbeat's power-state writer
+    // reads or branches on. Status is an orthogonal axis to powerState
+    // here — see status-labels.ts's own note on the two.
     const makeServer = (shortId: string, node: string, name: string) =>
       asAdmin((tx) =>
         tx.server.create({
-          data: { shortId, ownerId, nodeId: node, name, memoryMb: 1024, diskMb: 5120 },
+          data: { shortId, ownerId, nodeId: node, name, memoryMb: 1024, diskMb: 5120, status: 'setup_pending' },
           select: { id: true },
         }),
       ).then((s) => s.id);
@@ -533,6 +543,14 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     beforeAll(async () => {
       const owner = await prisma.user.findFirstOrThrow({ where: { email: `nodes-admin-${suffix}@gxhost.local` }, select: { id: true } });
       ownerId = owner.id;
+
+      const bootstrapToken = JSON.parse((await authed(`/api/admin/nodes/${nodeId}/bootstrap-token`, { method: 'POST' })).body).token;
+      const redeemed = await app.inject({
+        method: 'POST',
+        url: '/api/remote/nodes/bootstrap',
+        payload: { token: bootstrapToken, hostname: 'e2e-power-state-host', os: 'linux', kernel: '6.1.0', dockerVersion: '27.0.0', arch: 'amd64' },
+      });
+      token = JSON.parse(redeemed.body).nodeToken;
 
       const other = await prisma.node.create({
         data: { locationId, name: `nodes-e2e-other-${suffix}`, fqdn: `other-${suffix}.e2e.local`, memoryTotalMb: 8192, diskTotalMb: 102400 },
@@ -554,7 +572,7 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/remote/nodes/heartbeat',
-        headers: { authorization: `Bearer ${nodeToken}` },
+        headers: { authorization: `Bearer ${token}` },
         payload: { servers: [{ uuid: serverA, state: 'running' }, { uuid: serverB, state: 'crashed' }] },
       });
       expect(res.statusCode).toBe(201);
@@ -570,7 +588,7 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/remote/nodes/heartbeat',
-        headers: { authorization: `Bearer ${nodeToken}` },
+        headers: { authorization: `Bearer ${token}` },
         payload: { servers: [{ uuid: serverA, state: 'running' }] },
       });
       expect(res.statusCode).toBe(201);
@@ -581,7 +599,7 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/remote/nodes/heartbeat',
-        headers: { authorization: `Bearer ${nodeToken}` },
+        headers: { authorization: `Bearer ${token}` },
         payload: { agentVersion: 'v0.4.0-e2e-old-agent' },
       });
       expect(res.statusCode).toBe(201);
@@ -597,7 +615,7 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
       await app.inject({
         method: 'POST',
         url: '/api/remote/nodes/heartbeat',
-        headers: { authorization: `Bearer ${nodeToken}` },
+        headers: { authorization: `Bearer ${token}` },
         payload: { servers: [{ uuid: serverA, state: 'running' }] },
       });
       const unchanged = await powerStateOf(serverA);
@@ -606,7 +624,7 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
       await app.inject({
         method: 'POST',
         url: '/api/remote/nodes/heartbeat',
-        headers: { authorization: `Bearer ${nodeToken}` },
+        headers: { authorization: `Bearer ${token}` },
         payload: { servers: [{ uuid: serverA, state: 'offline' }] },
       });
       const changed = await powerStateOf(serverA);
@@ -621,24 +639,18 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/remote/nodes/heartbeat',
-        headers: { authorization: `Bearer ${nodeToken}` },
+        headers: { authorization: `Bearer ${token}` },
         payload: { servers: [{ uuid: foreignServer, state: 'running' }] },
       });
       expect(res.statusCode).toBe(201); // silently ignored, never an error the agent could probe with
       expect((await powerStateOf(foreignServer)).powerState).toBe('offline');
     });
 
-    it('rejects a state value outside the agent\'s own srv.State set', async () => {
-      // A mismatched agent build must be refused at the edge: this column
-      // is branched on downstream ("is it offline?"), so an unknown value
-      // stored here would read as "not offline" everywhere at once.
-      const res = await app.inject({
-        method: 'POST',
-        url: '/api/remote/nodes/heartbeat',
-        headers: { authorization: `Bearer ${nodeToken}` },
-        payload: { servers: [{ uuid: serverA, state: 'zombie' }] },
-      });
-      expect(res.statusCode).toBe(400);
-    });
+    // Rejecting an out-of-range state value is asserted in
+    // src/modules/nodes/dto/node.dto.spec.ts instead of here: this suite
+    // builds its app with Test.createTestingModule and never installs
+    // main.ts's global ValidationPipe, so no DTO validation runs at all
+    // in it — an expectation of 400 here would be testing the test
+    // harness, not the contract.
   });
 });
