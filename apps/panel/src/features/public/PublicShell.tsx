@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   CreditCard,
   LayoutDashboard,
+  LifeBuoy,
   LogIn,
   Menu,
   RefreshCcw,
@@ -24,9 +25,10 @@ import { CircuitPattern } from '@/ui/brand/CircuitPattern';
 import { AnnouncementBanner } from '@/ui/layout/AnnouncementBanner';
 
 const footerTopics = [
-  { label: 'Pagamentos e segurança', icon: CreditCard },
-  { label: 'Confiança e transparência', icon: BadgeCheck },
-  { label: 'Política de reembolso', icon: RefreshCcw },
+  { label: 'Pagamentos e segurança', icon: CreditCard, hash: 'pagamentos' },
+  { label: 'Confiança e transparência', icon: BadgeCheck, hash: 'transparencia' },
+  { label: 'Política de reembolso', icon: RefreshCcw, hash: 'reembolsos' },
+  { label: 'Suporte', icon: LifeBuoy, hash: 'suporte' },
   { label: 'Comunidade e redes', icon: Share2 },
   { label: 'Termos de uso', icon: Scale },
 ];
@@ -246,13 +248,21 @@ export function PublicShell({ children }: { children: ReactNode }) {
             <div>
               <div className="mb-4 flex items-center justify-between gap-3">
                 <p className="text-[0.65rem] font-bold tracking-[0.2em] text-white/35 uppercase">Central GX</p>
-                <span className="rounded-full border border-accent/15 bg-accent/5 px-2.5 py-1 text-[0.55rem] font-bold tracking-wider text-accent/80 uppercase">Em construção</span>
+                <Link to="/central" className="group flex items-center gap-1 text-[0.58rem] font-bold tracking-wider text-accent/75 uppercase transition-colors hover:text-accent">
+                  Conhecer a central
+                  <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                </Link>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {footerTopics.map(({ label, icon: Icon }) => (
-                  <div key={label} className="public-footer__topic flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5" title="Conteúdo em desenvolvimento">
-                    <Icon className="h-3.5 w-3.5 shrink-0 text-accent/65" aria-hidden="true" />
-                    <span className="text-xs font-medium text-white/45">{label}</span>
+                {footerTopics.map(({ label, icon: Icon, hash }) => hash ? (
+                  <Link key={label} to="/central" hash={hash} className="public-footer__topic group flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5">
+                    <Icon className="h-3.5 w-3.5 shrink-0 text-accent/65 transition-colors group-hover:text-accent" aria-hidden="true" />
+                    <span className="text-xs font-medium text-white/45 transition-colors group-hover:text-white/75">{label}</span>
+                  </Link>
+                ) : (
+                  <div key={label} className="public-footer__topic flex items-center justify-between gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5" title="Conteúdo em desenvolvimento">
+                    <span className="flex items-center gap-2.5"><Icon className="h-3.5 w-3.5 shrink-0 text-accent/45" aria-hidden="true" /><span className="text-xs font-medium text-white/35">{label}</span></span>
+                    <span className="text-[0.48rem] font-bold tracking-wider text-white/20 uppercase">Em breve</span>
                   </div>
                 ))}
               </div>
