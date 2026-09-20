@@ -4,6 +4,7 @@ import { Link, useLocation } from '@tanstack/react-router';
 import {
   ArrowRight,
   BadgeCheck,
+  BookOpenCheck,
   CreditCard,
   LayoutDashboard,
   LifeBuoy,
@@ -57,7 +58,9 @@ export function PublicShell({ children }: { children: ReactNode }) {
   // Swaps to "Início" → "/" whenever the visitor is already somewhere under
   // /plans (the catalog itself or a plan detail page) — pointing a "Ver
   // planos" button at the page already on screen isn't a useful link.
-  const onPlans = useLocation({ select: (l) => l.pathname }).startsWith('/plans');
+  const pathname = useLocation({ select: (l) => l.pathname });
+  const onPlans = pathname.startsWith('/plans');
+  const onCentral = pathname.startsWith('/central');
   const catalogNavTo = onPlans ? '/' : '/plans';
   const catalogNavLabel = onPlans ? 'Início' : 'Ver planos';
   // `/`'s own beforeLoad bounces a signed-in visitor straight to their
@@ -86,18 +89,32 @@ export function PublicShell({ children }: { children: ReactNode }) {
                 <span className="mt-1 hidden text-[0.57rem] font-bold tracking-[0.2em] text-white/40 uppercase sm:block">Cloud gaming infrastructure</span>
               </span>
             </Link>
-            <span className="hidden h-8 w-px bg-white/10 md:block" aria-hidden="true" />
-            <Link
-              to={catalogNavTo}
-              search={onPlans ? homeSearch : undefined}
-              className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-white/70 transition-all hover:border-accent/35 hover:bg-white/10 hover:text-white md:flex"
-            >
-              <Sparkles className="h-4 w-4 text-accent" aria-hidden="true" />
-              {catalogNavLabel}
-            </Link>
+            <span className="hidden h-8 w-px bg-white/10 lg:block" aria-hidden="true" />
+            <nav className="hidden items-center gap-2 lg:flex" aria-label="Navegação pública principal">
+              <Link
+                to={catalogNavTo}
+                search={onPlans ? homeSearch : undefined}
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-white/70 transition-all hover:border-accent/35 hover:bg-white/10 hover:text-white"
+              >
+                <Sparkles className="h-4 w-4 text-accent" aria-hidden="true" />
+                {catalogNavLabel}
+              </Link>
+              <Link
+                to="/central"
+                aria-current={onCentral ? 'page' : undefined}
+                className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium transition-all ${
+                  onCentral
+                    ? 'border-accent/30 bg-accent/10 text-accent'
+                    : 'border-white/10 bg-white/5 text-white/70 hover:border-accent/35 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <BookOpenCheck className="h-4 w-4 text-accent" aria-hidden="true" />
+                Como funciona
+              </Link>
+            </nav>
           </div>
 
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="hidden items-center gap-3 lg:flex">
             {accessToken ? (
               <>
                 <span className="flex max-w-[15rem] items-center gap-2 rounded-full border border-white/10 bg-black/15 px-3 py-1.5 text-xs text-white/50">
@@ -129,14 +146,14 @@ export function PublicShell({ children }: { children: ReactNode }) {
             type="button"
             onClick={() => setMobileOpen((v) => !v)}
             aria-label={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
-            className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/70 hover:bg-white/10 hover:text-white md:hidden"
+            className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/70 hover:bg-white/10 hover:text-white lg:hidden"
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
 
         {mobileOpen && (
-          <div className="relative border-t border-white/10 bg-[#17191e]/95 px-4 py-4 backdrop-blur-xl md:hidden">
+          <div className="relative border-t border-white/10 bg-[#17191e]/95 px-4 py-4 backdrop-blur-xl lg:hidden">
             <nav className="flex flex-col gap-1">
               <Link
                 to={catalogNavTo}
@@ -146,6 +163,17 @@ export function PublicShell({ children }: { children: ReactNode }) {
               >
                 <Sparkles className="h-4 w-4 text-accent" aria-hidden="true" />
                 {catalogNavLabel}
+              </Link>
+              <Link
+                to="/central"
+                onClick={() => setMobileOpen(false)}
+                aria-current={onCentral ? 'page' : undefined}
+                className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium ${
+                  onCentral ? 'bg-accent/10 text-accent' : 'text-white/75 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <BookOpenCheck className="h-4 w-4 text-accent" aria-hidden="true" />
+                Como funciona
               </Link>
               {accessToken ? (
                 <Link
