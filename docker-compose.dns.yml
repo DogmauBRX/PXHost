@@ -73,8 +73,16 @@ services:
       - --allow-axfr-ips=${PDNS_NS1_PUBLIC_IP}
       - --default-soa-content=@ hostmaster.gxhost.com.br 0 10800 3600 604800 3600
     ports:
-      - "53:53/tcp"
-      - "53:53/udp"
+      # Bound to ONE address, not 0.0.0.0 — exactly the same trap as
+      # docker-compose.prod.yml's `pdns`, and confirmed present on the
+      # ns2 host too: Ubuntu runs systemd-resolved's stub listener on
+      # 127.0.0.53:53, and a wildcard bind overlaps it, so Docker fails
+      # the container with "address already in use". Pinning this host's
+      # own public address sidesteps it without touching the host
+      # resolver, which everything else on the box depends on.
+      # Set PDNS_BIND_ADDRESS to this nameserver's public IP.
+      - "${PDNS_BIND_ADDRESS:-0.0.0.0}:53:53/tcp"
+      - "${PDNS_BIND_ADDRESS:-0.0.0.0}:53:53/udp"
     depends_on:
       postgres:
         condition: service_healthy
