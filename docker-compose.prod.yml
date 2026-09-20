@@ -173,7 +173,18 @@ services:
       # Without it every PowerDnsProvider call answers 403 and each route
       # lands in `failed`.
       - --webserver-allow-from=127.0.0.1,172.18.0.0/16,10.10.0.0/24
-      - --default-soa-content=@ hostmaster.gxhost.com.br 0 10800 3600 604800 3600
+      # A SOA's first field (MNAME) names the primary, and it has to be a
+      # name that RESOLVES. This was `@`, which PowerDNS expands to the
+      # zone's own name — and "mc.gxhost.com.br" has no A record, so the
+      # SOA pointed at a name with no address. `pdnsutil check-zone` is
+      # happy with that; Registro.br's delegation check, much later, is
+      # not.
+      #
+      # This is not only for new zones: the SOA pdnsutil writes is the
+      # placeholder "a.misconfigured.dns.server.invalid", substituted
+      # with this value at answer time, so fixing it here also fixes the
+      # zone that already exists.
+      - --default-soa-content=ns1.gxhost.com.br hostmaster.gxhost.com.br 0 10800 3600 604800 3600
       # ns2 (143.95.213.60) serves these zones as a SECONDARY. That needs
       # two separate things, and neither one is a default:
       #   - it must be allowed to pull the zones by AXFR. allow-axfr-ips
