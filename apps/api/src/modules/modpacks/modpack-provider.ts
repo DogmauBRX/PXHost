@@ -44,7 +44,16 @@ export interface ModpackVersion {
   releaseType: 'release' | 'beta' | 'alpha';
   publishedAt: string;
   downloads: number;
-  files: Array<{ filename: string; size: number; primary: boolean; url: string; hashes: { sha1?: string; sha512?: string } }>;
+  files: Array<{
+    filename: string;
+    size: number;
+    primary: boolean;
+    url: string;
+    hashes: { sha1?: string; sha512?: string };
+    /** CurseForge may prohibit automated delivery for a release file. */
+    distributable?: boolean;
+    distributionMessage?: string;
+  }>;
 }
 
 export interface ModpackSearchResult {
@@ -66,6 +75,6 @@ export interface ModpackProvider {
   search(query: ModpackSearchQuery): Promise<ModpackSearchResult>;
   getProject(projectId: string): Promise<ModpackProject>;
   getVersions(projectId: string, filters?: { minecraftVersion?: string; loader?: string }): Promise<ModpackVersion[]>;
-  getVersion(versionId: string): Promise<ModpackVersion>;
+  getVersion(versionId: string, projectId?: string): Promise<ModpackVersion>;
   getMetadata(): Promise<ModpackMetadata>;
 }

@@ -77,6 +77,14 @@ export const envSchema = z.object({
   // for public catalog reads; operators may override this to add contact
   // information as recommended by the provider.
   MODRINTH_USER_AGENT: z.string().min(3).default('gxhost/hosting-panel/0.1.0'),
+  // CurseForge catalog reads use the official REST API. The key stays in
+  // the API environment only: it is never passed to the panel or Agent.
+  // Keeping it optional means an existing deployment keeps Modrinth fully
+  // available until an operator explicitly enables the extra provider.
+  CURSEFORGE_API_KEY: optionalSecret(),
+  // Test-only override for the provider endpoint. Production uses the
+  // official API base by default.
+  CURSEFORGE_API_BASE_URL: optionalUrl(),
 
   // Client account management, Fase 1 — generic SMTP for password-reset
   // emails, no specific provider baked in. All optional, same posture as

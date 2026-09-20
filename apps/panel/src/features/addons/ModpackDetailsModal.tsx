@@ -79,7 +79,7 @@ export function ModpackDetailsModal(props: Props) {
       open={projectId !== null}
       onClose={onClose}
       title={project?.name ?? 'Detalhes do modpack'}
-      description={project ? `Modrinth${project.author ? ` · por ${project.author}` : ''}` : undefined}
+      description={project ? `${source === 'curseforge' ? 'CurseForge' : 'Modrinth'}${project.author ? ` · por ${project.author}` : ''}` : undefined}
       size="lg"
       footer={
         <>
@@ -145,7 +145,12 @@ export function ModpackDetailsModal(props: Props) {
             {selectedRelease?.files[0] && <p className="mt-1 inline-flex items-center gap-1 text-xs text-text-faint"><HardDrive className="h-3.5 w-3.5" />Pacote: {formatBytes(selectedRelease.files[0].size)}</p>}
           </div>
 
-          {!canInstall && <Alert tone="warn">Você não possui a permissão de instalar modpacks neste servidor.</Alert>}
+          {source === 'curseforge' && (
+            <Alert tone="info" title="Distribuição CurseForge protegida">
+              O catálogo está disponível. A instalação automática continua bloqueada até o Agent validar o manifesto CurseForge e todas as permissões de distribuição dos arquivos; nenhum link alternativo é usado.
+            </Alert>
+          )}
+          {!canInstall && source !== 'curseforge' && <Alert tone="warn">Você não possui a permissão de instalar modpacks neste servidor.</Alert>}
           {!compatible && <Alert tone="warn">Esta release não corresponde à versão do Minecraft e ao loader atuais. Troque a seleção ou altere primeiro o software do servidor.</Alert>}
           {installMutation.isError && <Alert>Não foi possível iniciar a instalação: {installMutation.error.message}</Alert>}
           {activeInstallation && (

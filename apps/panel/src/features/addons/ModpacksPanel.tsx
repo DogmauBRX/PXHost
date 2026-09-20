@@ -9,7 +9,7 @@ import { getModpackMetadata, searchModpacks, type ModpackSort, type ModpackSourc
 const PAGE_SIZE = 20;
 
 export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonContext }) {
-  const [sourceTab, setSourceTab] = useState<'all' | ModpackSource>('all');
+  const [sourceTab, setSourceTab] = useState<ModpackSource>('modrinth');
   const [draftQuery, setDraftQuery] = useState('');
   const [query, setQuery] = useState('');
   const [minecraftVersion, setMinecraftVersion] = useState('');
@@ -18,7 +18,7 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
   const [sort, setSort] = useState<ModpackSort>('relevance');
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<{ source: ModpackSource; projectId: string } | null>(null);
-  const source: ModpackSource = sourceTab === 'all' ? 'modrinth' : sourceTab;
+  const source = sourceTab;
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -31,13 +31,13 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
   const metadata = useQuery({
     queryKey: ['modpack-metadata', serverId, source],
     queryFn: () => getModpackMetadata(serverId, source),
-    enabled: source === 'modrinth',
+    enabled: true,
     staleTime: 60 * 60 * 1000,
   });
   const results = useQuery({
     queryKey: ['modpack-search', serverId, source, query, minecraftVersion, loader, category, sort, offset],
     queryFn: () => searchModpacks(serverId, source, { query, minecraftVersion, loader, category, sort, offset, limit: PAGE_SIZE }),
-    enabled: source === 'modrinth',
+    enabled: true,
     placeholderData: keepPreviousData,
   });
   const canInstall = ctx.server.role !== 'subuser' || ctx.permissions.includes('addons.install');
@@ -50,18 +50,15 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-1 border-b border-border">
-        {(['all', 'modrinth', 'curseforge'] as const).map((item) => {
-          const disabled = item === 'curseforge';
+        {(['modrinth', 'curseforge'] as const).map((item) => {
           return (
             <button
               key={item}
               type="button"
-              disabled={disabled}
-              title={disabled ? 'Integração prevista para a Fase 3' : undefined}
               onClick={() => { setSourceTab(item); setOffset(0); }}
-              className={`border-b-2 px-3 py-2 text-sm font-medium transition ${sourceTab === item ? 'border-accent text-accent-strong' : 'border-transparent text-text-muted hover:text-text'} disabled:cursor-not-allowed disabled:opacity-45`}
+              className={`border-b-2 px-3 py-2 text-sm font-medium transition ${sourceTab === item ? 'border-accent text-accent-strong' : 'border-transparent text-text-muted hover:text-text'}`}
             >
-              {item === 'all' ? 'Todos' : item === 'modrinth' ? 'Modrinth' : 'CurseForge · em breve'}
+              {item === 'modrinth' ? 'Modrinth' : 'CurseForge'}
             </button>
           );
         })}
@@ -89,8 +86,8 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
         </Select>
       </div>
 
-      {results.isError && <Alert title="Catálogo indisponível">O Modrinth está temporariamente indisponível. Tente novamente em instantes.</Alert>}
-      {results.isLoading && <LoadingRow label="Buscando modpacks no Modrinth…" />}
+      {results.isError && <Alert title="Catálogo indisponível">{results.error.message}</Alert>}
+      {results.isLoading && <LoadingRow label={`Buscando modpacks no ${source === 'curseforge' ? 'CurseForge' : 'Modrinth'}…`} />}
       {!results.isLoading && !results.isError && results.data?.items.length === 0 && (
         <EmptyState icon={Search} title="Nenhum modpack encontrado" description="Tente remover um filtro ou pesquisar outro nome." />
       )}
@@ -103,7 +100,7 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {results.data.items.map((item) => (
-              <ModpackCard key={`${item.source}:${item.projectId}`} item={item} onDetails={() => setSelected({ source: item.source, projectId: item.projectId })} />
+        <ModpackCard key={`${item.source}:${item.projectId}`} item={item} onDetails={() => setSelected({ source: item.source, projectId: item.projectId })} />
             ))}
           </div>
           <div className="flex items-center justify-center gap-2 pt-2">
@@ -120,7 +117,7 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
         projectId={selected?.projectId ?? null}
         serverMinecraftVersion={ctx.server.minecraftVersion}
         serverSoftware={ctx.software.kind}
-        canInstall={canInstall}
+        canInstall={canInstall && selected?.source !== 'curseforge'}
         onClose={() => setSelected(null)}
       />
     </div>
@@ -133,7 +130,7 @@ function ModpackCard({ item, onDetails }: { item: ModpackSummary; onDetails: () 
     <article className="flex min-h-64 flex-col rounded-card border border-border bg-surface p-4 shadow-xs transition hover:border-border-strong">
       <div className="flex items-start gap-3">
         {item.icon ? <img src={item.icon} alt="" loading="lazy" className="h-14 w-14 shrink-0 rounded-xl object-cover" /> : <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-surface-2"><PackageOpen className="h-6 w-6 text-text-faint" /></div>}
-        <div className="min-w-0 flex-1"><h3 className="truncate font-semibold text-text">{item.name}</h3><p className="truncate text-xs text-text-faint">{item.author ? `por ${item.author}` : 'Autor não informado'}</p><Badge>Modrinth</Badge></div>
+        <div className="min-w-0 flex-1"><h3 className="truncate font-semibold text-text">{item.name}</h3><p className="truncate text-xs text-text-faint">{item.author ? `por ${item.author}` : 'Autor não informado'}</p><Badge>{item.source === 'curseforge' ? 'CurseForge' : 'Modrinth'}</Badge></div>
       </div>
       <p className="mt-3 line-clamp-3 text-sm leading-5 text-text-muted">{item.description}</p>
       <div className="mt-3 flex flex-wrap gap-1.5">

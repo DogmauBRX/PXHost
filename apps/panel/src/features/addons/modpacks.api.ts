@@ -36,7 +36,7 @@ export interface ModpackVersion {
   releaseType: 'release' | 'beta' | 'alpha';
   publishedAt: string;
   downloads: number;
-  files: Array<{ filename: string; size: number; primary: boolean }>;
+  files: Array<{ filename: string; size: number; primary: boolean; distributable?: boolean; distributionMessage?: string }>;
 }
 
 export interface ModpackSearchResult {

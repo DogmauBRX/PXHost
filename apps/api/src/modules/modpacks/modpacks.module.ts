@@ -7,12 +7,13 @@ import { ModpackCacheService } from './modpack-cache.service';
 import { ModpacksController } from './modpacks.controller';
 import { ModpacksService } from './modpacks.service';
 import { ModrinthProvider } from './modrinth.provider';
+import { CurseForgeProvider } from './curseforge.provider';
 import { RemoteModpacksController } from './remote-modpacks.controller';
 
 @Module({
   imports: [AuthorizationModule, NodesModule, AuditModule, ActivityModule],
   controllers: [ModpacksController, RemoteModpacksController],
-  providers: [ModpackCacheService, ModrinthProvider, ModpacksService],
-  exports: [ModpacksService, ModrinthProvider],
+  providers: [ModpackCacheService, ModrinthProvider, CurseForgeProvider, ModpacksService],
+  exports: [ModpacksService, ModrinthProvider, CurseForgeProvider],
 })
 export class ModpacksModule {}

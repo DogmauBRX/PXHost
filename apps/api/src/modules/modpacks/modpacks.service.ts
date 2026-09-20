@@ -8,6 +8,7 @@ import type { InstallModpackDto, ModpackProgressDto } from './dto/install-modpac
 import type { ListModpackVersionsDto, SearchModpacksDto } from './dto/modpack-query.dto';
 import type { ModpackProvider, ModpackSource } from './modpack-provider';
 import { ModrinthProvider } from './modrinth.provider';
+import { CurseForgeProvider } from './curseforge.provider';
 
 @Injectable()
 export class ModpacksService {
@@ -20,8 +21,12 @@ export class ModpacksService {
     private readonly audit: AuditService,
     private readonly activity: ActivityService,
     modrinth: ModrinthProvider,
+    curseforge: CurseForgeProvider,
   ) {
-    this.providers = new Map([[modrinth.source, modrinth]]);
+    this.providers = new Map<ModpackSource, ModpackProvider>([
+      [modrinth.source, modrinth],
+      [curseforge.source, curseforge],
+    ]);
   }
 
   async install(actor: AccessActor, serverId: string, dto: InstallModpackDto) {
@@ -33,8 +38,20 @@ export class ModpacksService {
     if (runtime.state !== 'offline') throw new ConflictException('Desligue o servidor antes de instalar um modpack.');
 
     const provider = this.provider(dto.source);
-    const [project, version] = await Promise.all([provider.getProject(dto.projectId), provider.getVersion(dto.versionId)]);
+    const [project, version] = await Promise.all([provider.getProject(dto.projectId), provider.getVersion(dto.versionId, dto.projectId)]);
     if (version.projectId !== dto.projectId) throw new UnprocessableEntityException('A versão selecionada não pertence a este modpack.');
+    if (dto.source === 'curseforge') {
+      const blocked = version.files.find((candidate) => candidate.distributable === false);
+      if (blocked) {
+        throw new UnprocessableEntityException(blocked.distributionMessage ?? 'O CurseForge não autoriza a distribuição automática de um dos arquivos desta release. Baixe o modpack pela página oficial e envie-o manualmente.');
+      }
+      // The Agent deliberately accepts only Modrinth .mrpack manifests today.
+      // A CurseForge ZIP contains a separate manifest and per-file distribution
+      // rules; treating it as an .mrpack would bypass neither safely nor
+      // correctly. Keep catalog access independent while that Agent format is
+      // introduced in its own audited pipeline.
+      throw new UnprocessableEntityException('Este modpack CurseForge está no catálogo, mas a instalação automática ainda requer o pipeline de manifestos CurseForge no Agent. Nenhum arquivo foi baixado.');
+    }
 
     const minecraftVersion = server.variables[0]?.value;
     const loader = server.template.softwareKind.toLowerCase();
