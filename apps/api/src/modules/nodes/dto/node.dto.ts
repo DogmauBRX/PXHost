@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsIP, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min, ValidateIf } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsIP, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min, ValidateIf, ValidateNested } from 'class-validator';
 
 export class CreateNodeDto {
   @IsUUID()
@@ -462,6 +462,37 @@ export class HeartbeatDto {
   @IsOptional()
   @IsString()
   reportedVirtualizationRole?: string;
+
+  /**
+   * Per-server power states this node currently holds — see
+   * srv.Manager.States in the agent. Optional like every other field
+   * here: an older agent binary simply omits it, and the panel then
+   * leaves `servers.power_state` untouched rather than assuming
+   * anything.
+   */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ServerPowerStateDto)
+  servers?: ServerPowerStateDto[];
+}
+
+/**
+ * The agent's own srv.State values. Constrained by `@IsIn` rather than
+ * accepted as a free string: this writes straight into a column the
+ * panel branches on (a version change's "must be offline" precondition,
+ * the capacity report's offline count), so an unknown value from a
+ * mismatched agent build must be rejected at the edge, not stored and
+ * silently treated as "not offline" everywhere downstream.
+ */
+export const SERVER_POWER_STATES = ['offline', 'starting', 'running', 'stopping', 'crashed'] as const;
+
+export class ServerPowerStateDto {
+  @IsUUID()
+  uuid!: string;
+
+  @IsIn(SERVER_POWER_STATES as unknown as string[])
+  state!: string;
 }
 
 export class CreateAllocationRangeDto {

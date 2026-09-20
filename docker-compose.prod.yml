@@ -157,18 +157,34 @@ services:
       # gsqlite3 itself isn't loaded — pdns_server refuses to start on an
       # unknown setting unless told to ignore it.
       - --ignore-unknown-settings=gsqlite3-dnssec,gsqlite3-database
-      # Only the WireGuard subnet (where the API container — this app's
-      # own `api`/`worker` — actually calls from) and loopback may reach
-      # the webserver/API port, regardless of what's published below.
-      # This OVERRIDES PDNS_AUTH_API_KEY's own auto-generated
-      # `webserver-allow-from=0.0.0.0/0` — command-line settings always
-      # win over config-file ones, and this is later in argv than that
-      # auto-generated file.
-      - --webserver-allow-from=127.0.0.1,10.10.0.0/24
+      # Only loopback, this compose project's own bridge network and the
+      # WireGuard subnet may reach the webserver/API port, regardless of
+      # what is published below. This OVERRIDES PDNS_AUTH_API_KEY's own
+      # auto-generated `webserver-allow-from=0.0.0.0/0` — command-line
+      # settings always win over config-file ones, and this is later in
+      # argv than that auto-generated file.
+      #
+      # 172.18.0.0/16 is the one that actually matters day to day and was
+      # missing here: `api`/`worker` reach PowerDNS as `http://pdns:8081`
+      # over the compose bridge, so their source address is a 172.18.x.x
+      # container IP — never 127.0.0.1 (that is the pdns container's own
+      # loopback, not theirs) and never the WireGuard subnet (that is how
+      # the NODES are reached, not how containers talk to each other).
+      # Without it every PowerDnsProvider call answers 403 and each route
+      # lands in `failed`.
+      - --webserver-allow-from=127.0.0.1,172.18.0.0/16,10.10.0.0/24
       - --default-soa-content=@ hostmaster.gxhost.com.br 0 10800 3600 604800 3600
     ports:
-      - "53:53/tcp"
-      - "53:53/udp"
+      # Bound to ONE address, not 0.0.0.0 — Ubuntu runs systemd-resolved's
+      # stub listener on 127.0.0.53:53, and a wildcard bind collides with
+      # it ("address already in use", found live on first boot). Pinning
+      # the host's own public address sidesteps that without touching the
+      # host's resolver, which is load-bearing for everything else on this
+      # box (Docker pulls, ACME, the payment provider's API). Set
+      # PDNS_BIND_ADDRESS to this VPS's public IP; the 0.0.0.0 fallback is
+      # only for a host that has no stub listener in the way.
+      - "${PDNS_BIND_ADDRESS:-0.0.0.0}:53:53/tcp"
+      - "${PDNS_BIND_ADDRESS:-0.0.0.0}:53:53/udp"
       # Deliberately NOT published to 0.0.0.0 — only reachable over the
       # compose network (this VPS's own api/worker) or, if ns1 and the
       # app VPS are ever split apart, bind this to the WireGuard

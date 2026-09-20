@@ -62,15 +62,48 @@ export class PowerDnsProvider implements DnsProvider {
     return this.config.get<string>('PUBLIC_GATEWAY_DNS_SERVER_ID') || 'localhost';
   }
 
-  // The SAME zone `deriveHostname`/`deriveCustomHostname` (public-address.ts)
-  // already compose hostnames under — PowerDNS has no separate "zone ID"
-  // concept the way Cloudflare does, so this one existing var covers both
-  // "what zone do I compose a hostname under" and "what zone does the API
-  // manage," with nothing new to configure.
+  /**
+   * The zone that actually EXISTS in PowerDNS and names its REST API's
+   * `/zones/{zone}` path — deliberately its own setting, not reused from
+   * PUBLIC_GATEWAY_HOSTNAME_ZONE.
+   *
+   * Those two are the same value only when the whole registrable apex is
+   * delegated to this platform's nameservers. They diverge in the
+   * recommended topology, and assuming otherwise was a real production
+   * bug: `deriveHostname` composes `<shortId>.mc.<zone>` from the APEX
+   * ("gxhost.com.br"), while PowerDNS is authoritative for the game
+   * subdomain ALONE ("mc.gxhost.com.br") so the apex can keep serving the
+   * site/panel/API from wherever it already lives. Patching
+   * "gxhost.com.br." in that setup answers 404 for every single record,
+   * and because DNS sync is best-effort by design it fails silently —
+   * every server just keeps showing its plain ip:port with nothing but a
+   * log line to say why.
+   */
   private zone(): string {
-    const zone = this.config.get<string>('PUBLIC_GATEWAY_HOSTNAME_ZONE');
-    if (!zone) throw new ServiceUnavailableException('PUBLIC_GATEWAY_HOSTNAME_ZONE is not configured');
+    const zone = this.config.get<string>('PUBLIC_GATEWAY_DNS_ZONE') || this.config.get<string>('PUBLIC_GATEWAY_HOSTNAME_ZONE');
+    if (!zone) throw new ServiceUnavailableException('PUBLIC_GATEWAY_DNS_ZONE (or PUBLIC_GATEWAY_HOSTNAME_ZONE) is not configured');
     return zone;
+  }
+
+  /**
+   * PowerDNS rejects an rrset outside the zone being patched, and the
+   * whole PATCH — every rrset in it — fails as one. Checking here turns
+   * that into a precise, actionable log line naming both the hostname and
+   * the managed zone, instead of a bare "422 Unprocessable Entity" that
+   * gives no hint which of the two settings is wrong.
+   *
+   * The case this really catches: a customer custom hostname, which
+   * `deriveCustomHostname` composes directly under the APEX
+   * ("survival.gxhost.com.br"). That name is outside a delegated
+   * "mc.gxhost.com.br" zone, so PowerDNS genuinely cannot publish it —
+   * the apex's own DNS host still owns those names.
+   */
+  private assertInZone(hostname: string): void {
+    const zone = this.fqdn(this.zone()).toLowerCase();
+    const name = this.fqdn(hostname).toLowerCase();
+    if (name !== zone && !name.endsWith(`.${zone}`)) {
+      throw new ServiceUnavailableException(`"${hostname}" is outside the PowerDNS-managed zone "${this.zone()}" — it cannot be published there`);
+    }
   }
 
   /** PowerDNS's own convention: every zone/record name is FQDN-absolute, always ending in a dot. */
@@ -125,6 +158,7 @@ export class PowerDnsProvider implements DnsProvider {
   }
 
   async ensureSrv(input: SrvRecordInput): Promise<void> {
+    this.assertInZone(this.srvName(input.hostname));
     await this.patchRrsets([
       {
         name: this.fqdn(this.srvName(input.hostname)),
@@ -142,6 +176,7 @@ export class PowerDnsProvider implements DnsProvider {
   }
 
   async removeSrv(hostname: string): Promise<void> {
+    this.assertInZone(this.srvName(hostname));
     await this.patchRrsets([{ name: this.fqdn(this.srvName(hostname)), type: 'SRV', changetype: 'DELETE' }]);
     this.logger.log(`SRV record removed for ${hostname}`);
   }
@@ -155,6 +190,7 @@ export class PowerDnsProvider implements DnsProvider {
    * replaces: log and return without calling the API.
    */
   async ensureAddressRecord(input: AddressRecordInput): Promise<void> {
+    this.assertInZone(input.hostname);
     const type = isIPv4(input.ip) ? 'A' : isIPv6(input.ip) ? 'AAAA' : null;
     if (!type) {
       this.logger.warn(`ensureAddressRecord skipped for ${input.hostname}: "${input.ip}" is not a literal IPv4/IPv6 address`);
@@ -167,6 +203,7 @@ export class PowerDnsProvider implements DnsProvider {
   }
 
   async removeAddressRecord(hostname: string): Promise<void> {
+    this.assertInZone(hostname);
     // Both types in ONE call, unconditionally — a DELETE changetype on an
     // rrset that was never there is a documented PowerDNS no-op, so
     // there's no need to check which type exists first the way

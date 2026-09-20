@@ -47,3 +47,45 @@ func (m *Manager) Remove(uuid string) {
 	defer m.mu.Unlock()
 	delete(m.servers, uuid)
 }
+
+// States snapshots every registered server's power state for the
+// heartbeat to report (architecture doc 2.7: the agent reports this to
+// the panel, never accepts it from there). The panel's `servers.power_state`
+// had no writer at all before this — it sat at its `'offline'` default
+// forever while containers ran, so the panel showed every server as
+// offline and a version-change's "must be offline" precondition could
+// never actually reject anything.
+//
+// Reported as a full snapshot every tick rather than on each transition:
+// the bug being fixed IS drift, and a transition-only report re-creates
+// it the moment one call is dropped, a container crashes on its own, or
+// the agent restarts. A periodic snapshot reconciles itself.
+//
+// TryLock, not Lock: `Server.mu` is held across Docker calls that can
+// take many seconds (a graceful stop waits for the JVM), and blocking
+// here would stall the heartbeat that also carries this node's own
+// health — a DELAYED heartbeat would mark the whole node offline, which
+// is far worse than a late power state. A server mid-transition is
+// simply omitted from this tick; it is also exactly the server whose
+// state is ambiguous right now, and the panel leaves an omitted server
+// untouched rather than guessing (the same best-effort contract every
+// other heartbeat field already follows). The next tick, 15s later,
+// reports it settled.
+func (m *Manager) States() map[string]State {
+	m.mu.RLock()
+	servers := make([]*Server, 0, len(m.servers))
+	for _, s := range m.servers {
+		servers = append(servers, s)
+	}
+	m.mu.RUnlock()
+
+	out := make(map[string]State, len(servers))
+	for _, s := range servers {
+		if !s.mu.TryLock() {
+			continue // busy with a Docker call — its state is in flux, report it next tick
+		}
+		out[s.UUID] = s.State
+		s.mu.Unlock()
+	}
+	return out
+}

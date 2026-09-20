@@ -162,8 +162,11 @@ Para usar `<shortId>.mc.<seu-domínio>:<porta>` em vez do IP cru:
 
 SRV (pra esconder a porta também, `mc-abc123.gxhost.com.br` sem `:porta`)
 é opt-in e **nunca mexe em DNS sozinho** por padrão — só ligue
-`PUBLIC_GATEWAY_DNS_PROVIDER=cloudflare` (+ `PUBLIC_GATEWAY_DNS_API_TOKEN`
-+ `PUBLIC_GATEWAY_DNS_ZONE_ID`) se realmente quiser essa automação.
+`PUBLIC_GATEWAY_DNS_PROVIDER=powerdns` (+ `PUBLIC_GATEWAY_DNS_API_URL`
++ `PUBLIC_GATEWAY_DNS_API_TOKEN`) se realmente quiser essa automação —
+ver `docs/DNS-POWERDNS.md` para o runbook completo (PowerDNS é a DNS
+autoritativa própria do GXhost, não depende mais da Cloudflare para
+isso).
 
 ### 5.4. Hostname personalizado pelo cliente
 
@@ -182,10 +185,10 @@ individualmente pelo reconciler, nunca um wildcard.
   (`www`, `api`, `admin`, `mc`, `node01`, `node02`, etc. — ver
   `apps/api/src/modules/gateway/hostname-policy.ts`), unicidade global
   (constraint no banco — nenhum cliente pode usar o hostname de outro),
-  e, quando `PUBLIC_GATEWAY_DNS_PROVIDER=cloudflare` está ligado, uma
-  checagem ao vivo contra a zona real da Cloudflare (falha aberta: uma
-  instabilidade da API da Cloudflare nunca bloqueia o cliente salvar).
-- **Sem porta de verdade**: só quando `PUBLIC_GATEWAY_DNS_PROVIDER=cloudflare`
+  e, quando `PUBLIC_GATEWAY_DNS_PROVIDER=powerdns` está ligado, uma
+  checagem ao vivo contra a zona real no PowerDNS (falha aberta: uma
+  instabilidade da API do PowerDNS nunca bloqueia o cliente salvar).
+- **Sem porta de verdade**: só quando `PUBLIC_GATEWAY_DNS_PROVIDER=powerdns`
   está ligado — é o registro SRV que faz isso funcionar. Com a automação
   desligada, o hostname ainda é reservado e mostrado, mas com a porta
   (`survival.gxhost.com.br:25566`), porque o SRV nunca foi publicado de

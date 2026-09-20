@@ -158,7 +158,7 @@ async function seedLocationAndTemplate(): Promise<void> {
   // customer buys and one a fresh dev database seeds are byte-identical.
   // Paper stays first/`isPublic` (payments plan's own "a customer needs
   // at least one choosable software at checkout" requirement); the other
-  // five are public too as of the six-software client setup screen.
+  // the remaining presets are public too as of the multi-software client setup screen.
   for (const [index, kind] of PRESET_KINDS.entries()) {
     const preset = SOFTWARE_PRESETS[kind];
     const existing = await prisma.serverTemplate.findFirst({ where: { groupId: group.id, name: preset.name } });
@@ -200,7 +200,7 @@ async function seedLocationAndTemplate(): Promise<void> {
         softwareKind: preset.softwareKind,
         // Public on a fresh database — a customer needs at least one
         // choosable software at checkout (`GET /api/public/templates`);
-        // all six presets are public as of the client setup screen.
+        // every curated preset is public as of the client setup screen.
         isPublic: true,
         sortOrder: index,
         variables: { create: curatedVariables },

@@ -19,6 +19,24 @@ describe('derivePublicAddress', () => {
     expect(derivePublicAddress('203.0.113.50', 'abc123', 25566)).toBe('203.0.113.50:25566');
     expect(derivePublicAddress('203.0.113.50', 'abc123', 25566, null)).toBe('203.0.113.50:25566');
   });
+
+  it('drops the port once DNS automation is active — the whole point of the published SRV record', () => {
+    expect(derivePublicAddress('203.0.113.50', 'abc123', 25566, 'gxhost.com.br', true)).toBe('abc123.mc.gxhost.com.br');
+  });
+
+  /**
+   * A zone can be configured while the provider is still `none`: the
+   * hostname resolves via a static wildcard, but no SRV record exists to
+   * carry the port. Hiding it there would hand the customer an address
+   * that silently refuses to connect.
+   */
+  it('keeps the port when a zone is configured but DNS automation is off', () => {
+    expect(derivePublicAddress('203.0.113.50', 'abc123', 25566, 'gxhost.com.br', false)).toBe('abc123.mc.gxhost.com.br:25566');
+  });
+
+  it('never hides the port when there is no zone at all, whatever automation says', () => {
+    expect(derivePublicAddress('203.0.113.50', 'abc123', 25566, null, true)).toBe('203.0.113.50:25566');
+  });
 });
 
 describe('deriveCustomHostname', () => {

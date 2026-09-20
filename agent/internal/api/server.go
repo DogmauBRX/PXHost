@@ -136,6 +136,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("PATCH /api/servers/{uuid}/limits", s.requireNodeToken(http.HandlerFunc(s.handleUpdateLimits)))
 	mux.Handle("PATCH /api/servers/{uuid}/suspend", s.requireNodeToken(http.HandlerFunc(s.handleSuspend)))
 	mux.Handle("PATCH /api/servers/{uuid}/variables", s.requireNodeToken(http.HandlerFunc(s.handleUpdateVariables)))
+	mux.Handle("POST /api/servers/{uuid}/reinstall", s.requireNodeToken(http.HandlerFunc(s.handleReinstallServer)))
 	mux.Handle("POST /api/servers/{uuid}/modpacks/install", s.requireNodeToken(http.HandlerFunc(s.handleModpackInstall)))
 
 	// The WS endpoint is NOT gated by requireNodeToken: per architecture

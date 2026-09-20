@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { randomBytes, createHash } from 'node:crypto';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../core/prisma/prisma.service';
@@ -21,6 +21,8 @@ const HEARTBEAT_INTERVAL_SECONDS = 15;
  */
 @Injectable()
 export class NodeBootstrapService {
+  private readonly logger = new Logger(NodeBootstrapService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
@@ -256,6 +258,8 @@ export class NodeBootstrapService {
       });
     }
 
+    await this.syncServerPowerStates(nodeId, dto.servers);
+
     return { status: deriveHealthStatus(node.lastHeartbeatAt) };
   }
 
@@ -291,6 +295,63 @@ export class NodeBootstrapService {
       tx.server.findMany({ where: { nodeId }, select: { id: true } }),
     );
     return { serverUuids: servers.map((s) => s.id) };
+  }
+
+  /**
+   * The ONLY writer of `servers.power_state`. Before this existed the
+   * column had no writer at all: it sat at its `'offline'` schema default
+   * from the moment a row was created, so the panel showed every server
+   * as offline while its container ran, and a version change's "server
+   * must be offline" precondition could never reject anything (the
+   * agent's own ErrServerNotStopped was the only thing actually
+   * enforcing it).
+   *
+   * Scoped to `nodeId`: a node may only ever speak for the servers it
+   * hosts. Without that, a compromised or simply misconfigured agent
+   * could rewrite the power state of every server on the platform.
+   *
+   * Never deletes or defaults anything for a server the payload omits —
+   * the agent deliberately omits a server mid-Docker-call (see
+   * srv.Manager.States), and an absent entry means "no news", never
+   * "offline". Same best-effort contract as the node telemetry above.
+   */
+  private async syncServerPowerStates(nodeId: string, reported?: { uuid: string; state: string }[]): Promise<void> {
+    if (!reported?.length) return;
+
+    const byState = new Map<string, string[]>();
+    for (const { uuid, state } of reported) {
+      const ids = byState.get(state);
+      if (ids) ids.push(uuid);
+      else byState.set(state, [uuid]);
+    }
+
+    const now = new Date();
+    try {
+      // `servers` is a tenant table under RLS, so this needs an explicit
+      // admin context like every other agent-originated write — the
+      // policies apply just as unforgivingly to code that forgot to set
+      // it (PrismaService.withRLS's own doc comment). There is no human
+      // behind a heartbeat, hence `userId: null`.
+      await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
+        // One updateMany per DISTINCT state, not per server: a node with
+        // 100 servers reporting every 15s is 2-3 statements here instead
+        // of 100. `powerState: { not: state }` makes each one a genuine
+        // no-op when nothing changed, so `power_state_at` stays a real
+        // "when it last CHANGED" timestamp rather than being rewritten
+        // every tick — which is what makes it usable for "offline since".
+        for (const [state, ids] of byState) {
+          await tx.server.updateMany({
+            where: { id: { in: ids }, nodeId, powerState: { not: state } },
+            data: { powerState: state, powerStateAt: now },
+          });
+        }
+      });
+    } catch (err) {
+      // Never fail the heartbeat over this: the node's own health status
+      // (and therefore whether the panel considers it reachable at all)
+      // rides on this same call succeeding.
+      this.logger.warn(`power state sync failed for node ${nodeId}: ${(err as Error).message}`);
+    }
   }
 }
 

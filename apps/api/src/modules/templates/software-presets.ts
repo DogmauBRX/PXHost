@@ -295,10 +295,10 @@ else
   printf -- '-jar\\n%s\\n' "\${SERVER_JARFILE}" > unix_args.txt
 fi`;
 const INSTALL_IMAGE = 'ghcr.io/parkervcp/installers:debian';
-// Fabric/Forge/NeoForge's own installers are Java programs
+// Fabric/Quilt/Forge/NeoForge's own installers are Java programs
 // (`java -jar *-installer.jar ...`), unlike Paper/Purpur/Vanilla which
 // only ever `curl` a prebuilt jar — `INSTALL_IMAGE` (parkervcp/installers:
-// debian) has curl/jq/bash but genuinely no JVM, so those three scripts
+// debian) has curl/jq/bash but genuinely no JVM, so those scripts
 // failed live with "install script exited 127" (command not found) on
 // every real attempt. Same `parkervcp/installers` family, `java_25` tag
 // instead — still has curl/jq/bash, plus a real OpenJDK.

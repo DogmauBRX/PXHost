@@ -1,8 +1,7 @@
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
-import { ArrowLeft, Moon, Sun } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { z } from 'zod';
 import { useAuthStore } from '@/shared/stores/auth.store';
-import { useThemeStore } from '@/shared/theme/theme.store';
 import { LoginForm } from '@/features/auth/LoginForm';
 import { Logo } from '@/ui/brand/Logo';
 import { Wordmark } from '@/ui/brand/Wordmark';
@@ -31,8 +30,6 @@ export const Route = createFileRoute('/login')({
 });
 
 function LoginPage() {
-  const theme = useThemeStore((s) => s.theme);
-  const toggleTheme = useThemeStore((s) => s.toggle);
   const { redirect: redirectTo } = Route.useSearch();
 
   // `login-hero` (index.css) paints an opaque circuit-board backdrop —
@@ -47,9 +44,8 @@ function LoginPage() {
           comment: it's the logged-out home, not an auth-gated dispatcher)
           — a visitor who opened this page by mistake, or just wants to
           browse plans again, shouldn't have to hit the browser's own back
-          button. Mirrors the theme toggle's exact circular-button treatment
-          (opposite corner) for a symmetric header, same reasoning: it needs
-          its own opaque surface to stay legible over the circuit backdrop. */}
+          button. It needs its own opaque surface + border + shadow to stay
+          legible over the circuit backdrop. */}
       <Link
         to="/"
         aria-label="Voltar para a página inicial"
@@ -58,20 +54,6 @@ function LoginPage() {
       >
         <ArrowLeft className="h-5 w-5" />
       </Link>
-      {/* A plain icon button (Topbar's own treatment) reads fine sitting on
-          a flat `bg-surface` header, but here it floats directly over the
-          circuit-board backdrop — no surface underneath to separate it
-          from a background with its own texture. It needs its own opaque
-          surface + border + shadow to stay legible on top of it. */}
-      <button
-        type="button"
-        onClick={toggleTheme}
-        aria-label={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
-        title={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
-        className="absolute top-4 right-4 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface text-text shadow-md transition-colors hover:border-accent/40 hover:text-accent-strong sm:top-6 sm:right-6"
-      >
-        {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-      </button>
 
       {/* `relative` here is load-bearing, not decorative: `.login-hero__circuit`
           above is `position: absolute` with no z-index, which per the CSS

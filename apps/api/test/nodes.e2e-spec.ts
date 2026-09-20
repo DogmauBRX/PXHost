@@ -500,4 +500,145 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     });
     expect(res.statusCode).toBe(409);
   });
+
+  /**
+   * `servers.power_state` had NO writer at any point in the codebase: it
+   * sat at its `'offline'` schema default forever while containers ran,
+   * so the panel showed every server as offline and a version change's
+   * "must be offline" precondition could never reject anything. The
+   * heartbeat is now that writer — these pin down the four properties it
+   * has to hold.
+   */
+  describe('per-server power state', () => {
+    let ownerId: string;
+    let serverA: string;
+    let serverB: string;
+    let otherNodeId: string;
+    let foreignServer: string;
+
+    const asAdmin = <T>(fn: (tx: Parameters<Parameters<PrismaService['withRLS']>[1]>[0]) => Promise<T>) =>
+      prisma.withRLS({ userId: null, isAdmin: true }, fn);
+
+    const makeServer = (shortId: string, node: string, name: string) =>
+      asAdmin((tx) =>
+        tx.server.create({
+          data: { shortId, ownerId, nodeId: node, name, memoryMb: 1024, diskMb: 5120 },
+          select: { id: true },
+        }),
+      ).then((s) => s.id);
+
+    const powerStateOf = (id: string) =>
+      asAdmin((tx) => tx.server.findUniqueOrThrow({ where: { id }, select: { powerState: true, powerStateAt: true } }));
+
+    beforeAll(async () => {
+      const owner = await prisma.user.findFirstOrThrow({ where: { email: `nodes-admin-${suffix}@gxhost.local` }, select: { id: true } });
+      ownerId = owner.id;
+
+      const other = await prisma.node.create({
+        data: { locationId, name: `nodes-e2e-other-${suffix}`, fqdn: `other-${suffix}.e2e.local`, memoryTotalMb: 8192, diskTotalMb: 102400 },
+        select: { id: true },
+      });
+      otherNodeId = other.id;
+
+      serverA = await makeServer(`ps${String(suffix).slice(-6)}`, nodeId, 'power-state A');
+      serverB = await makeServer(`pt${String(suffix).slice(-6)}`, nodeId, 'power-state B');
+      foreignServer = await makeServer(`pu${String(suffix).slice(-6)}`, otherNodeId, 'power-state foreign');
+    });
+
+    afterAll(async () => {
+      await asAdmin((tx) => tx.server.deleteMany({ where: { id: { in: [serverA, serverB, foreignServer] } } }));
+      await prisma.node.deleteMany({ where: { id: otherNodeId } });
+    });
+
+    it('a heartbeat carrying server states writes them to power_state', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/remote/nodes/heartbeat',
+        headers: { authorization: `Bearer ${nodeToken}` },
+        payload: { servers: [{ uuid: serverA, state: 'running' }, { uuid: serverB, state: 'crashed' }] },
+      });
+      expect(res.statusCode).toBe(201);
+
+      expect((await powerStateOf(serverA)).powerState).toBe('running');
+      expect((await powerStateOf(serverB)).powerState).toBe('crashed');
+    });
+
+    it('a server the payload OMITS keeps its state — an absent entry means "no news", never offline', async () => {
+      // Exactly what the agent sends while a server is busy with a Docker
+      // call (srv.Manager.States skips it rather than blocking). Treating
+      // that gap as "offline" would flap the panel on every start/stop.
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/remote/nodes/heartbeat',
+        headers: { authorization: `Bearer ${nodeToken}` },
+        payload: { servers: [{ uuid: serverA, state: 'running' }] },
+      });
+      expect(res.statusCode).toBe(201);
+      expect((await powerStateOf(serverB)).powerState).toBe('crashed');
+    });
+
+    it('an old agent that sends no `servers` key at all leaves every state untouched', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/remote/nodes/heartbeat',
+        headers: { authorization: `Bearer ${nodeToken}` },
+        payload: { agentVersion: 'v0.4.0-e2e-old-agent' },
+      });
+      expect(res.statusCode).toBe(201);
+      expect((await powerStateOf(serverA)).powerState).toBe('running');
+      expect((await powerStateOf(serverB)).powerState).toBe('crashed');
+    });
+
+    it('power_state_at only moves when the state actually CHANGES', async () => {
+      // What makes the column answer "offline since when?" instead of
+      // "when did the last heartbeat arrive?" — every 15s tick re-reports
+      // the same state, so an unconditional write would destroy it.
+      const before = await powerStateOf(serverA);
+      await app.inject({
+        method: 'POST',
+        url: '/api/remote/nodes/heartbeat',
+        headers: { authorization: `Bearer ${nodeToken}` },
+        payload: { servers: [{ uuid: serverA, state: 'running' }] },
+      });
+      const unchanged = await powerStateOf(serverA);
+      expect(unchanged.powerStateAt.getTime()).toBe(before.powerStateAt.getTime());
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/remote/nodes/heartbeat',
+        headers: { authorization: `Bearer ${nodeToken}` },
+        payload: { servers: [{ uuid: serverA, state: 'offline' }] },
+      });
+      const changed = await powerStateOf(serverA);
+      expect(changed.powerState).toBe('offline');
+      expect(changed.powerStateAt.getTime()).toBeGreaterThan(before.powerStateAt.getTime());
+    });
+
+    it('a node cannot rewrite the power state of a server hosted on a DIFFERENT node', async () => {
+      // The security property: a node speaks only for what it hosts.
+      // Without the nodeId scope, one compromised or merely misconfigured
+      // agent could rewrite every server on the platform.
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/remote/nodes/heartbeat',
+        headers: { authorization: `Bearer ${nodeToken}` },
+        payload: { servers: [{ uuid: foreignServer, state: 'running' }] },
+      });
+      expect(res.statusCode).toBe(201); // silently ignored, never an error the agent could probe with
+      expect((await powerStateOf(foreignServer)).powerState).toBe('offline');
+    });
+
+    it('rejects a state value outside the agent\'s own srv.State set', async () => {
+      // A mismatched agent build must be refused at the edge: this column
+      // is branched on downstream ("is it offline?"), so an unknown value
+      // stored here would read as "not offline" everywhere at once.
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/remote/nodes/heartbeat',
+        headers: { authorization: `Bearer ${nodeToken}` },
+        payload: { servers: [{ uuid: serverA, state: 'zombie' }] },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+  });
 });

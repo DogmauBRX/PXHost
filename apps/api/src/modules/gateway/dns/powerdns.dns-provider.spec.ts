@@ -133,10 +133,72 @@ describe('PowerDnsProvider', () => {
       );
     });
 
-    it('throws ServiceUnavailableException when PUBLIC_GATEWAY_HOSTNAME_ZONE is not configured', async () => {
+    it('throws ServiceUnavailableException when neither zone var is configured', async () => {
       const unconfigured = new PowerDnsProvider(makeConfig({ PUBLIC_GATEWAY_HOSTNAME_ZONE: '' }));
       await expect(unconfigured.ensureSrv({ hostname: 'x.mc.gxhost.com.br', target: 'gw.gxhost.com.br', port: 1 })).rejects.toThrow(
-        'PUBLIC_GATEWAY_HOSTNAME_ZONE is not configured',
+        'is not configured',
+      );
+    });
+
+    /**
+     * The production bug this pair of tests pins down: the two zone vars
+     * answer different questions. PUBLIC_GATEWAY_HOSTNAME_ZONE is the
+     * registrable apex a hostname is COMPOSED from (`<shortId>.mc.<apex>`);
+     * PUBLIC_GATEWAY_DNS_ZONE is the zone PowerDNS actually HOSTS. Reusing
+     * the apex as the API's zone name made every PATCH answer 404, silently
+     * (DNS sync is best-effort), leaving every server on plain ip:port.
+     */
+    it('patches PUBLIC_GATEWAY_DNS_ZONE, not the hostname-composition apex', async () => {
+      const delegated = new PowerDnsProvider(
+        makeConfig({ PUBLIC_GATEWAY_HOSTNAME_ZONE: 'gxhost.com.br', PUBLIC_GATEWAY_DNS_ZONE: 'mc.gxhost.com.br' }),
+      );
+      mockFetchOnce({}, true, 204);
+      await delegated.ensureAddressRecord({ hostname: 'abc123.mc.gxhost.com.br', ip: '203.0.113.50' });
+      const [url] = (global.fetch as jest.Mock).mock.calls[0];
+      expect(url).toContain('/zones/mc.gxhost.com.br.');
+      expect(url).not.toContain('/zones/gxhost.com.br.');
+    });
+
+    it('falls back to PUBLIC_GATEWAY_HOSTNAME_ZONE when PUBLIC_GATEWAY_DNS_ZONE is unset (whole apex delegated)', async () => {
+      mockFetchOnce({}, true, 204);
+      await provider.ensureAddressRecord({ hostname: 'abc123.mc.gxhost.com.br', ip: '203.0.113.50' });
+      const [url] = (global.fetch as jest.Mock).mock.calls[0];
+      expect(url).toContain('/zones/mc.gxhost.com.br.');
+    });
+  });
+
+  /**
+   * PowerDNS rejects the WHOLE patch if any rrset falls outside the zone,
+   * with a bare 422 that names neither setting. Catching it here turns the
+   * real case — a custom hostname composed under the apex
+   * (`survival.gxhost.com.br`) while only `mc.gxhost.com.br` is delegated
+   * — into a message that says which name and which zone disagree.
+   */
+  describe('zone containment', () => {
+    const delegated = () =>
+      new PowerDnsProvider(makeConfig({ PUBLIC_GATEWAY_HOSTNAME_ZONE: 'gxhost.com.br', PUBLIC_GATEWAY_DNS_ZONE: 'mc.gxhost.com.br' }));
+
+    it('refuses a hostname outside the managed zone, without calling the API', async () => {
+      await expect(delegated().ensureAddressRecord({ hostname: 'survival.gxhost.com.br', ip: '203.0.113.50' })).rejects.toThrow(
+        'outside the PowerDNS-managed zone',
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('refuses on removal too, so a stale name never silently "succeeds"', async () => {
+      await expect(delegated().removeSrv('survival.gxhost.com.br')).rejects.toThrow('outside the PowerDNS-managed zone');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('accepts the zone apex itself and any name beneath it', async () => {
+      mockFetchOnce({}, true, 204);
+      await expect(delegated().ensureAddressRecord({ hostname: 'mc.gxhost.com.br', ip: '203.0.113.50' })).resolves.toBeUndefined();
+    });
+
+    /** A sibling zone that merely SHARES a suffix is not inside it — "notmc.gxhost.com.br" must not pass for "mc.gxhost.com.br". */
+    it('rejects a name that only shares a suffix with the zone', async () => {
+      await expect(delegated().ensureAddressRecord({ hostname: 'abc.notmc.gxhost.com.br', ip: '203.0.113.50' })).rejects.toThrow(
+        'outside the PowerDNS-managed zone',
       );
     });
   });

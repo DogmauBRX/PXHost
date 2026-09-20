@@ -4,61 +4,13 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate } from '@tanstack/react-router';
-import { Monitor, Moon, Save, Sun } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { useAuthStore } from '@/shared/stores/auth.store';
-import { useThemeStore } from '@/shared/theme/theme.store';
 import { getAccount, updateAccount, changePassword, type UpdateAccountInput } from './account.api';
 import { ApiError } from '@/shared/api/client';
 import type { ClientAccount } from '@/shared/api/types';
 import { Alert, Avatar, Button, Card, CardBody, CardHeader, CardTitle, CardDescription, Field, Input, LoadingRow, PageHeader } from '@/ui/primitives';
 import { BillingProfileFields, billingSchema, accountToBillingForm, type BillingFormValues } from '@/features/public/BillingProfileFields';
-
-function AppearanceCard() {
-  const theme = useThemeStore((s) => s.theme);
-  const setTheme = useThemeStore((s) => s.setTheme);
-
-  return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>Aparência</CardTitle>
-          <CardDescription>Escolha como o painel deve ser exibido neste navegador.</CardDescription>
-        </div>
-      </CardHeader>
-      <CardBody>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {(
-            [
-              { value: 'light', label: 'Claro', icon: Sun },
-              { value: 'dark', label: 'Escuro', icon: Moon },
-            ] as const
-          ).map(({ value, label, icon: Icon }) => {
-            const active = theme === value;
-            return (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setTheme(value)}
-                aria-pressed={active}
-                className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm font-medium transition ${
-                  active
-                    ? 'border-accent bg-accent-tint text-accent-strong'
-                    : 'border-border bg-surface text-text hover:border-border-strong'
-                }`}
-              >
-                <Icon className="h-4 w-4" aria-hidden="true" />
-                {label}
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-3 flex items-center gap-1.5 text-xs text-text-faint">
-          <Monitor className="h-3.5 w-3.5" aria-hidden="true" />A preferência fica salva apenas neste navegador.
-        </p>
-      </CardBody>
-    </Card>
-  );
-}
 
 interface ProfileFormValues {
   firstName: string;
@@ -360,7 +312,6 @@ export function SettingsPage() {
       <PageHeader title="Configurações" subtitle="Preferências e dados da sua conta." />
 
       <div className="grid max-w-3xl gap-6">
-        <AppearanceCard />
         <ProfileCard />
         <BillingCard />
         <ChangePasswordCard />

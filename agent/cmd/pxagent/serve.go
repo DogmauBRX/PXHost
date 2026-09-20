@@ -119,7 +119,7 @@ func runServeCmd(args []string) error {
 	fmt.Printf("pxagent serving on %s (%d server(s) registered)\n", listenAddr, adopted+len(serverPaths))
 
 	if nf.PanelURL != "" {
-		go runHeartbeatLoop(ctx, nf, tokenStore, dc)
+		go runHeartbeatLoop(ctx, nf, tokenStore, dc, manager)
 		if nf.TokenRotationIntervalHours > 0 {
 			go runTokenRotationLoop(ctx, *nodePath, nf, tokenStore)
 		}
@@ -353,7 +353,7 @@ func loadAndAdopt(ctx context.Context, manager *srv.Manager, dc *dockerx.Client,
 // bootstrap` run; a heartbeat failure is logged and retried on the next
 // tick, never fatal to the agent process — a panel outage must not take
 // down a node's already-running game servers.
-func runHeartbeatLoop(ctx context.Context, nf config.NodeFile, tokenStore *api.TokenStore, dc *dockerx.Client) {
+func runHeartbeatLoop(ctx context.Context, nf config.NodeFile, tokenStore *api.TokenStore, dc *dockerx.Client, manager *srv.Manager) {
 	interval := time.Duration(nf.HeartbeatIntervalSeconds) * time.Second
 	if interval <= 0 {
 		interval = 15 * time.Second
@@ -437,6 +437,16 @@ func runHeartbeatLoop(ctx context.Context, nf config.NodeFile, tokenStore *api.T
 		if dynamic.MemoryValid {
 			req.ReportedMemoryUsedMb = int64(dynamic.MemoryUsedBytes / (1024 * 1024))
 			req.ReportedMemoryAvailableMb = int64(dynamic.MemoryAvailableBytes / (1024 * 1024))
+		}
+
+		// The panel's only source of truth for `servers.power_state` —
+		// a full snapshot each tick, so a state the panel missed (a
+		// dropped call, a container that crashed on its own, an agent
+		// restart) self-corrects on the next one instead of drifting
+		// permanently. See srv.Manager.States for why a server busy
+		// with a Docker call is omitted rather than waited on.
+		for uuid, state := range manager.States() {
+			req.Servers = append(req.Servers, panel.ServerPowerState{UUID: uuid, State: string(state)})
 		}
 
 		reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

@@ -115,11 +115,45 @@ PUBLIC_GATEWAY_DNS_API_TOKEN=
 # Server id do PowerDNS na própria REST API dele — "localhost" é a
 # convenção padrão do PowerDNS, praticamente nunca precisa mudar.
 PUBLIC_GATEWAY_DNS_SERVER_ID=localhost
+
+# A zona que o PowerDNS REALMENTE hospeda (a que aparece no path
+# /api/v1/servers/{id}/zones/{zona} da REST API dele).
+PUBLIC_GATEWAY_DNS_ZONE=mc.gxhost.com.br
 ```
 
 Removida: `PUBLIC_GATEWAY_DNS_ZONE_ID` (conceito específico da Cloudflare
-— zona no PowerDNS é identificada pelo próprio nome/domínio, já coberto
-por `PUBLIC_GATEWAY_HOSTNAME_ZONE`, que já existia).
+— zona no PowerDNS é identificada pelo próprio nome/domínio).
+
+### 5.1. `PUBLIC_GATEWAY_DNS_ZONE` ≠ `PUBLIC_GATEWAY_HOSTNAME_ZONE`
+
+Essas duas variáveis **não são a mesma coisa**, e tratá-las como se
+fossem foi um bug real em produção: todo `PATCH` de registro respondia
+`404 Not Found` e, como a sincronia de DNS é best-effort de propósito
+(um cliente sempre pode cair de volta no `ip:porta`), nada falhava de
+forma visível — os 7 servidores simplesmente continuaram mostrando
+`ip:porta` e só o log da API dizia o porquê.
+
+| Variável | O que é | Valor no setup recomendado |
+| --- | --- | --- |
+| `PUBLIC_GATEWAY_HOSTNAME_ZONE` | O domínio **raiz**, usado só para compor o hostname: `deriveHostname` monta `<shortId>.mc.<zona>`. | `gxhost.com.br` |
+| `PUBLIC_GATEWAY_DNS_ZONE` | A zona **delegada aos ns da GXhost**, a que existe de fato no PowerDNS. | `mc.gxhost.com.br` |
+
+O motivo de serem diferentes é justamente o que torna essa migração
+segura: delegando **só** `mc.gxhost.com.br`, o domínio raiz continua
+servindo site, painel e API de onde já está — a migração não toca em
+nada que já funciona. Delegar o raiz inteiro ao PowerDNS também é
+válido; nesse caso as duas têm o mesmo valor e
+`PUBLIC_GATEWAY_DNS_ZONE` pode ficar vazia (cai em
+`PUBLIC_GATEWAY_HOSTNAME_ZONE`).
+
+**Consequência para hostname personalizado**: `deriveCustomHostname`
+compõe o label direto sob o raiz (`survival.gxhost.com.br`), que está
+**fora** da zona delegada. Com só o subdomínio de jogo delegado, o
+PowerDNS não tem como publicar esse nome — `PowerDnsProvider.assertInZone`
+recusa com uma mensagem explícita em vez de deixar o PowerDNS devolver
+um `422` sem contexto. Para habilitar hostname personalizado é preciso
+delegar o raiz inteiro, ou mudar `deriveCustomHostname` para compor sob
+`.mc.` também.
 
 ## 6. Alterações no Docker/Compose
 

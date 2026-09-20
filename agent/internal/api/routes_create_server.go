@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -108,17 +109,52 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	image := sv.Image
+	digest := req.ImageDigest
+
+	// A UUID the manager already knows is a RETRY of a request that got
+	// at least as far as registering the container — either THIS attempt
+	// or an earlier one already ran Create() successfully, and only the
+	// separate, async Install() step failed afterward (a PullPinned/
+	// Create failure below un-registers itself via manager.Remove, so
+	// reaching here with an existing registration specifically means an
+	// install failure, never a dispatch failure). Found live:
+	// ServerSetupService.complete's own "Tentar novamente" — the exact
+	// case this whole endpoint exists to support — used to 409
+	// SERVER_EXISTS here every time, which the panel's dispatchToAgent
+	// folds into a silent "success" (the correct call for a genuinely
+	// lost-in-flight duplicate request, wrong here): nothing was ever
+	// reinstalled, so the row was stuck reporting "installing" forever
+	// with no callback ever coming. Reinstall's own remove-then-recreate
+	// mechanism handles a retry with a DIFFERENT template/image/startup
+	// just as well as a plain "try the exact same thing again."
+	if target, ok := s.manager.Get(req.UUID); ok {
+		if err := s.dc.PullPinned(r.Context(), image, digest); err != nil {
+			writeErrorResp(w, http.StatusBadGateway, "PULL_FAILED", err.Error())
+			return
+		}
+		if err := target.Reinstall(r.Context(), s.dc, image, req.StartupTemplate, req.StopSignal, sv.Env); err != nil {
+			if errors.Is(err, srv.ErrServerNotStopped) {
+				writeErrorResp(w, http.StatusConflict, "SERVER_NOT_STOPPED", err.Error())
+				return
+			}
+			writeErrorResp(w, http.StatusBadGateway, "REINSTALL_FAILED", err.Error())
+			return
+		}
+		writeJSONResp(w, http.StatusAccepted, map[string]any{"uuid": req.UUID, "state": "installing"})
+		go s.runInstallAsync(target, req.InstallImage, req.InstallEntry, req.InstallScript)
+		return
+	}
 
 	target, err := s.manager.Register(sv, s.node)
 	if err != nil {
+		// Still a real 409: this only fires when Register's OWN guard
+		// races against the manager.Get check above (two concurrent
+		// requests for a UUID neither has seen yet) — genuinely "someone
+		// else's request already claimed this," not a retry.
 		writeErrorResp(w, http.StatusConflict, "SERVER_EXISTS", err.Error())
 		return
 	}
 
-	digest := ""
-	if req.ImageDigest != "" {
-		digest = req.ImageDigest
-	}
 	if err := s.dc.PullPinned(r.Context(), image, digest); err != nil {
 		s.manager.Remove(req.UUID)
 		writeErrorResp(w, http.StatusBadGateway, "PULL_FAILED", err.Error())
@@ -135,10 +171,7 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 	// The HTTP response above already went out; everything from here runs
 	// on s.bgCtx (process-lifetime), not r.Context() (dead the moment this
 	// handler returns) — see the doc comment on Server.bgCtx.
-	installImage := req.InstallImage
-	installEntry := req.InstallEntry
-	installScript := req.InstallScript
-	go s.runInstallAsync(target, installImage, installEntry, installScript)
+	go s.runInstallAsync(target, req.InstallImage, req.InstallEntry, req.InstallScript)
 }
 
 func (s *Server) runInstallAsync(target *srv.Server, image, entrypoint, script string) {

@@ -39,8 +39,28 @@ export function deriveCustomHostname(label: string, zone: string): string {
  * own `publicHost:port` — no DNS involved at all. This is deliberate:
  * `docs/PUBLIC-EXPOSURE.md`'s dev/first-boot path never requires owning
  * a domain.
+ *
+ * `dnsAutomationActive` drops the `:port` suffix, which is the entire
+ * point of the `_minecraft._tcp` SRV record the gateway publishes: the
+ * client looks the SRV up itself and learns the port, so the customer
+ * only ever has to type the hostname. Without it the address stays
+ * `host:port` — still correct and connectable (the A record answers on
+ * that exact port), just not what the SRV record was published for.
+ *
+ * Gated on automation being ACTIVE rather than on `zone` alone because a
+ * zone can be configured while the provider is still `none`: the
+ * hostname then resolves via a static wildcard with no SRV record behind
+ * it, and hiding the port there would hand the customer an address that
+ * silently fails to connect.
  */
-export function derivePublicAddress(gatewayPublicHost: string, shortId: string, publicPort: number, zone?: string | null): string {
-  const host = zone ? deriveHostname(shortId, zone) : gatewayPublicHost;
-  return `${host}:${publicPort}`;
+export function derivePublicAddress(
+  gatewayPublicHost: string,
+  shortId: string,
+  publicPort: number,
+  zone?: string | null,
+  dnsAutomationActive = false,
+): string {
+  if (!zone) return `${gatewayPublicHost}:${publicPort}`;
+  const host = deriveHostname(shortId, zone);
+  return dnsAutomationActive ? host : `${host}:${publicPort}`;
 }

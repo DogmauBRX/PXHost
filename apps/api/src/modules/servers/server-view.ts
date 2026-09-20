@@ -42,7 +42,9 @@ interface ServerWithTemplate {
  * is what actually makes "no port" true, so a hostname reserved while
  * DNS automation is off (or a deployment that never turned it on) still
  * shows `hostname:port`, never implies a promise the SRV record can't
- * keep.
+ * keep. That same rule now applies to the shortId scheme below: the
+ * gateway publishes an SRV for EVERY route, custom hostname or not, so
+ * there was no reason for the two branches to disagree about the port.
  */
 export function toClientServerSummary<T extends ServerWithTemplate>(row: T, zone?: string | null, dnsAutomationActive = false) {
   const { publicRoute, variables, ...rest } = row;
@@ -54,7 +56,7 @@ export function toClientServerSummary<T extends ServerWithTemplate>(row: T, zone
       const host = deriveCustomHostname(customHostname, zone);
       publicAddress = dnsAutomationActive ? host : `${host}:${publicRoute.publicPort}`;
     } else {
-      publicAddress = derivePublicAddress(publicRoute.gateway.publicHost, row.shortId, publicRoute.publicPort, zone);
+      publicAddress = derivePublicAddress(publicRoute.gateway.publicHost, row.shortId, publicRoute.publicPort, zone, dnsAutomationActive);
     }
   }
   return { ...rest, software: describeSoftware(row.template?.softwareKind ?? null), publicAddress, customHostname, minecraftVersion };

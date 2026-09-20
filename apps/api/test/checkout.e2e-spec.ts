@@ -289,12 +289,12 @@ describe('Checkout (e2e)', () => {
     expect(second.body).toContain('NO_SLOTS');
   });
 
-  it('a second checkout attempt for the same plan while the first is still pending returns the SAME order (double-click idempotency, payments plan §24)', async () => {
+  it('a second checkout attempt for the same plan and SAME payment method while the first is still pending returns the SAME order (double-click idempotency, payments plan §24)', async () => {
     const first = await authed(intruderToken, '/api/client/checkout', { method: 'POST', payload: { planId, paymentMethod: 'pix' } });
     expect(first.statusCode).toBe(201);
     const firstBody = JSON.parse(first.body);
 
-    const second = await authed(intruderToken, '/api/client/checkout', { method: 'POST', payload: { planId, paymentMethod: 'card' } });
+    const second = await authed(intruderToken, '/api/client/checkout', { method: 'POST', payload: { planId, paymentMethod: 'pix' } });
     expect(second.statusCode).toBe(201);
     const secondBody = JSON.parse(second.body);
 
@@ -308,5 +308,32 @@ describe('Checkout (e2e)', () => {
     await asAdmin((tx) => tx.subscriptionEvent.deleteMany({ where: { subscriptionId: firstBody.subscriptionId } }));
     await asAdmin((tx) => tx.order.update({ where: { id: firstBody.id }, data: { subscriptionId: null, status: 'cancelled' } }));
     await asAdmin((tx) => tx.subscription.delete({ where: { id: firstBody.subscriptionId } }));
+  });
+
+  it('switching payment method on a second checkout attempt cancels the stale order and starts a genuinely new one', async () => {
+    const first = await authed(intruderToken, '/api/client/checkout', { method: 'POST', payload: { planId, paymentMethod: 'pix' } });
+    expect(first.statusCode).toBe(201);
+    const firstBody = JSON.parse(first.body);
+    expect(firstBody.paymentMethod).toBe('pix');
+
+    // Customer changed their mind: this must NOT hand back the old Pix
+    // order's QR code under a "Cartão" click — that was the actual bug
+    // report this test guards against.
+    const second = await authed(intruderToken, '/api/client/checkout', { method: 'POST', payload: { planId, paymentMethod: 'card' } });
+    expect(second.statusCode).toBe(201);
+    const secondBody = JSON.parse(second.body);
+
+    expect(secondBody.id).not.toBe(firstBody.id);
+    expect(secondBody.subscriptionId).not.toBe(firstBody.subscriptionId);
+    expect(secondBody.paymentMethod).toBe('card');
+
+    const staleOrder: any = await asAdmin((tx) => tx.order.findUniqueOrThrow({ where: { id: firstBody.id } }));
+    expect(staleOrder.status).toBe('cancelled');
+    const staleSubscription: any = await asAdmin((tx) => tx.subscription.findUniqueOrThrow({ where: { id: firstBody.subscriptionId } }));
+    expect(staleSubscription.status).toBe('cancelled');
+
+    await asAdmin((tx) => tx.subscriptionEvent.deleteMany({ where: { subscriptionId: { in: [firstBody.subscriptionId, secondBody.subscriptionId] } } }));
+    await asAdmin((tx) => tx.order.updateMany({ where: { id: { in: [firstBody.id, secondBody.id] } }, data: { subscriptionId: null, status: 'cancelled' } }));
+    await asAdmin((tx) => tx.subscription.deleteMany({ where: { id: { in: [firstBody.subscriptionId, secondBody.subscriptionId] } } }));
   });
 });

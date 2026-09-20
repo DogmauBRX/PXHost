@@ -100,6 +100,28 @@ type HeartbeatRequest struct {
 	ReportedMemoryAvailableMb    int64   `json:"reportedMemoryAvailableMb,omitempty"`
 	ReportedVirtualizationSystem string  `json:"reportedVirtualizationSystem,omitempty"`
 	ReportedVirtualizationRole   string  `json:"reportedVirtualizationRole,omitempty"`
+
+	// Per-server power states — the ONLY writer of the panel's
+	// `servers.power_state`, which had no writer at all before this and
+	// therefore sat at its `'offline'` default forever (see
+	// srv.Manager.States). Distinct from ReportedContainersRunning above,
+	// which is a host-wide COUNT from the Docker daemon and says nothing
+	// about which server is in which state.
+	//
+	// omitempty like every other field here, and for the same reason: an
+	// agent that has nothing to report this tick omits the key, and the
+	// panel leaves those rows untouched rather than zeroing them. Note
+	// this makes "no servers registered" indistinguishable from "agent
+	// too old to send this" — deliberate, since both mean the panel has
+	// no new information and must not invent any.
+	Servers []ServerPowerState `json:"servers,omitempty"`
+}
+
+// ServerPowerState is one server's state in a heartbeat snapshot. Values
+// are srv.State's own: offline, starting, running, stopping, crashed.
+type ServerPowerState struct {
+	UUID  string `json:"uuid"`
+	State string `json:"state"`
 }
 
 type HeartbeatResponse struct {

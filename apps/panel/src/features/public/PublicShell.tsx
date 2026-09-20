@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
-import { ArrowRight, LayoutDashboard, LogIn, Menu, Moon, Sparkles, Sun, UserPlus, X } from 'lucide-react';
+import { ArrowRight, LayoutDashboard, LogIn, Menu, Sparkles, UserPlus, X } from 'lucide-react';
 import { useAuthStore } from '@/shared/stores/auth.store';
-import { useThemeStore } from '@/shared/theme/theme.store';
 import { Button } from '@/ui/primitives';
 import { Logo } from '@/ui/brand/Logo';
 import { Wordmark } from '@/ui/brand/Wordmark';
@@ -25,8 +24,6 @@ import { AnnouncementBanner } from '@/ui/layout/AnnouncementBanner';
  * an authenticated user (see app/routes/index.tsx).
  */
 export function PublicShell({ children }: { children: ReactNode }) {
-  const theme = useThemeStore((s) => s.theme);
-  const toggleTheme = useThemeStore((s) => s.toggle);
   const accessToken = useAuthStore((s) => s.accessToken);
   const username = useAuthStore((s) => s.user?.username);
   const isAdmin = useAuthStore((s) => s.user?.isAdmin);
@@ -102,19 +99,6 @@ export function PublicShell({ children }: { children: ReactNode }) {
                 </Link>
               </>
             )}
-            {/* Separated from the CTA cluster with its own divider — a
-                utility control tucked in the header's own top-right corner,
-                not another button competing with Entrar/Criar conta. */}
-            <span className="h-6 w-px bg-white/10" aria-hidden="true" />
-            <button
-              type="button"
-              onClick={toggleTheme}
-              aria-label={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
-              title={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
-              className="rounded-xl border border-transparent p-2 text-white/55 transition-colors hover:border-white/10 hover:bg-white/5 hover:text-white"
-            >
-              {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
-            </button>
           </div>
 
           <button
@@ -165,14 +149,6 @@ export function PublicShell({ children }: { children: ReactNode }) {
                   </Link>
                 </>
               )}
-              <button
-                type="button"
-                onClick={toggleTheme}
-                className="mt-1 flex items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-white/55 hover:bg-white/5 hover:text-white"
-              >
-                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
-              </button>
             </nav>
           </div>
         )}
