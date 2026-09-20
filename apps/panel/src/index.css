@@ -301,83 +301,112 @@ html[data-app-ready] body {
  * the dot's own doc comment already describes. Scale rather than
  * opacity alone so it reads as a soft pulse, not a blink.
  */
-.logo-status-pulse {
+.brand-mark {
+  display: block;
+  overflow: visible;
+  filter: drop-shadow(0 8px 13px rgb(0 0 0 / 0.28));
+}
+
+.brand-mark__frame {
+  transform-box: fill-box;
   transform-origin: center;
-  animation: logo-status-breathe 2.4s ease-in-out infinite;
+  transition: filter 250ms ease, transform 250ms ease;
 }
 
-@keyframes logo-status-breathe {
-  0%,
-  100% {
-    opacity: 0.75;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.25);
-  }
+.group:hover .brand-mark__frame {
+  filter: brightness(1.1);
+  transform: scale(1.025);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .logo-status-pulse {
-    animation: none;
-  }
+.brand-mark__monogram {
+  filter: drop-shadow(0 0 5px rgb(249 115 22 / 0.2));
 }
 
-/*
- * The animated brand wordmark shared by the login hero and the sidebar
- * header — a gradient wider than the text, slid continuously via
- * `background-position` so the "shine" sweeps left to right and loops
- * seamlessly (the gradient repeats its own start pattern at -200%).
- */
+.brand-mark__status,
+.brand-mark__status-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.brand-mark__status-halo {
+  animation: brand-status-halo 2.6s ease-out infinite;
+}
+
+.brand-mark__status {
+  animation: brand-status-dot 2.6s ease-in-out infinite;
+}
+
 .brand-wordmark {
-  background-image: linear-gradient(
-    90deg,
-    var(--color-accent) 0%,
-    var(--color-accent-strong) 25%,
-    var(--color-accent) 50%,
-    var(--color-accent-strong) 75%,
-    var(--color-accent) 100%
-  );
-  background-size: 220% auto;
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  box-sizing: content-box;
+  padding: 0.08em 0.04em 0.12em;
+  font-family: var(--font-display);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.075em;
+  white-space: nowrap;
+  isolation: isolate;
+  filter: drop-shadow(0 7px 15px rgb(0 0 0 / 0.2));
+}
+
+.brand-wordmark::after {
+  position: absolute;
+  right: 0.04em;
+  bottom: 0;
+  left: 0.04em;
+  height: 0.055em;
+  min-height: 1px;
+  content: '';
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-accent), #ffb066 30%, rgb(255 255 255 / 0.12) 30%, transparent 88%);
+  transform-origin: left;
+  animation: brand-underline-signal 5s ease-in-out infinite;
+}
+
+.brand-wordmark__gx {
+  background: linear-gradient(115deg, #ffb066 0%, var(--color-accent) 48%, #f04d0b 100%);
+  background-size: 180% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: wordmark-shimmer 5s linear infinite;
+  text-shadow: 0 0 24px rgb(249 115 22 / 0.15);
+  animation: brand-gx-scan 6s ease-in-out infinite;
 }
 
-/*
- * The login hero's title specifically (not the sidebar's small header
- * usage of the same `.brand-wordmark` — that one stays exactly as it
- * was) gets a solid outline around each letter, on top of the shimmering
- * gradient fill: `-webkit-text-stroke` paints independently of `color`
- * (which the rule above sets to `transparent` for the clipped-gradient
- * fill), so the stroke stays fully opaque and visible even though the
- * fill itself is a `background-clip: text` gradient. `paint-order:
- * stroke fill` draws the stroke BEHIND the fill so it only reads as a
- * clean outline at each glyph's edge, rather than eating into the
- * letterforms. Needed now that the busy circuit-board backdrop sits
- * directly behind the title (no more solid card underneath it) — the
- * outline is what keeps "GXhost" legible against it in both themes.
- * `--color-accent-strong` (not `--color-text`, tried first) — a dark/
- * light theme-text-colored outline read as a harsh, mismatched border
- * around the orange fill (reported live); a darker shade of the brand's
- * own orange still separates the letterforms from the busy backdrop
- * but reads as part of the same mark, not a contour drawn on top of it.
- */
-.login-hero .brand-wordmark {
-  -webkit-text-stroke: 1.5px var(--color-accent-strong);
-  paint-order: stroke fill;
+.brand-wordmark__host {
+  margin-left: 0.035em;
+  color: #f5f1ea;
+  letter-spacing: -0.085em;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.08);
 }
 
-@keyframes wordmark-shimmer {
-  to {
-    background-position: -220% 0;
-  }
+@keyframes brand-status-halo {
+  0% { opacity: 0.7; transform: scale(0.75); }
+  65%, 100% { opacity: 0; transform: scale(1.65); }
+}
+
+@keyframes brand-status-dot {
+  0%, 100% { filter: brightness(0.9); }
+  45% { filter: brightness(1.35) drop-shadow(0 0 3px #5ee6a4); }
+}
+
+@keyframes brand-gx-scan {
+  0%, 25% { background-position: 100% 0; }
+  65%, 100% { background-position: -80% 0; }
+}
+
+@keyframes brand-underline-signal {
+  0%, 100% { opacity: 0.65; transform: scaleX(0.72); }
+  50% { opacity: 1; transform: scaleX(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .brand-wordmark {
+  .brand-mark__status,
+  .brand-mark__status-halo,
+  .brand-wordmark::after,
+  .brand-wordmark__gx {
     animation: none;
   }
 }

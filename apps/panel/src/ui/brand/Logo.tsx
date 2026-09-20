@@ -1,56 +1,61 @@
+import { useId } from 'react';
+
 /**
- * The GXhost mark: a hexagonal "node" — the product's own vocabulary for a
- * hosting machine ("demo-node-1", etc.) made literal as the emblem shape.
- * Gradient-filled diagonally in the brand accent, with fine corner ticks
- * (a circuit-trace detail) and a small status pulse standing in for "a
- * server, online." Every color is a CSS custom property, so it repaints
- * correctly across light/dark without a second asset — see favicon.svg
- * for the one place that genuinely can't reach those variables (a
- * browser tab icon is loaded outside the document's own cascade) and
- * carries hardcoded equivalents instead.
+ * GXhost's compact mark. The graphite core represents the control panel,
+ * while the split orange frame and the online node turn the old generic
+ * hexagon into a recognisable infrastructure badge. The GX monogram is
+ * drawn with paths so it stays consistent even before web fonts load.
  */
 export function Logo({ size = 28, className = '' }: { size?: number; className?: string }) {
+  const gradientId = `gx-frame-${useId().replace(/:/g, '')}`;
+  const glowId = `gx-glow-${useId().replace(/:/g, '')}`;
+
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" className={className} aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 48 48"
+      className={`brand-mark ${className}`}
+      aria-hidden="true"
+    >
       <defs>
-        <linearGradient id="gxhost-mark-grad" x1="3.5" y1="2" x2="28.5" y2="30" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="var(--color-accent)" />
-          <stop offset="100%" stopColor="var(--color-accent-strong)" />
+        <linearGradient id={gradientId} x1="7" y1="5" x2="41" y2="43" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#ffb066" />
+          <stop offset="0.42" stopColor="var(--color-accent)" />
+          <stop offset="1" stopColor="#b63808" />
         </linearGradient>
+        <radialGradient id={glowId} cx="0" cy="0" r="1" gradientTransform="translate(24 24) rotate(90) scale(19)">
+          <stop stopColor="#303640" />
+          <stop offset="1" stopColor="#12151a" />
+        </radialGradient>
       </defs>
 
-      {/* Outer node hexagon */}
-      <path d="M16 1.8 28.4 9v14L16 30.2 3.6 23V9Z" fill="url(#gxhost-mark-grad)" />
-
-      {/* Nested hex outline — circuit-board layering, kept faint so it reads as detail, not clutter */}
       <path
-        d="M16 6.2 23.9 10.6v8.8L16 23.8 8.1 19.4v-8.8Z"
+        className="brand-mark__frame"
+        d="M24 2.4 42.5 13v22L24 45.6 5.5 35V13Z"
+        fill={`url(#${gradientId})`}
+      />
+      <path d="M24 6.8 38.7 15.2v17.6L24 41.2 9.3 32.8V15.2Z" fill={`url(#${glowId})`} />
+      <path
+        d="M24 7.5 38 15.6v16.8L24 40.5 10 32.4V15.6Z"
         fill="none"
-        stroke="var(--color-accent-contrast)"
-        strokeOpacity="0.22"
-        strokeWidth="1"
+        stroke="white"
+        strokeOpacity="0.12"
+        strokeWidth="0.8"
       />
 
-      {/* Corner ticks — short traces reaching out from each vertex */}
-      <g stroke="var(--color-accent-contrast)" strokeOpacity="0.4" strokeWidth="1.1" strokeLinecap="round">
-        <path d="M16 1.8v2.6M28.4 9l-2.3 1.3M28.4 23l-2.3-1.3M16 30.2v-2.6M3.6 23l2.3-1.3M3.6 9l2.3 1.3" />
+      <g className="brand-mark__monogram" fill="none" strokeLinecap="square" strokeLinejoin="miter">
+        <path
+          d="M26.1 17.2h-5.2a6.8 6.8 0 1 0 0 13.6h5.5v-5.3h-4.7"
+          stroke="#f8f4ee"
+          strokeWidth="3.1"
+        />
+        <path d="m29.2 19.1 6.1 9.8m0-9.8-6.1 9.8" stroke={`url(#${gradientId})`} strokeWidth="2.7" />
       </g>
 
-      {/* G monogram */}
-      <text
-        x="16"
-        y="21.2"
-        textAnchor="middle"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fontWeight="800"
-        fontSize="13.5"
-        fill="var(--color-accent-contrast)"
-      >
-        G
-      </text>
-
-      {/* Status pulse — "a node, online" — actually breathes, see .logo-status-pulse in index.css */}
-      <circle cx="24.5" cy="8.4" r="2.3" fill="var(--color-ok)" stroke="var(--color-surface)" strokeWidth="1.2" className="logo-status-pulse" />
+      <path d="M6.2 15.3h3.2M38.6 32.7h3.2" stroke="#ffd0a5" strokeOpacity="0.75" strokeWidth="1" />
+      <circle className="brand-mark__status-halo" cx="38.3" cy="10.5" r="4" fill="#34d399" fillOpacity="0.16" />
+      <circle className="brand-mark__status" cx="38.3" cy="10.5" r="2.1" fill="#5ee6a4" stroke="#15181e" strokeWidth="1.1" />
     </svg>
   );
 }
