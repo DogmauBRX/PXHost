@@ -10,10 +10,13 @@ import {
   Mail,
   MessageSquareText,
   QrCode,
+  Radar,
   ReceiptText,
   RefreshCcw,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 import { HeroCircuitBackground } from './HeroCircuitBackground';
 import { Seo } from './Seo';
@@ -34,6 +37,13 @@ const summaryCards = [
     eyebrow: 'Direito de arrependimento',
     title: 'Reembolsos',
     description: 'Processo claro para solicitar cancelamento e devolução dentro do prazo legal.',
+  },
+  {
+    href: '#seguranca',
+    icon: ShieldAlert,
+    eyebrow: 'Resposta a incidentes',
+    title: 'Segurança',
+    description: 'Detecção e contenção rápida de DoS/DDoS, invasões e outros padrões de ataque.',
   },
   {
     href: '#suporte',
@@ -88,7 +98,7 @@ export function TrustCenterPage() {
           </p>
         </section>
 
-        <section className="mt-12 grid gap-4 md:grid-cols-3" aria-label="Assuntos da Central GX">
+        <section className="mt-12 grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Assuntos da Central GX">
           {summaryCards.map(({ href, icon: Icon, eyebrow, title, description }) => (
             <a key={href} href={href} className="plan-command-card group rounded-2xl border p-5">
               <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl border border-accent/20 bg-accent/10 text-accent">
@@ -104,11 +114,12 @@ export function TrustCenterPage() {
           ))}
         </section>
 
-        <div id="transparencia" className="mt-10 grid scroll-mt-28 gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-4 sm:grid-cols-3 sm:p-5">
+        <div id="transparencia" className="mt-10 grid scroll-mt-28 gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-4">
           {[
             { icon: BadgeCheck, label: 'Provedor de pagamento', value: 'Mercado Pago' },
             { icon: Clock3, label: 'Prazo de arrependimento', value: '7 dias corridos' },
             { icon: Mail, label: 'Suporte oficial', value: SUPPORT_EMAIL },
+            { icon: ShieldAlert, label: 'Resposta a incidentes', value: 'Detecção e contenção' },
           ].map(({ icon: Icon, label, value }) => (
             <div key={label} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-black/10 px-4 py-3">
               <Icon className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
@@ -152,10 +163,45 @@ export function TrustCenterPage() {
           </div>
         </section>
 
+        <section id="seguranca" className="scroll-mt-28 border-b border-white/8 py-20">
+          <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+            <div>
+              <span className="font-mono text-[0.68rem] font-bold tracking-[0.18em] text-accent uppercase">02 · Segurança</span>
+              <h2 className="mt-3 text-3xl font-bold tracking-tight text-text sm:text-4xl">Resposta rápida quando o tráfego vira ataque.</h2>
+              <p className="mt-4 max-w-xl text-base leading-7 text-text-muted">Sinais de DoS/DDoS, tentativas de invasão, spoofing e varreduras abusivas recebem prioridade operacional. O objetivo é identificar o padrão, conter o impacto e preservar os demais serviços.</p>
+
+              <div className="mt-7 rounded-2xl border border-amber-300/15 bg-amber-300/[0.045] p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-text"><ShieldAlert className="h-4 w-4 text-amber-300" />Proteção responsável e transparente</div>
+                <p className="mt-2 text-sm leading-6 text-text-muted">Nenhuma solução elimina todo risco. Ataques complexos podem causar degradação temporária enquanto as rotas são filtradas ou isoladas.</p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              {[
+                { icon: Radar, step: '01', title: 'Detectar', description: 'Análise de volume, origem e comportamento anormal do tráfego.' },
+                { icon: Zap, step: '02', title: 'Conter', description: 'Filtros, bloqueios e limitação de rotas para reduzir o impacto.' },
+                { icon: ShieldCheck, step: '03', title: 'Isolar', description: 'Separação do serviço afetado quando necessária para proteger a rede.' },
+              ].map(({ icon: Icon, step, title, description }) => (
+                <article key={step} className="plan-command-card rounded-2xl border p-5">
+                  <div className="flex items-center justify-between"><span className="flex h-10 w-10 items-center justify-center rounded-xl border border-accent/20 bg-accent/10 text-accent"><Icon className="h-5 w-5" /></span><span className="font-mono text-xs font-bold text-accent/45">{step}</span></div>
+                  <h3 className="mt-5 text-lg font-semibold text-text">{title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-text-muted">{description}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {['DoS e DDoS', 'Tentativas de invasão', 'IP spoofing', 'Scans abusivos'].map((threat) => (
+              <div key={threat} className="flex items-center gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-sm font-medium text-text-muted"><ShieldAlert className="h-4 w-4 shrink-0 text-accent" />{threat}</div>
+            ))}
+          </div>
+        </section>
+
         <section id="reembolsos" className="scroll-mt-28 border-b border-white/8 py-20">
           <div className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr]">
             <div>
-              <span className="font-mono text-[0.68rem] font-bold tracking-[0.18em] text-accent uppercase">02 · Reembolsos</span>
+              <span className="font-mono text-[0.68rem] font-bold tracking-[0.18em] text-accent uppercase">03 · Reembolsos</span>
               <h2 className="mt-3 text-3xl font-bold tracking-tight text-text sm:text-4xl">Um processo simples e registrado.</h2>
               <p className="mt-4 max-w-2xl text-base leading-7 text-text-muted">
                 Em contratações realizadas online, o consumidor pode exercer o direito de arrependimento em até <strong className="font-semibold text-text">7 dias corridos</strong>, contados da assinatura ou ativação do serviço, conforme a legislação aplicável.
@@ -194,7 +240,7 @@ export function TrustCenterPage() {
           <div className="trust-support-card relative overflow-hidden rounded-3xl border border-white/10 p-6 sm:p-9">
             <div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
               <div>
-                <span className="font-mono text-[0.68rem] font-bold tracking-[0.18em] text-accent uppercase">03 · Suporte</span>
+                <span className="font-mono text-[0.68rem] font-bold tracking-[0.18em] text-accent uppercase">04 · Suporte</span>
                 <h2 className="mt-3 text-3xl font-bold tracking-tight text-text sm:text-4xl">Fale com uma pessoa, pelo canal oficial.</h2>
                 <p className="mt-4 max-w-2xl text-base leading-7 text-text-muted">Use o e-mail cadastrado na sua conta e envie o máximo de contexto possível. As mensagens são atendidas por ordem de chegada e ficam registradas para acompanhamento.</p>
 

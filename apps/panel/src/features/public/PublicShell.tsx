@@ -13,6 +13,7 @@ import {
   RefreshCcw,
   Scale,
   Share2,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   UserPlus,
@@ -26,13 +27,14 @@ import { CircuitPattern } from '@/ui/brand/CircuitPattern';
 import { AnnouncementBanner } from '@/ui/layout/AnnouncementBanner';
 
 const footerTopics = [
-  { label: 'Pagamentos e segurança', icon: CreditCard, hash: 'pagamentos' },
-  { label: 'Confiança e transparência', icon: BadgeCheck, hash: 'transparencia' },
-  { label: 'Política de reembolso', icon: RefreshCcw, hash: 'reembolsos' },
-  { label: 'Suporte', icon: LifeBuoy, hash: 'suporte' },
+  { label: 'Pagamentos e segurança', icon: CreditCard, to: '/central', hash: 'pagamentos' },
+  { label: 'Confiança e transparência', icon: BadgeCheck, to: '/central', hash: 'transparencia' },
+  { label: 'Resposta a ataques', icon: ShieldAlert, to: '/central', hash: 'seguranca' },
+  { label: 'Política de reembolso', icon: RefreshCcw, to: '/central', hash: 'reembolsos' },
+  { label: 'Suporte', icon: LifeBuoy, to: '/central', hash: 'suporte' },
   { label: 'Comunidade e redes', icon: Share2 },
-  { label: 'Termos de uso', icon: Scale },
-];
+  { label: 'Termos de uso', icon: Scale, to: '/termos' },
+] as const;
 
 /**
  * The layout for every public, unauthenticated-facing page (`/`,
@@ -282,14 +284,14 @@ export function PublicShell({ children }: { children: ReactNode }) {
                 </Link>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {footerTopics.map(({ label, icon: Icon, hash }) => hash ? (
-                  <Link key={label} to="/central" hash={hash} className="public-footer__topic group flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5">
-                    <Icon className="h-3.5 w-3.5 shrink-0 text-accent/65 transition-colors group-hover:text-accent" aria-hidden="true" />
-                    <span className="text-xs font-medium text-white/45 transition-colors group-hover:text-white/75">{label}</span>
+                {footerTopics.map((topic) => 'to' in topic ? (
+                  <Link key={topic.label} to={topic.to} hash={'hash' in topic ? topic.hash : undefined} className="public-footer__topic group flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5">
+                    <topic.icon className="h-3.5 w-3.5 shrink-0 text-accent/65 transition-colors group-hover:text-accent" aria-hidden="true" />
+                    <span className="text-xs font-medium text-white/45 transition-colors group-hover:text-white/75">{topic.label}</span>
                   </Link>
                 ) : (
-                  <div key={label} className="public-footer__topic flex items-center justify-between gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5" title="Conteúdo em desenvolvimento">
-                    <span className="flex items-center gap-2.5"><Icon className="h-3.5 w-3.5 shrink-0 text-accent/45" aria-hidden="true" /><span className="text-xs font-medium text-white/35">{label}</span></span>
+                  <div key={topic.label} className="public-footer__topic flex items-center justify-between gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5" title="Conteúdo em desenvolvimento">
+                    <span className="flex items-center gap-2.5"><topic.icon className="h-3.5 w-3.5 shrink-0 text-accent/45" aria-hidden="true" /><span className="text-xs font-medium text-white/35">{topic.label}</span></span>
                     <span className="text-[0.48rem] font-bold tracking-wider text-white/20 uppercase">Em breve</span>
                   </div>
                 ))}

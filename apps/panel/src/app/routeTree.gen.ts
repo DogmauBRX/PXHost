@@ -17,6 +17,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as TermosRouteImport } from './routes/termos'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAnnouncementRouteImport } from './routes/admin.announcement'
 import { Route as AdminGatewaysRouteImport } from './routes/admin.gateways'
@@ -102,6 +103,11 @@ const RegisterRoute = RegisterRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermosRoute = TermosRouteImport.update({
+  id: '/termos',
+  path: '/termos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -362,6 +368,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/termos': typeof TermosRoute
   '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/gateways': typeof AdminGatewaysRoute
   '/admin/locations': typeof AdminLocationsRoute
@@ -416,6 +423,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/termos': typeof TermosRoute
   '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/gateways': typeof AdminGatewaysRoute
   '/admin/locations': typeof AdminLocationsRoute
@@ -471,6 +479,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/termos': typeof TermosRoute
   '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/gateways': typeof AdminGatewaysRoute
   '/admin/locations': typeof AdminLocationsRoute
@@ -529,6 +538,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/termos'
     | '/admin/announcement'
     | '/admin/gateways'
     | '/admin/locations'
@@ -583,6 +593,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/termos'
     | '/admin/announcement'
     | '/admin/gateways'
     | '/admin/locations'
@@ -637,6 +648,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/termos'
     | '/admin/announcement'
     | '/admin/gateways'
     | '/admin/locations'
@@ -694,6 +706,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  TermosRoute: typeof TermosRoute
   CheckoutPlanSlugRoute: typeof CheckoutPlanSlugRoute
   PlansSlugRoute: typeof PlansSlugRoute
   PlansIndexRoute: typeof PlansIndexRoute
@@ -755,6 +768,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/termos': {
+      id: '/termos'
+      path: '/termos'
+      fullPath: '/termos'
+      preLoaderRoute: typeof TermosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -1214,6 +1234,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  TermosRoute: TermosRoute,
   CheckoutPlanSlugRoute: CheckoutPlanSlugRoute,
   PlansSlugRoute: PlansSlugRoute,
   PlansIndexRoute: PlansIndexRoute,
