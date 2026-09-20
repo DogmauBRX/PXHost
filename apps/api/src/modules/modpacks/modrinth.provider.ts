@@ -99,8 +99,18 @@ export class ModrinthProvider implements ModpackProvider {
   }
 
   search(query: ModpackSearchQuery): Promise<ModpackSearchResult> {
-    return this.cache.remember('modrinth:search', query, SEARCH_TTL_SECONDS, async () => {
-      const facets: string[][] = [['project_type:modpack']];
+    return this.searchProjectType('modpack', query);
+  }
+
+  // Plugins share Modrinth's response shape with modpacks. Keeping this
+  // provider boundary means the panel never talks to a third party directly.
+  searchPlugins(query: ModpackSearchQuery): Promise<ModpackSearchResult> {
+    return this.searchProjectType('plugin', query);
+  }
+
+  private searchProjectType(projectType: 'modpack' | 'plugin', query: ModpackSearchQuery): Promise<ModpackSearchResult> {
+    return this.cache.remember(`modrinth:${projectType}:search`, query, SEARCH_TTL_SECONDS, async () => {
+      const facets: string[][] = [[`project_type:${projectType}`]];
       if (query.minecraftVersion) facets.push([`versions:${query.minecraftVersion}`]);
       if (query.loader) facets.push([`categories:${query.loader}`]);
       if (query.category) facets.push([`categories:${query.category}`]);

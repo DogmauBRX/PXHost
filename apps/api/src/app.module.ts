@@ -33,6 +33,7 @@ import { SiteAnnouncementModule } from './modules/site-announcement/site-announc
 import { PaymentsModule } from './modules/payments/payments.module';
 import { GatewayModule } from './modules/gateway/gateway.module';
 import { ModpacksModule } from './modules/modpacks/modpacks.module';
+import { PluginsModule } from './modules/plugins/plugins.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { ModpacksModule } from './modules/modpacks/modpacks.module';
     PaymentsModule,
     GatewayModule,
     ModpacksModule,
+    PluginsModule,
   ],
   providers: [
     // JwtAuthGuard is global: every route requires authentication unless

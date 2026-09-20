@@ -261,6 +261,11 @@ export class AgentClient {
     return this.callRaw(nodeId, 'PUT', `/api/servers/${serverUuid}/files/contents?path=${encodeURIComponent(path)}`, content);
   }
 
+  /** A verified catalog artifact is binary; do not coerce a JAR through UTF-8. */
+  writeBinaryFile(nodeId: string, serverUuid: string, path: string, content: Buffer): Promise<{ bytesWritten: number }> {
+    return this.callRaw(nodeId, 'PUT', `/api/servers/${serverUuid}/files/contents?path=${encodeURIComponent(path)}`, content);
+  }
+
   renameFile(nodeId: string, serverUuid: string, from: string, to: string): Promise<void> {
     return this.call(nodeId, 'POST', `/api/servers/${serverUuid}/files/rename`, { from, to });
   }
@@ -407,7 +412,7 @@ export class AgentClient {
   }
 
   /** Like call(), but sends `body` as a raw string, not JSON — the agent's file-write endpoint takes the file's own bytes verbatim as the request body. */
-  private async callRaw<T>(nodeId: string, method: string, path: string, body: string): Promise<T> {
+  private async callRaw<T>(nodeId: string, method: string, path: string, body: string | Buffer): Promise<T> {
     const { url, token } = await this.baseURL(nodeId);
 
     const controller = new AbortController();
@@ -416,7 +421,9 @@ export class AgentClient {
       const res = await fetch(url + path, {
         method,
         headers: { Authorization: `Bearer ${token}` },
-        body,
+        // Node's Buffer is a Uint8Array and is accepted by fetch at runtime; the
+        // DOM declaration bundled with this project does not include that overload.
+        body: body as unknown as BodyInit,
         signal: controller.signal,
       });
       const text = await res.text();
