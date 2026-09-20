@@ -34,7 +34,7 @@ export function RouteTabs({ items, params, className = '' }: RouteTabsProps) {
   const matchRoute = useMatchRoute();
 
   return (
-    <nav aria-label="Navegação do servidor" className={`-mb-px flex items-center gap-1 overflow-x-auto border-b border-border bg-gradient-to-r from-surface via-surface-2/70 to-surface ${className}`}>
+    <nav aria-label="Navegação do servidor" className={`-mb-px flex items-center gap-1 overflow-x-auto border-b border-border bg-gradient-to-r from-surface via-surface-2/70 to-surface [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className}`}>
       {items.map((tab, i) => {
         const active = Boolean(
           matchRoute({ to: tab.to, params, fuzzy: tab.exact ? false : undefined } as never),
