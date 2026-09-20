@@ -28,13 +28,13 @@ export function ComparisonTable({ plans }: { plans: PublicPlan[] }) {
   const rows = DIMENSIONS.filter((d) => plans.some((p) => d.render(p) != null));
 
   return (
-    <TableWrap>
+    <TableWrap className="plans-comparison overflow-hidden rounded-2xl border-white/10 bg-white/[0.025] shadow-[0_24px_70px_-55px_rgba(0,0,0,0.9)]">
       <Table>
         <THead>
           <TR>
             <TH>Recurso</TH>
             {plans.map((p) => (
-              <TH key={p.id} className="text-right">
+              <TH key={p.id} className="text-right text-accent">
                 {p.name}
               </TH>
             ))}

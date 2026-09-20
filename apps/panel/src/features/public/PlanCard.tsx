@@ -1,9 +1,8 @@
 import type { ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Check, Cpu, Rocket, Server, Sparkles } from 'lucide-react';
+import { ArrowRight, Check, Cpu, Rocket, Server, Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PublicPlan } from '@/shared/api/types';
-import { useAuthStore } from '@/shared/stores/auth.store';
 import { Badge, Button, Card, CardBody } from '@/ui/primitives';
 import { CircuitPattern } from '@/ui/brand/CircuitPattern';
 import { discountPercent, formatBillingPeriod, formatMemory, formatPrice, formatRange, formatVcpu } from '@/shared/format/plan';
@@ -41,7 +40,6 @@ function tierIcon(memoryMb: number): LucideIcon {
  * frontend must never decide either on its own.
  */
 export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPlan; highlight?: boolean }) {
-  const accessToken = useAuthStore((s) => s.accessToken);
   const soldOut = plan.availability.status === 'sold_out';
   const pctOff = discountPercent(plan.priceCents, plan.compareAtPriceCents);
 
@@ -49,35 +47,32 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
 
   const ctaLabel = soldOut ? 'Esgotado' : 'Assinar plano';
   const cta = soldOut ? (
-    <Button variant="secondary" disabled className="w-full">
+    <Button variant="secondary" disabled className="h-11 w-full rounded-xl">
       {ctaLabel}
     </Button>
-  ) : accessToken ? (
-    <Link to="/checkout/$planSlug" params={{ planSlug: plan.slug }}>
-      <Button variant="primary" className="w-full">
-        {ctaLabel}
-      </Button>
-    </Link>
   ) : (
-    <Link to="/checkout/$planSlug" params={{ planSlug: plan.slug }}>
-      <Button variant="primary" className="w-full">
-        {ctaLabel}
-      </Button>
+    <Link
+      to="/checkout/$planSlug"
+      params={{ planSlug: plan.slug }}
+      className="group flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-contrast shadow-[0_10px_28px_-14px_var(--color-accent)] transition-all hover:-translate-y-0.5 hover:bg-accent-strong"
+    >
+      {ctaLabel}
+      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
     </Link>
   );
 
   return (
-    <Card className={`flex flex-col overflow-hidden ${highlight ? 'border-accent shadow-md ring-1 ring-accent/30' : ''}`}>
+    <Card className={`plan-command-card flex flex-col overflow-hidden ${highlight ? 'plan-command-card--highlight border-accent shadow-md ring-1 ring-accent/30' : ''}`}>
       {/* Decorative brand-gradient band, same CircuitPattern motif the
           sidebar header uses (sidebar-brand__circuit). The tier glyph is
           the one thing here that isn't purely decorative — it's a quick
           "which of these is bigger" read at a glance, before a visitor
           even reaches the specs list below. */}
-      <div className="plan-card-hero relative flex h-24 shrink-0 items-start justify-between p-3">
+      <div className="plan-card-hero relative flex h-28 shrink-0 items-start justify-between p-4">
         <CircuitPattern className="plan-card-hero__circuit" />
         <div className="relative">
           {highlight && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2.5 py-1 text-xs font-semibold text-accent-strong shadow-sm">
+            <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/25 px-2.5 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
               <Sparkles className="h-3 w-3" aria-hidden="true" />
               {plan.highlightLabel ?? 'Mais popular'}
             </span>
@@ -89,10 +84,10 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
         <TierGlyph memoryMb={plan.memoryMb} />
       </div>
 
-      <CardBody className="flex flex-1 flex-col gap-5">
+      <CardBody className="flex flex-1 flex-col gap-5 p-6">
         <div>
-          <h3 className="text-base font-semibold text-text">{plan.name}</h3>
-          {plan.description && <p className="mt-0.5 text-sm text-text-muted">{plan.description}</p>}
+          <h3 className="text-xl font-semibold text-text">{plan.name}</h3>
+          {plan.description && <p className="mt-1.5 min-h-10 text-sm leading-5 text-text-muted">{plan.description}</p>}
         </div>
 
         <div>
@@ -103,12 +98,12 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
             </div>
           )}
           <p>
-            <span className="text-3xl font-bold text-text">{formatPrice(plan.priceCents, plan.currency)}</span>
+            <span className="text-4xl font-bold tracking-tight text-text">{formatPrice(plan.priceCents, plan.currency)}</span>
             <span className="text-sm font-medium text-text-faint"> /{formatBillingPeriod(plan.billingPeriod)}</span>
           </p>
         </div>
 
-        <ul className="flex flex-1 flex-col gap-2 text-sm text-text">
+        <ul className="flex flex-1 flex-col gap-2.5 border-t border-white/8 pt-5 text-sm text-text">
           <SpecRow>{formatMemory(plan.memoryMb)} de RAM</SpecRow>
           <SpecRow>{formatVcpu(plan.cpuLimitPercent)}</SpecRow>
           <SpecRow>{formatMemory(plan.diskMb)} de armazenamento</SpecRow>
@@ -116,7 +111,7 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
           {players && <SpecRow>Recomendado para {players} jogadores</SpecRow>}
         </ul>
 
-        <div className="mt-auto">{cta}</div>
+        <div className="mt-auto pt-1">{cta}</div>
       </CardBody>
     </Card>
   );
@@ -126,7 +121,7 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
 function TierGlyph({ memoryMb }: { memoryMb: number }) {
   const Icon = tierIcon(memoryMb);
   return (
-    <div className="absolute bottom-3 left-3 flex h-11 w-11 items-center justify-center rounded-full bg-white/15 ring-1 ring-inset ring-white/25 backdrop-blur-sm">
+    <div className="absolute bottom-4 left-4 flex h-11 w-11 items-center justify-center rounded-xl border border-white/20 bg-black/20 text-white shadow-lg backdrop-blur-sm">
       <Icon className="h-5 w-5 text-white" aria-hidden="true" strokeWidth={2} />
     </div>
   );
@@ -134,8 +129,8 @@ function TierGlyph({ memoryMb }: { memoryMb: number }) {
 
 function SpecRow({ children }: { children: ReactNode }) {
   return (
-    <li className="flex items-center gap-2">
-      <Check className="h-4 w-4 shrink-0 text-ok" aria-hidden="true" />
+    <li className="flex items-center gap-2.5">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-ok/10 text-ok"><Check className="h-3.5 w-3.5" aria-hidden="true" /></span>
       <span>{children}</span>
     </li>
   );
