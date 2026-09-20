@@ -200,12 +200,21 @@ export const envSchema = z.object({
   // — site/painel/api.gxhost.com.br — is unrelated to this var entirely
   // and can stay on whatever DNS host it already uses.)
   PUBLIC_GATEWAY_DNS_PROVIDER: z.enum(['none', 'powerdns']).default('none'),
-  // The zone this platform's own PowerDNS is authoritative for (e.g.
-  // "mc.gxhost.com.br") — the SAME value as PUBLIC_GATEWAY_HOSTNAME_ZONE
-  // above by convention (a server's hostname must live inside the zone
-  // PowerDNS actually manages), reused rather than duplicated: PowerDNS
-  // has no separate "zone ID" concept the way Cloudflare did.
+  // The zone this platform's own PowerDNS is authoritative for — the one
+  // that actually exists as a zone in PowerDNS and that the REST API's
+  // `/zones/{zone}` path names. This is NOT always the same value as
+  // PUBLIC_GATEWAY_HOSTNAME_ZONE above, and conflating the two was a real
+  // production bug: hostnames are composed as `<shortId>.mc.<zone>`, so
+  // PUBLIC_GATEWAY_HOSTNAME_ZONE is the registrable apex
+  // ("gxhost.com.br"), while a deployment that delegates only the game
+  // subdomain (the recommended setup — the apex keeps serving the site,
+  // panel and API from wherever it already lives) has PowerDNS
+  // authoritative for "mc.gxhost.com.br" alone. Patching "gxhost.com.br."
+  // there answers 404 and every route silently keeps its plain ip:port.
   //
+  // Unset ⇒ falls back to PUBLIC_GATEWAY_HOSTNAME_ZONE, which is correct
+  // for the other valid topology: the whole apex delegated to PowerDNS.
+  PUBLIC_GATEWAY_DNS_ZONE: optionalSecret(),
   // Base URL of this platform's own PowerDNS Authoritative Server's REST
   // API (e.g. "http://10.10.0.1:8081") — reachable only over the private
   // network/WireGuard, never the public internet (see
