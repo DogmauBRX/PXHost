@@ -36,7 +36,7 @@ export function AppShell({ children, area }: { children: ReactNode; area: 'admin
   return (
     <div className="min-h-screen">
       <Sidebar sections={sections} panelLabel={panelLabel} settingsTo={settingsTo} area={area} />
-      <div className="lg:pl-64">
+      <div className="lg:pl-72">
         <Topbar />
         <AnnouncementBanner />
         <main className="mx-auto w-full max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
