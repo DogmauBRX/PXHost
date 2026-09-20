@@ -180,10 +180,18 @@ services:
       # happy with that; Registro.br's delegation check, much later, is
       # not.
       #
-      # This is not only for new zones: the SOA pdnsutil writes is the
-      # placeholder "a.misconfigured.dns.server.invalid", substituted
-      # with this value at answer time, so fixing it here also fixes the
-      # zone that already exists.
+      # This only reaches a zone whose SOA is still that placeholder. The
+      # substitution happens at answer time, not in storage — so the
+      # moment anything writes the SOA for real, this setting stops
+      # applying to that zone forever. The API does exactly that on its
+      # first record change, because SOA-EDIT-API bumps the serial and
+      # materialises the whole SOA as a stored record.
+      #
+      # So a zone that has already served traffic keeps whatever MNAME it
+      # was given at that moment, and changing this value will not fix
+      # it. Fixing an existing zone means rewriting its SOA record.
+      # Checked live, after this setting was already deployed:
+      # mc.gxhost.com.br still answered with MNAME "mc.gxhost.com.br".
       - --default-soa-content=ns1.gxhost.com.br hostmaster.gxhost.com.br 0 10800 3600 604800 3600
       # ns2 (143.95.213.60) serves these zones as a SECONDARY. That needs
       # two separate things, and neither one is a default:
