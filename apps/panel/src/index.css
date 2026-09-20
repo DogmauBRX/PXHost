@@ -163,9 +163,9 @@ html[data-app-ready] body {
   background-image:
     radial-gradient(68% 58% at 3% -14%, color-mix(in srgb, var(--color-accent) 22%, transparent) 0%, transparent 70%),
     radial-gradient(58% 54% at 104% 106%, color-mix(in srgb, var(--color-accent) 16%, transparent) 0%, transparent 72%),
-    linear-gradient(132deg, transparent 0 22%, color-mix(in srgb, var(--color-accent) 15%, transparent) 22.05% 22.16%, transparent 22.22% 55%, color-mix(in srgb, var(--color-accent) 10%, transparent) 55.05% 55.12%, transparent 55.2%),
-    linear-gradient(90deg, transparent 0 13%, color-mix(in srgb, var(--color-accent) 13%, transparent) 13.04% 13.12%, transparent 13.2% 74%, color-mix(in srgb, var(--color-accent) 9%, transparent) 74.04% 74.1%, transparent 74.18%),
-    linear-gradient(0deg, transparent 0 18%, color-mix(in srgb, var(--color-accent) 12%, transparent) 18.04% 18.11%, transparent 18.18% 67%, color-mix(in srgb, var(--color-accent) 8%, transparent) 67.04% 67.1%, transparent 67.18%);
+    linear-gradient(132deg, transparent 0 22%, color-mix(in srgb, var(--color-accent) 5%, transparent) 22.05% 22.12%, transparent 22.2% 55%, color-mix(in srgb, var(--color-accent) 3%, transparent) 55.05% 55.1%, transparent 55.18%),
+    linear-gradient(90deg, transparent 0 13%, color-mix(in srgb, var(--color-accent) 4%, transparent) 13.04% 13.1%, transparent 13.18% 74%, color-mix(in srgb, var(--color-accent) 2%, transparent) 74.04% 74.09%, transparent 74.16%),
+    linear-gradient(0deg, transparent 0 18%, color-mix(in srgb, var(--color-accent) 4%, transparent) 18.04% 18.1%, transparent 18.18% 67%, color-mix(in srgb, var(--color-accent) 2%, transparent) 67.04% 67.09%, transparent 67.16%);
   background-size: 100% 100%, 100% 100%, 760px 520px, 440px 340px, 520px 420px;
   background-repeat: no-repeat, no-repeat, repeat, repeat, repeat;
   background-attachment: fixed, fixed, fixed, fixed, fixed;
@@ -429,24 +429,25 @@ html[data-app-ready] body {
   position: absolute;
   top: 0;
   left: 1.35rem;
-  width: 6.75rem;
-  height: 2px;
+  width: 3.25rem;
+  height: 1px;
   border-radius: 0 999px 999px 0;
   background: linear-gradient(90deg, var(--color-accent), #ffb066);
-  box-shadow: 0 0 16px color-mix(in srgb, var(--color-accent) 60%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  opacity: 0.55;
 }
 
 .page-header__beam::after {
   position: absolute;
   top: 50%;
   right: -0.24rem;
-  width: 0.42rem;
-  height: 0.42rem;
+  width: 0.3rem;
+  height: 0.3rem;
   content: '';
-  border: 1px solid color-mix(in srgb, var(--color-accent) 75%, white);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 50%, white);
   border-radius: 999px;
   background: var(--color-bg);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--color-accent) 65%, transparent);
+  box-shadow: none;
   transform: translateY(-50%);
 }
 
@@ -485,31 +486,13 @@ html[data-app-ready] body {
 .panel-card::before,
 .stat-command-card::before,
 .server-command-card::before {
-  position: absolute;
-  top: 0;
-  left: 1.25rem;
-  width: 4.25rem;
-  height: 2px;
-  content: '';
-  border-radius: 0 999px 999px 0;
-  background: linear-gradient(90deg, var(--color-accent), #ffb066);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--color-accent) 45%, transparent);
-  opacity: 0.9;
+  display: none;
 }
 
 .panel-card::after,
 .stat-command-card::after,
 .server-command-card::after {
-  position: absolute;
-  top: -0.14rem;
-  left: 5.34rem;
-  width: 0.38rem;
-  height: 0.38rem;
-  content: '';
-  border: 1px solid color-mix(in srgb, var(--color-accent) 65%, white);
-  border-radius: 999px;
-  background: var(--color-surface);
-  box-shadow: 0 0 9px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  display: none;
 }
 
 .stat-command-card {
