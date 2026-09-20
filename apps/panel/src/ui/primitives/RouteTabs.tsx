@@ -1,4 +1,5 @@
-import { Fragment } from 'react';
+import { Fragment, useRef } from 'react';
+import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
 import { Link, useMatchRoute } from '@tanstack/react-router';
 import type { LinkProps } from '@tanstack/react-router';
 import type { LucideIcon } from 'lucide-react';
@@ -32,9 +33,59 @@ interface RouteTabsProps {
  */
 export function RouteTabs({ items, params, className = '' }: RouteTabsProps) {
   const matchRoute = useMatchRoute();
+  const navRef = useRef<HTMLElement>(null);
+  const dragRef = useRef({ pointerId: -1, startX: 0, scrollLeft: 0, moved: false });
+
+  function scrollWithWheel(event: ReactWheelEvent<HTMLElement>) {
+    const nav = navRef.current;
+    if (!nav || nav.scrollWidth <= nav.clientWidth) return;
+
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (delta === 0) return;
+    event.preventDefault();
+    nav.scrollLeft += delta;
+  }
+
+  function startDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (event.pointerType === 'touch') return;
+    const nav = navRef.current;
+    if (!nav || nav.scrollWidth <= nav.clientWidth) return;
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, scrollLeft: nav.scrollLeft, moved: false };
+    nav.setPointerCapture(event.pointerId);
+  }
+
+  function drag(event: ReactPointerEvent<HTMLElement>) {
+    const nav = navRef.current;
+    const state = dragRef.current;
+    if (!nav || state.pointerId !== event.pointerId) return;
+    const distance = event.clientX - state.startX;
+    if (Math.abs(distance) > 3) state.moved = true;
+    nav.scrollLeft = state.scrollLeft - distance;
+  }
+
+  function endDrag(event: ReactPointerEvent<HTMLElement>) {
+    const nav = navRef.current;
+    if (nav?.hasPointerCapture(event.pointerId)) nav.releasePointerCapture(event.pointerId);
+  }
 
   return (
-    <nav aria-label="Navegação do servidor" className={`-mb-px flex items-center gap-1 overflow-x-auto border-b border-border bg-gradient-to-r from-surface via-surface-2/70 to-surface [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className}`}>
+    <nav
+      ref={navRef}
+      aria-label="Navegação do servidor"
+      onWheel={scrollWithWheel}
+      onPointerDown={startDrag}
+      onPointerMove={drag}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onClickCapture={(event) => {
+        if (dragRef.current.moved) {
+          event.preventDefault();
+          event.stopPropagation();
+          dragRef.current.moved = false;
+        }
+      }}
+      className={`-mb-px flex cursor-grab items-center gap-1 overflow-x-auto border-b border-border bg-gradient-to-r from-surface via-surface-2/70 active:cursor-grabbing [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className}`}
+    >
       {items.map((tab, i) => {
         const active = Boolean(
           matchRoute({ to: tab.to, params, fuzzy: tab.exact ? false : undefined } as never),
