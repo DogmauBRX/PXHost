@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, User } from 'lucide-react';
+import { Activity, Archive, ChevronLeft, FolderOpen, Puzzle, SlidersHorizontal, TerminalSquare, User, UsersRound } from 'lucide-react';
 import { requireAdmin } from '@/app/guards';
 import { getAdminServer } from '@/features/admin/admin.api';
 import { getServer } from '@/features/servers/servers.api';
@@ -28,14 +28,14 @@ export const Route = createFileRoute('/admin/servers/$serverId')({
 // "Somar e agrupar" (client-features Fase 7) — see the identical comment
 // in client.servers.$serverId.tsx, which this mirrors tab-for-tab.
 const BASIC_TABS: readonly RouteTab[] = [
-  { to: '/admin/servers/$serverId', label: 'Console', exact: true, group: 'basico' },
-  { to: '/admin/servers/$serverId/files', label: 'Arquivos', group: 'basico' },
-  { to: '/admin/servers/$serverId/backups', label: 'Backups', group: 'basico' },
-  { to: '/admin/servers/$serverId/variables', label: 'Configurações', group: 'basico' },
+  { to: '/admin/servers/$serverId', label: 'Console', icon: TerminalSquare, exact: true, group: 'basico' },
+  { to: '/admin/servers/$serverId/files', label: 'Arquivos', icon: FolderOpen, group: 'basico' },
+  { to: '/admin/servers/$serverId/backups', label: 'Backups', icon: Archive, group: 'basico' },
+  { to: '/admin/servers/$serverId/variables', label: 'Configurações', icon: SlidersHorizontal, group: 'basico' },
 ];
 const ADVANCED_TABS: readonly RouteTab[] = [
-  { to: '/admin/servers/$serverId/subusers', label: 'Subusuários', group: 'avancado' },
-  { to: '/admin/servers/$serverId/activity', label: 'Atividade', group: 'avancado' },
+  { to: '/admin/servers/$serverId/subusers', label: 'Subusuários', icon: UsersRound, group: 'avancado' },
+  { to: '/admin/servers/$serverId/activity', label: 'Atividade', icon: Activity, group: 'avancado' },
 ];
 
 function ServerLayout() {
@@ -48,7 +48,7 @@ function ServerLayout() {
   const basicTabs: RouteTab[] = clientServer?.software.addonDir
     ? [
         ...BASIC_TABS.slice(0, 2),
-        { to: '/admin/servers/$serverId/addons', label: clientServer.software.addonLabel ?? 'Add-ons', group: 'basico' },
+        { to: '/admin/servers/$serverId/addons', label: clientServer.software.addonLabel ?? 'Add-ons', icon: Puzzle, group: 'basico' },
         ...BASIC_TABS.slice(2),
       ]
     : [...BASIC_TABS];
