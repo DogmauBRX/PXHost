@@ -486,28 +486,52 @@ export class ServersService {
     try {
       await this.agent.createServer(nodeId, payload);
     } catch (err) {
-      // A 409 `SERVER_EXISTS` means the agent's own in-memory Register
-      // guard (agent/internal/srv/manager.go) already holds this exact
-      // UUID — i.e. an earlier call for this same server (this one or a
-      // prior attempt whose response the panel never received) already
-      // got through. Never a duplicate: Docker's own deterministic
-      // container name (`gxhost-<uuid>`) plus this in-memory guard are
-      // what make retrying `POST /setup` safe in the first place (see
-      // ServerSetupService's doc comment). Treated as SUCCESS, not
-      // failure — the row is left exactly as it is (`installing`), and
-      // the agent's own `install-completed`/`install-failed` callback
-      // (reportInstallResult, no status precondition) is what reconciles
-      // it for real. Overwriting to `install_failed` here would be
-      // actively wrong: it could race ahead of — or fight — that later,
-      // authoritative callback.
+      let failure = err;
+
+      // A 409 `SERVER_EXISTS` means the agent's in-memory Register guard
+      // (agent/internal/srv/manager.go) already holds this UUID, so
+      // `createServer` can never succeed for it again.
+      //
+      // This used to return here, treating the 409 as success and
+      // trusting the agent's install-completed callback to reconcile the
+      // row. That assumed the 409 meant "an earlier call is already
+      // installing" — true for a duplicated request in flight, false for
+      // a setup RETRY minutes or hours later, which is the common case.
+      // The agent's 409 path returns before pulling, creating or
+      // installing anything, so no callback was ever coming: found live
+      // with a server that sat on "Preparando" for twelve hours after two
+      // retries, both audited as dispatch_already_registered.
+      //
+      // Reinstall is precisely "re-run the install on a server the agent
+      // already has registered" — it recreates the container and drives
+      // the same install-completed callback — so a create that lands on
+      // an already-registered UUID is re-driven through it.
       if (err instanceof ConflictException && err.message.includes('SERVER_EXISTS')) {
-        await this.audit.record({
-          action: 'server.create.dispatch_already_registered',
-          targetType: 'server',
-          targetId: serverId,
-          metadata: {},
-        });
-        return;
+        try {
+          await this.agent.reinstallServer(nodeId, serverId, {
+            image: payload.image,
+            imageDigest: payload.imageDigest,
+            startupTemplate: payload.startupTemplate,
+            stopSignal: payload.stopSignal,
+            declaredVariables: payload.declaredVariables,
+            variables: payload.variables,
+            installImage: payload.installImage,
+            installEntrypoint: payload.installEntrypoint,
+            installScript: payload.installScript,
+          });
+          await this.audit.record({
+            action: 'server.create.dispatch_rerouted_to_reinstall',
+            targetType: 'server',
+            targetId: serverId,
+            metadata: {},
+          });
+          return;
+        } catch (reinstallErr) {
+          // Falls through to the same install_failed handling below: a
+          // server the agent knows but cannot reinstall is a real
+          // failure the customer has to see, not another silent wait.
+          failure = reinstallErr;
+        }
       }
 
       // The create TRANSACTION already committed — the server row exists
@@ -523,9 +547,9 @@ export class ServersService {
         action: 'server.create.dispatch_failed',
         targetType: 'server',
         targetId: serverId,
-        metadata: { error: (err as Error).message },
+        metadata: { error: (failure as Error).message },
       });
-      if (options?.rethrow) throw err;
+      if (options?.rethrow) throw failure;
     }
   }
 

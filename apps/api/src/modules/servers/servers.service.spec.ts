@@ -2,27 +2,36 @@ import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { ServersService } from './servers.service';
 
 /**
- * `dispatchToAgent`'s failure handling in isolation — the setup plan's
- * own retry-safety proof (see ServerSetupService's doc comment) hinges
- * on 409 `SERVER_EXISTS` being absorbed as success rather than
- * misreported as a failure that would invite an unnecessary, actually-
- * redundant retry. An e2e spec proving this end to end would need a real
- * fake HTTP agent replying 409 mid-request — this unit test isolates the
- * exact branch instead, the same "avoid a live dependency for a pure
- * branch of logic" reasoning `capability-token.service.spec.ts` already
- * documents for its own fake Prisma.
+ * `dispatchToAgent`'s failure handling in isolation — an e2e spec proving
+ * this end to end would need a real fake HTTP agent replying 409
+ * mid-request, so this unit test isolates the exact branch instead, the
+ * same "avoid a live dependency for a pure branch of logic" reasoning
+ * `capability-token.service.spec.ts` already documents for its own fake
+ * Prisma.
+ *
+ * The 409 `SERVER_EXISTS` branch used to simply return, treating the
+ * conflict as success and waiting for the agent's install-completed
+ * callback. Found live that no callback ever comes: the agent's 409 path
+ * returns before installing anything, so a setup RETRY on an
+ * already-registered UUID left the server on "Preparando" indefinitely
+ * (twelve hours, across two retries). It is now re-driven through
+ * reinstall, which is the endpoint that re-runs an install on a server
+ * the agent already knows.
  */
 describe('ServersService.dispatchToAgent', () => {
-  function makeService(createServer: jest.Mock) {
+  function makeService(createServer: jest.Mock, reinstallServer: jest.Mock = jest.fn(async () => ({ state: 'installing' }))) {
     const updateMock = jest.fn(async () => ({}));
     const prisma = {
       withRLS: jest.fn(async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn({ server: { update: updateMock } })),
     };
-    const agent = { createServer };
+    const agent = { createServer, reinstallServer };
     const audit = { record: jest.fn(async () => undefined) };
     const service = new ServersService(prisma as any, agent as any, audit as any, {} as any, {} as any, {} as any, {} as any, {} as any);
-    return { service, updateMock, audit };
+    return { service, updateMock, audit, reinstallServer };
   }
+
+  const conflict = () =>
+    new ConflictException('Agent returned 409: {"error":{"code":"SERVER_EXISTS","message":"srv-1 is already registered"}}');
 
   const payload = {
     uuid: 'srv-1',
@@ -38,14 +47,46 @@ describe('ServersService.dispatchToAgent', () => {
     installScript: '#!/bin/sh\n',
   };
 
-  it('treats a 409 SERVER_EXISTS as success — never marks install_failed, never throws even with rethrow:true', async () => {
-    const createServer = jest.fn().mockRejectedValue(new ConflictException('Agent returned 409: {"error":{"code":"SERVER_EXISTS","message":"srv-1 is already registered"}}'));
-    const { service, updateMock, audit } = makeService(createServer);
+  it('um 409 SERVER_EXISTS vira um reinstall — é ele que dispara o install e o callback', async () => {
+    const createServer = jest.fn().mockRejectedValue(conflict());
+    const { service, updateMock, audit, reinstallServer } = makeService(createServer);
 
     await expect(service.dispatchToAgent('srv-1', 'node-1', payload, { rethrow: true })).resolves.toBeUndefined();
 
-    expect(updateMock).not.toHaveBeenCalled(); // never overwritten to install_failed — the later install-completed callback is the sole authority now
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'server.create.dispatch_already_registered', targetId: 'srv-1' }));
+    expect(reinstallServer).toHaveBeenCalledWith('node-1', 'srv-1', expect.objectContaining({
+      image: payload.image,
+      startupTemplate: payload.startupTemplate,
+      installScript: payload.installScript,
+    }));
+    expect(updateMock).not.toHaveBeenCalled(); // o install-completed do reinstall é quem reconcilia
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'server.create.dispatch_rerouted_to_reinstall', targetId: 'srv-1' }));
+  });
+
+  // O reinstall carrega só o que uma troca de software muda: nunca
+  // uid/limits/allocations, que o *srv.Server já registrado preserva.
+  it('o payload do reinstall não leva uid, limites nem alocações', async () => {
+    const createServer = jest.fn().mockRejectedValue(conflict());
+    const { service, reinstallServer } = makeService(createServer);
+
+    await service.dispatchToAgent('srv-1', 'node-1', payload);
+
+    const enviado = reinstallServer.mock.calls[0][2];
+    expect(enviado).not.toHaveProperty('uid');
+    expect(enviado).not.toHaveProperty('limits');
+    expect(enviado).not.toHaveProperty('allocations');
+  });
+
+  // O ponto da correção: nada pode sair daqui deixando a linha em
+  // "installing" sem ninguém a caminho para reconciliá-la.
+  it('se o reinstall também falhar, marca install_failed em vez de esperar para sempre', async () => {
+    const createServer = jest.fn().mockRejectedValue(conflict());
+    const reinstallServer = jest.fn().mockRejectedValue(new ServiceUnavailableException('agente fora do ar'));
+    const { service, updateMock, audit } = makeService(createServer, reinstallServer);
+
+    await expect(service.dispatchToAgent('srv-1', 'node-1', payload, { rethrow: true })).rejects.toThrow(ServiceUnavailableException);
+
+    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'srv-1' }, data: { status: 'install_failed' } }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'server.create.dispatch_failed', targetId: 'srv-1' }));
   });
 
   it('a genuine dispatch failure marks install_failed and rethrows when rethrow:true (the setup/retry path)', async () => {
