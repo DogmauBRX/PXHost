@@ -110,7 +110,7 @@ export function PluginDetailsModal({ serverId, projectId, softwareLabel, minecra
           {success && <Alert tone="ok">{success}</Alert>}
           <Alert tone="info">O JAR será validado e salvo em <code>/plugins</code>. Reinicie o servidor depois da instalação para carregá-lo.</Alert>
 
-          {project.body && <div><h3 className="mb-2 text-sm font-semibold">Sobre</h3><p className="max-h-52 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-text-muted">{project.body}</p></div>}
+          {project.body && <div><h3 className="mb-2 text-sm font-semibold">Sobre</h3><p className="whitespace-pre-wrap text-sm leading-6 text-text-muted">{project.body}</p></div>}
         </div>
       )}
     </Modal>
