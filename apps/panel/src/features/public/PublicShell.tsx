@@ -300,9 +300,13 @@ export function PublicShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex flex-col gap-4 pt-7 text-[0.68rem] leading-5 text-white/30 sm:flex-row sm:items-end sm:justify-between">
-            <div>
+            <div className="space-y-3">
               <p>© {new Date().getFullYear()} GXhost. Todos os direitos reservados.</p>
-              <p>Hospedagem inteligente para comunidades que querem crescer.</p>
+              <address className="not-italic">
+                <p className="font-medium text-white/40">GXhost · CNPJ 68.987.329/0001-21</p>
+                <p>Praça dos Andradas, 2 · Centro · Barbacena/MG</p>
+                <p>CEP 36200-008 · Brasil</p>
+              </address>
             </div>
             <p className="max-w-xl sm:text-right">"Minecraft" é uma marca registrada de Mojang Synergies AB. A GXhost não é afiliada, endossada ou patrocinada pela Mojang ou pela Microsoft.</p>
           </div>
