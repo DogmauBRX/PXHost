@@ -118,9 +118,27 @@ for each node's Caddy to solve the DNS-01 ACME challenge — see
 7. On the node: `pxagent bootstrap --panel https://api.gxhost.com.br
    --token <bootstrap-token> --node /etc/gxhost-agent/node.json` — this
    writes `node_uuid`/`node_token`/`panel_url` into `node.json`.
-8. Install and start the agent service: copy `deploy/node/pxagent.service`
-   to `/etc/systemd/system/`, `systemctl daemon-reload && systemctl
-   enable --now pxagent`.
+8. Install and start the agent service: **copie
+   `deploy/node/pxagent.service`**, não escreva um à mão —
+   `systemctl daemon-reload && systemctl enable --now pxagent`.
+
+   O motivo de "não escreva à mão" é a linha
+   `AmbientCapabilities=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER`. O agente
+   roda como o usuário `gxhost`, enquanto o diretório de cada servidor
+   pertence ao uid próprio daquele servidor — sem essas três, ele não
+   consegue instalar servidor, aceitar upload nem receber transferência.
+   Aconteceu ao subir o node02, com um unit escrito à mão sem essa
+   linha: o agente subiu, bateu heartbeat como saudável, e o único
+   sintoma apareceu horas depois numa transferência, como
+   `operation not permitted` ao extrair um arquivo.
+
+   Desde então o agente **se recusa a subir** sem elas, dizendo quais
+   faltam e qual linha adicionar. Para conferir um node já no ar:
+
+   ```bash
+   grep -E "^Cap(Eff|Amb)" /proc/$(systemctl show pxagent -p MainPID --value)/status
+   # CapEff precisa ser 000000000000000b (bits 0, 1 e 3); 0 significa nenhuma
+   ```
 9. Back in the panel, edit this node and set **Endereço de controle**
    to its WireGuard address, e.g. `http://10.10.0.2:8443` (node 01) or
    `http://10.10.0.3:8443` (node 02) — this is what makes

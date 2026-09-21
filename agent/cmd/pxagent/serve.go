@@ -18,6 +18,7 @@ import (
 	"github.com/gxhost/agent/internal/fsx"
 	"github.com/gxhost/agent/internal/hostinfo"
 	"github.com/gxhost/agent/internal/panel"
+	"github.com/gxhost/agent/internal/preflight"
 	"github.com/gxhost/agent/internal/spec"
 	"github.com/gxhost/agent/internal/srv"
 )
@@ -47,6 +48,15 @@ func runServeCmd(args []string) error {
 	}
 	if *nodePath == "" {
 		return fmt.Errorf("--node is required")
+	}
+
+	// Before anything else: a node that cannot chown cannot install a
+	// server, accept a file upload, or receive a transfer. Starting
+	// anyway means heartbeating as healthy and having the panel schedule
+	// work onto a node that will fail all of it — see
+	// preflight.CheckCapabilities for the live incident.
+	if err := preflight.CheckCapabilities(); err != nil {
+		return err
 	}
 
 	ctx, cancel := signalContext()
