@@ -66,9 +66,9 @@ export class AuthController {
   @Get('google')
   async google(@Query('redirect') redirectTo: string | undefined, @Res() reply: FastifyReply) {
     try {
-      return reply.redirect(await this.googleOAuth.begin(redirectTo));
+      return reply.redirect(await this.googleOAuth.begin(redirectTo), HttpStatus.FOUND);
     } catch {
-      return reply.redirect(this.googleOAuth.failureRedirect('unavailable'));
+      return reply.redirect(this.googleOAuth.failureRedirect('unavailable'), HttpStatus.FOUND);
     }
   }
 
@@ -81,14 +81,14 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
   ) {
-    if (error) return reply.redirect(this.googleOAuth.failureRedirect('cancelled'));
+    if (error) return reply.redirect(this.googleOAuth.failureRedirect('cancelled'), HttpStatus.FOUND);
     try {
       const { identity, redirectTo } = await this.googleOAuth.complete(code, state);
       const result = await this.auth.loginWithGoogle(identity, requestMeta(req));
       setRefreshCookie(reply, result.refreshToken, result.refreshExpiresAt);
-      return reply.redirect(this.googleOAuth.successRedirect(redirectTo));
+      return reply.redirect(this.googleOAuth.successRedirect(redirectTo), HttpStatus.FOUND);
     } catch {
-      return reply.redirect(this.googleOAuth.failureRedirect('failed'));
+      return reply.redirect(this.googleOAuth.failureRedirect('failed'), HttpStatus.FOUND);
     }
   }
 
