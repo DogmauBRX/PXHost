@@ -50,10 +50,31 @@ export const RESERVED_HOSTNAME_LABELS = new Set([
   'localhost',
 ]);
 
+/**
+ * A label shaped like a server's own `shortId`: exactly 8 characters
+ * from `generateShortId`'s alphabet (`0123456789ABCDEFGHJKMNPQRSTVWXYZ`
+ * — Crockford-style, no I/L/O/U), lowercased.
+ *
+ * Reserved because custom hostnames and automatic ones now share one
+ * namespace. `deriveHostname` publishes `<shortId>.mc.<zone>` and
+ * `deriveCustomHostname` publishes `<label>.mc.<zone>`; before, custom
+ * labels sat at the apex and the two could never meet. Claiming another
+ * server's shortId as a label would now mean claiming its address.
+ *
+ * The live availability check in GatewayService catches this too, but
+ * only for a shortId that already has a record published — and it fails
+ * open on a provider outage, by design. This rule needs neither.
+ *
+ * Costs a customer almost nothing: an 8-character label with no i, l, o
+ * or u in it is not a name anyone picks on purpose.
+ */
+const SHORT_ID_SHAPED = /^[0-9abcdefghjkmnpqrstvwxyz]{8}$/;
+
 export function isValidHostnameLabelFormat(label: string): boolean {
   return label.length >= HOSTNAME_LABEL_MIN_LENGTH && label.length <= HOSTNAME_LABEL_MAX_LENGTH && HOSTNAME_LABEL_PATTERN.test(label);
 }
 
 export function isReservedHostnameLabel(label: string): boolean {
-  return RESERVED_HOSTNAME_LABELS.has(label.toLowerCase());
+  const normalized = label.toLowerCase();
+  return RESERVED_HOSTNAME_LABELS.has(normalized) || SHORT_ID_SHAPED.test(normalized);
 }

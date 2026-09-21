@@ -47,8 +47,13 @@ class FakeDnsProvider implements DnsProvider {
   addressRemoved: string[] = [];
   unavailableHostnames = new Set<string>();
   isHostnameAvailableShouldThrow = false;
+  /** Names this fake provider is not authoritative for — the real one's "outside the managed zone". */
+  unpublishableHostnames = new Set<string>();
+  /** Names whose publish attempt fails, to exercise the "keep the old record" path. */
+  ensureShouldFailFor = new Set<string>();
 
   async ensureSrv(input: SrvRecordInput): Promise<void> {
+    if (this.ensureShouldFailFor.has(input.hostname)) throw new Error(`fake provider refuses ${input.hostname}`);
     this.srvEnsured.push(input);
   }
 
@@ -69,6 +74,10 @@ class FakeDnsProvider implements DnsProvider {
     return !this.unavailableHostnames.has(hostname);
   }
 
+  canPublish(hostname: string): boolean {
+    return !this.unpublishableHostnames.has(hostname);
+  }
+
   reset(): void {
     this.srvEnsured = [];
     this.srvRemoved = [];
@@ -76,6 +85,8 @@ class FakeDnsProvider implements DnsProvider {
     this.addressRemoved = [];
     this.unavailableHostnames = new Set();
     this.isHostnameAvailableShouldThrow = false;
+    this.unpublishableHostnames = new Set();
+    this.ensureShouldFailFor = new Set();
   }
 }
 
@@ -374,7 +385,7 @@ describe('Public-exposure gateway (e2e)', () => {
     const reconcileRes = await authed('/api/admin/gateways/reconcile', { method: 'POST' });
     expect(reconcileRes.statusCode).toBe(201);
 
-    const fqdn = 'survival.gw-e2e-test.local';
+    const fqdn = 'survival.mc.gw-e2e-test.local';
     // target must be the hostname itself, never the gateway's raw IP —
     // the DNS spec (and real providers like PowerDNS/Cloudflare) rejects
     // a literal address there ("SRV target must be a hostname"); the
@@ -400,12 +411,66 @@ describe('Public-exposure gateway (e2e)', () => {
     fakeDns.reset();
     await authed('/api/admin/gateways/reconcile', { method: 'POST' });
 
-    expect(fakeDns.srvRemoved).toContain('oldname.gw-e2e-test.local');
-    expect(fakeDns.addressRemoved).toContain('oldname.gw-e2e-test.local');
-    expect(fakeDns.srvEnsured).toContainEqual(expect.objectContaining({ hostname: 'newname.gw-e2e-test.local' }));
+    expect(fakeDns.srvRemoved).toContain('oldname.mc.gw-e2e-test.local');
+    expect(fakeDns.addressRemoved).toContain('oldname.mc.gw-e2e-test.local');
+    expect(fakeDns.srvEnsured).toContainEqual(expect.objectContaining({ hostname: 'newname.mc.gw-e2e-test.local' }));
 
     const route = await asAdmin((tx) => tx.publicRoute.findUniqueOrThrow({ where: { serverId } }));
-    expect(route.dnsSyncedHostname).toBe('newname.gw-e2e-test.local');
+    expect(route.dnsSyncedHostname).toBe('newname.mc.gw-e2e-test.local');
+  });
+
+  /**
+   * The rename above used to delete the old records BEFORE trying to
+   * publish the new ones, so that a rename could never leave the
+   * previous name resolving. Found live that the ordering had a much
+   * worse failure mode than the one it prevented: a customer set a
+   * hostname the DNS provider could not publish, the old working record
+   * was deleted, the new one never appeared, and the server was left
+   * with no address at all while the panel showed the new name as its
+   * connection address.
+   */
+  it('um rename que não consegue publicar mantém o endereço antigo no ar, em vez de deixar o servidor sem nenhum', async () => {
+    const nodeId = await makeNode('hostname-keep-old', '10.10.9.18', 25677);
+    const planId = await makePlan(400);
+    const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'gw-e2e hostname keep old' } });
+    const serverId = JSON.parse(res.body).id as string;
+
+    await gatewayService.setCustomHostname(serverId, 'working');
+    await authed('/api/admin/gateways/reconcile', { method: 'POST' });
+    const before = await asAdmin((tx) => tx.publicRoute.findUniqueOrThrow({ where: { serverId } }));
+    expect(before.dnsSyncedHostname).toBe('working.mc.gw-e2e-test.local');
+
+    fakeDns.reset();
+    fakeDns.ensureShouldFailFor.add('broken.mc.gw-e2e-test.local');
+    await gatewayService.setCustomHostname(serverId, 'broken');
+    await authed('/api/admin/gateways/reconcile', { method: 'POST' });
+
+    expect(fakeDns.srvRemoved).not.toContain('working.mc.gw-e2e-test.local');
+    expect(fakeDns.addressRemoved).not.toContain('working.mc.gw-e2e-test.local');
+    const after = await asAdmin((tx) => tx.publicRoute.findUniqueOrThrow({ where: { serverId } }));
+    expect(after.dnsSyncedHostname).toBe('working.mc.gw-e2e-test.local');
+  });
+
+  /**
+   * Refused at save time rather than accepted and retried forever. The
+   * reconciler swallows publish failures on purpose (DNS is best-effort
+   * — a customer can always fall back to ip:port), which is right for
+   * an outage and wrong for a name that can never work: it turns a
+   * permanent misconfiguration into a silent one.
+   */
+  it('um hostname que o provider não consegue publicar é recusado na hora de salvar', async () => {
+    const nodeId = await makeNode('hostname-unpublishable', '10.10.9.19', 25678);
+    const planId = await makePlan(400);
+    const res = await authed('/api/admin/servers', { method: 'POST', payload: { ownerId, nodeId, templateId, planId, name: 'gw-e2e hostname unpublishable' } });
+    const serverId = JSON.parse(res.body).id as string;
+
+    fakeDns.reset();
+    fakeDns.unpublishableHostnames.add('forapex.mc.gw-e2e-test.local');
+
+    await expect(gatewayService.setCustomHostname(serverId, 'forapex')).rejects.toThrow(/não pode ser publicado/);
+
+    const route = await asAdmin((tx) => tx.publicRoute.findUniqueOrThrow({ where: { serverId } }));
+    expect(route.customHostname).toBeNull();
   });
 
   it('clearing the hostname removes its DNS and falls back to the shortId-derived scheme on the next reconcile', async () => {
@@ -422,7 +487,7 @@ describe('Public-exposure gateway (e2e)', () => {
     fakeDns.reset();
     await authed('/api/admin/gateways/reconcile', { method: 'POST' });
 
-    expect(fakeDns.srvRemoved).toContain('temporary.gw-e2e-test.local');
+    expect(fakeDns.srvRemoved).toContain('temporary.mc.gw-e2e-test.local');
     const derivedFqdn = `${shortId}.mc.gw-e2e-test.local`;
     expect(fakeDns.srvEnsured).toContainEqual(expect.objectContaining({ hostname: derivedFqdn }));
 
@@ -445,13 +510,13 @@ describe('Public-exposure gateway (e2e)', () => {
     await gatewayService.setCustomHostname(serverId, 'doomed');
     await authed('/api/admin/gateways/reconcile', { method: 'POST' });
     const synced = await asAdmin((tx) => tx.publicRoute.findUniqueOrThrow({ where: { serverId } }));
-    expect(synced.dnsSyncedHostname).toBe('doomed.gw-e2e-test.local');
+    expect(synced.dnsSyncedHostname).toBe('doomed.mc.gw-e2e-test.local');
 
     fakeDns.reset();
     await gatewayService.markRemoving(serverId); // no reconcile call after this
 
-    expect(fakeDns.srvRemoved).toContain('doomed.gw-e2e-test.local');
-    expect(fakeDns.addressRemoved).toContain('doomed.gw-e2e-test.local');
+    expect(fakeDns.srvRemoved).toContain('doomed.mc.gw-e2e-test.local');
+    expect(fakeDns.addressRemoved).toContain('doomed.mc.gw-e2e-test.local');
 
     await asAdmin((tx) => tx.allocation.updateMany({ where: { serverId }, data: { isPrimary: false } }));
     await asAdmin((tx) => tx.server.delete({ where: { id: serverId } }));

@@ -1,4 +1,5 @@
 import { deriveCustomHostname, deriveHostname, derivePublicAddress } from './public-address';
+import { isReservedHostnameLabel } from './hostname-policy';
 
 describe('deriveHostname', () => {
   it('composes <shortid>.mc.<zone>, not mc-<id>.<zone> (the wildcard-DNS pattern this module\'s doc comment commits to)', () => {
@@ -40,16 +41,32 @@ describe('derivePublicAddress', () => {
 });
 
 describe('deriveCustomHostname', () => {
-  it('composes <label>.<zone> directly under the apex — never nested under deriveHostname\'s .mc. namespace', () => {
-    expect(deriveCustomHostname('survival', 'gxhost.com.br')).toBe('survival.gxhost.com.br');
+  /**
+   * This used to compose at the apex ("survival.gxhost.com.br"). The
+   * platform is authoritative for `mc.<zone>` alone — the apex belongs
+   * to whoever serves the site — so an apex name is one it cannot
+   * publish, and a customer who set one got an address the panel showed
+   * and no client could resolve. Found live.
+   */
+  it('compõe sob o mesmo .mc. dos automáticos, que é a zona que a plataforma realmente controla', () => {
+    expect(deriveCustomHostname('survival', 'gxhost.com.br')).toBe('survival.mc.gxhost.com.br');
   });
 
   it('lowercases the label the same way deriveHostname lowercases shortId', () => {
-    expect(deriveCustomHostname('SURVIVAL', 'gxhost.com.br')).toBe('survival.gxhost.com.br');
+    expect(deriveCustomHostname('SURVIVAL', 'gxhost.com.br')).toBe('survival.mc.gxhost.com.br');
   });
 
-  it('never collides with deriveHostname\'s output for the same zone', () => {
+  /**
+   * The cost of sharing one namespace with the automatic hostnames: a
+   * label CAN now be composed into the same name as some server's
+   * `<shortId>.mc.<zone>`. Nothing in this pure function can prevent
+   * that — it is held off by hostname-policy reserving shortId-SHAPED
+   * labels, plus the live availability check. This test pins the
+   * overlap so the reason those guards exist stays visible here.
+   */
+  it('divide o namespace com deriveHostname — a colisão é possível e é barrada em outro lugar', () => {
     const zone = 'gxhost.com.br';
-    expect(deriveCustomHostname('mc', zone)).not.toBe(deriveHostname('mc', zone));
+    expect(deriveCustomHostname('tdafy4cn', zone)).toBe(deriveHostname('TDAFY4CN', zone));
+    expect(isReservedHostnameLabel('tdafy4cn')).toBe(true);
   });
 });

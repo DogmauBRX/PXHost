@@ -32,4 +32,17 @@ export class NoneDnsProvider implements DnsProvider {
   async isHostnameAvailable(_hostname: string): Promise<boolean> {
     return true;
   }
+
+  /**
+   * True, which reads oddly for a provider that publishes nothing, but
+   * is the honest answer to what the caller asks: "will saving this
+   * hand the customer an address that can never resolve?" With
+   * automation off, nobody was promised a resolving hostname in the
+   * first place — the address stays `host:port` and works. Returning
+   * false here would block custom hostnames on every install that has
+   * not configured DNS, which is the default one.
+   */
+  canPublish(_hostname: string): boolean {
+    return true;
+  }
 }

@@ -146,14 +146,42 @@ válido; nesse caso as duas têm o mesmo valor e
 `PUBLIC_GATEWAY_DNS_ZONE` pode ficar vazia (cai em
 `PUBLIC_GATEWAY_HOSTNAME_ZONE`).
 
-**Consequência para hostname personalizado**: `deriveCustomHostname`
-compõe o label direto sob o raiz (`survival.gxhost.com.br`), que está
-**fora** da zona delegada. Com só o subdomínio de jogo delegado, o
-PowerDNS não tem como publicar esse nome — `PowerDnsProvider.assertInZone`
-recusa com uma mensagem explícita em vez de deixar o PowerDNS devolver
-um `422` sem contexto. Para habilitar hostname personalizado é preciso
-delegar o raiz inteiro, ou mudar `deriveCustomHostname` para compor sob
-`.mc.` também.
+**Consequência para hostname personalizado** — este parágrafo previa o
+problema e listava as duas saídas; ficou registrado qual foi tomada, e
+o que custou não ter sido tomada antes.
+
+O `deriveCustomHostname` compunha o label direto sob o raiz
+(`survival.gxhost.com.br`), **fora** da zona delegada, e o PowerDNS não
+tem como publicar esse nome. Aconteceu em produção com um cliente real:
+ele trocou o endereço, o painel aceitou, exibiu o nome novo como
+endereço de conexão sob um selo verde de "Conectado" — e nenhum cliente
+Minecraft no mundo conseguia resolver. Pior: a troca **apagou** o
+registro `<shortId>.mc.<zona>` que funcionava antes de descobrir que não
+publicaria o substituto, deixando o servidor sem endereço nenhum.
+
+Das duas saídas que este parágrafo listava, foi escolhida a segunda:
+`deriveCustomHostname` passou a compor sob `.mc.`, como os automáticos
+(`survival.mc.gxhost.com.br`). Delegar o raiz inteiro continua válido e
+resolveria também, mas põe site, painel, API e e-mail na dependência do
+DNS próprio — decisão bem maior do que habilitar um recurso.
+
+Três guardas nasceram do episódio, e cada uma cobre um buraco diferente:
+
+- `DnsProvider.canPublish` — o save recusa na hora um nome que o
+  provider não consegue publicar, em vez de aceitar e falhar para sempre
+  num log. Sync de DNS best-effort é a resposta certa para uma queda do
+  provedor e a errada para um nome que nunca vai funcionar.
+- `syncDns` publica o novo **antes** de aposentar o antigo. Um rename que
+  vaza o nome velho por uma passada é cosmético; um que tira o servidor
+  do DNS é queda.
+- O painel passou a exibir o `dnsSyncedHostname` (o que está publicado),
+  não o `customHostname` (o que foi pedido). Eram perguntas diferentes
+  sendo respondidas como se fossem a mesma.
+
+Como os dois esquemas agora dividem o namespace `.mc.`, um label com a
+**forma** de um `shortId` (8 caracteres do alfabeto dele) passou a ser
+reservado em `hostname-policy.ts` — sem isso, um cliente poderia
+reivindicar o endereço do servidor de outro.
 
 ## 6. Alterações no Docker/Compose
 

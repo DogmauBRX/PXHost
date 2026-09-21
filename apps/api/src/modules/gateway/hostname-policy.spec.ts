@@ -63,3 +63,29 @@ describe('isReservedHostnameLabel', () => {
     expect(isReservedHostnameLabel('survival')).toBe(false);
   });
 });
+
+/**
+ * Custom hostnames and automatic ones share the `.mc.` namespace since
+ * `deriveCustomHostname` stopped composing at the apex (which the
+ * platform cannot publish). Claiming a label shaped like some server's
+ * shortId would be claiming that server's address.
+ */
+describe('labels com forma de shortId', () => {
+  it('reserva um label que é exatamente um shortId', () => {
+    expect(isReservedHostnameLabel('tdafy4cn')).toBe(true);
+    expect(isReservedHostnameLabel('TDAFY4CN')).toBe(true);
+  });
+
+  // O alfabeto do shortId omite i, l, o e u de propósito (ambíguos ao
+  // ler em voz alta), então um label de 8 letras que contenha um deles
+  // não tem como ser um shortId.
+  it('não reserva um nome comum de 8 letras que contenha uma letra fora do alfabeto', () => {
+    expect(isReservedHostnameLabel('survival')).toBe(false); // tem i e u
+    expect(isReservedHostnameLabel('creative')).toBe(false); // tem i
+  });
+
+  it('não reserva por tamanho — só a forma exata de 8 conta', () => {
+    expect(isReservedHostnameLabel('tdafy4c')).toBe(false);
+    expect(isReservedHostnameLabel('tdafy4cnn')).toBe(false);
+  });
+});

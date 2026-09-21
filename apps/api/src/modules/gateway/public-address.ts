@@ -20,17 +20,32 @@ export function deriveHostname(shortId: string, zone: string): string {
 }
 
 /**
- * Custom-hostname plan — composes a customer-CHOSEN label directly under
- * the zone apex ("survival" + "gxhost.com.br" -> "survival.gxhost.com.br"),
- * deliberately NOT nested under `.mc.` like `deriveHostname` above: the
- * customer's own examples are bare subdomains, and unlike `shortId` (
- * permanent, never reused) this label can change or be released and
- * reused by someone else — see hostname-policy.ts and GatewayService's
- * own doc comments for why that needs per-record DNS lifecycle instead
- * of the `.mc.` scheme's single static wildcard.
+ * Custom-hostname plan — a customer-CHOSEN label, under the same `.mc.`
+ * subdomain as `deriveHostname` above ("survival" + "gxhost.com.br" ->
+ * "survival.mc.gxhost.com.br").
+ *
+ * This used to compose the label directly under the apex
+ * ("survival.gxhost.com.br"), on the reasoning that the customer's own
+ * examples are bare subdomains. That was written before the DNS
+ * topology was settled, and the two turned out to be incompatible: the
+ * platform is authoritative for `mc.<zone>` ALONE — the apex stays with
+ * whoever already serves the site, panel and API — so a name at the
+ * apex is one this platform cannot publish at all.
+ *
+ * It failed in the worst possible way rather than loudly. DNS sync is
+ * best-effort by design, so the provider's refusal was logged and
+ * swallowed; the panel accepted the hostname, displayed it as the
+ * connection address, and the customer could never connect to it. Found
+ * live, on a real server.
+ *
+ * Unlike `shortId` (permanent, never reused) this label can change or be
+ * released and reused by someone else, which is why it still needs
+ * per-record DNS lifecycle rather than the `.mc.` scheme's single static
+ * wildcard — see hostname-policy.ts and GatewayService's own doc
+ * comments.
  */
 export function deriveCustomHostname(label: string, zone: string): string {
-  return `${label.toLowerCase()}.${zone}`;
+  return `${label.toLowerCase()}.mc.${zone}`;
 }
 
 /**

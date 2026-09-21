@@ -218,6 +218,19 @@ export class GatewayService {
     if (!zone) throw new ConflictException('Hostname personalizado requer um domínio configurado nesta instalação');
 
     const fqdn = deriveCustomHostname(label, zone);
+
+    // Refused here, not swallowed by the reconciler later. A name the
+    // provider cannot publish will never resolve no matter how many
+    // times the 30s pass retries, so accepting the save would hand the
+    // customer an address that looks official in the panel and simply
+    // does not work — which is exactly what happened before this check
+    // existed. Unlike isHostnameAvailable below, this one is about
+    // configuration, so it does NOT fail open.
+    if (!this.dns.canPublish(fqdn)) {
+      this.logger.error(`refusing custom hostname ${fqdn}: the DNS provider cannot publish in that zone`);
+      throw new ConflictException('Este endereço não pode ser publicado pela configuração de DNS desta instalação');
+    }
+
     try {
       const available = await this.dns.isHostnameAvailable(fqdn);
       if (!available) throw new ConflictException('Este endereço já está em uso');
@@ -405,15 +418,49 @@ export class GatewayService {
         continue;
       }
 
-      // Target changed (rename, cleared, or newly set) — remove the OLD
-      // record first so a rename never leaves the previous name resolving.
-      if (route.dnsSyncedHostname) await this.removeDnsFor(route.dnsSyncedHostname);
-      if (!included) continue; // row already hard-deleted — nothing left to persist
+      // Row already hard-deleted — the old name is all there is to clean
+      // up, and nothing will be published in its place.
+      if (!included) {
+        if (route.dnsSyncedHostname) await this.removeDnsFor(route.dnsSyncedHostname);
+        continue;
+      }
 
+      // Target changed (rename, cleared, or newly set). PUBLISH FIRST,
+      // retire the old name only once the new one is actually answering.
+      //
+      // This used to remove the old record up front, so that a rename
+      // could never leave the previous name resolving. That reasoning
+      // only holds when the new record is certain to land — and it is
+      // not: `ensureDnsFor` returns false whenever the provider refuses
+      // the name. Found live: a customer set a custom hostname the
+      // PowerDNS zone cannot hold, and the sync deleted the working
+      // `<shortId>.mc.<zone>` record before discovering it could not
+      // publish the replacement. The server was left with NO address at
+      // all, the route still marked `active`, and the panel still
+      // showing the new name as if it worked.
+      //
+      // A rename that leaks the old name for one reconcile pass is a
+      // cosmetic problem, self-correcting 30 seconds later. A rename
+      // that takes a live server off DNS is an outage. The order now
+      // reflects that difference.
       let newSynced: string | null = null;
       if (desiredHostname) {
         const ok = await this.ensureDnsFor(desiredHostname, gateway.publicHost, route.publicPort);
         if (ok) newSynced = desiredHostname;
+      }
+
+      // Nothing new to point at (publish failed) means the old name is
+      // the only address this server still has — keep it, and try again
+      // on the next pass. Only a deliberate clear (no desired hostname)
+      // retires it unconditionally.
+      if (route.dnsSyncedHostname && route.dnsSyncedHostname !== newSynced && (newSynced || !desiredHostname)) {
+        await this.removeDnsFor(route.dnsSyncedHostname);
+      }
+      if (!newSynced && desiredHostname && route.dnsSyncedHostname) {
+        this.logger.warn(
+          `keeping ${route.dnsSyncedHostname} published for route ${route.id}: ${desiredHostname} could not be published`,
+        );
+        newSynced = route.dnsSyncedHostname;
       }
 
       try {

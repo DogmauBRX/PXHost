@@ -113,11 +113,26 @@ export class PowerDnsProvider implements DnsProvider {
    * the apex's own DNS host still owns those names.
    */
   private assertInZone(hostname: string): void {
-    const zone = this.fqdn(this.zone()).toLowerCase();
-    const name = this.fqdn(hostname).toLowerCase();
-    if (name !== zone && !name.endsWith(`.${zone}`)) {
-      throw new ServiceUnavailableException(`"${hostname}" is outside the PowerDNS-managed zone "${this.zone()}" — it cannot be published there`);
+    if (this.canPublish(hostname)) return;
+    throw new ServiceUnavailableException(`"${hostname}" is outside the PowerDNS-managed zone "${this.zone()}" — it cannot be published there`);
+  }
+
+  /**
+   * The same containment rule as `assertInZone`, as a question instead
+   * of an exception, so a save can refuse a hostname up front rather
+   * than accepting it and failing forever in the reconciler. Also
+   * answers false when the zone is not configured at all — there is no
+   * zone to be inside of.
+   */
+  canPublish(hostname: string): boolean {
+    let zone: string;
+    try {
+      zone = this.fqdn(this.zone()).toLowerCase();
+    } catch {
+      return false;
     }
+    const name = this.fqdn(hostname).toLowerCase();
+    return name === zone || name.endsWith(`.${zone}`);
   }
 
   /** PowerDNS's own convention: every zone/record name is FQDN-absolute, always ending in a dot. */

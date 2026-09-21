@@ -171,9 +171,16 @@ isso).
 ### 5.4. Hostname personalizado pelo cliente
 
 Com `PUBLIC_GATEWAY_HOSTNAME_ZONE` configurada, cada cliente pode escolher
-um subdomínio próprio direto sob o apex da zona — **não** aninhado em
-`.mc.` como o esquema acima — em **Configurações** na página do servidor:
-`survival` vira `survival.gxhost.com.br`. Diferente do esquema por
+um subdomínio próprio, sob o mesmo `.mc.` do esquema acima, em
+**Configurações** na página do servidor: `survival` vira
+`survival.mc.gxhost.com.br`.
+
+Ele já compôs direto sob o apex (`survival.gxhost.com.br`), o que parecia
+mais bonito e não funcionava: a plataforma é autoritativa por
+`mc.<zona>` apenas — o apex fica com quem serve o site — então um nome
+no apex é um nome que ela não consegue publicar. Ver
+`docs/DNS-POWERDNS.md` §5.1 para o que isso causou em produção e as três
+guardas que nasceram dali. Diferente do esquema por
 `shortId` (que usa um único wildcard estático, seguro porque o `shortId`
 é permanente), um hostname escolhido pelo cliente pode ser trocado ou
 liberado e reaproveitado por outro cliente depois — por isso cada um
@@ -182,7 +189,10 @@ individualmente pelo reconciler, nunca um wildcard.
 
 - **Validação**: formato (minúsculas, números e hífen, sem começar/
   terminar com hífen, 3–32 caracteres), lista de palavras reservadas
-  (`www`, `api`, `admin`, `mc`, `node01`, `node02`, etc. — ver
+  (`www`, `api`, `admin`, `mc`, `node01`, `node02`, mais qualquer label
+  com a **forma** de um `shortId` — 8 caracteres do alfabeto dele —
+  porque os dois esquemas dividem o namespace `.mc.` e sem isso um
+  cliente reivindicaria o endereço do servidor de outro; ver
   `apps/api/src/modules/gateway/hostname-policy.ts`), unicidade global
   (constraint no banco — nenhum cliente pode usar o hostname de outro),
   e, quando `PUBLIC_GATEWAY_DNS_PROVIDER=powerdns` está ligado, uma
@@ -191,7 +201,7 @@ individualmente pelo reconciler, nunca um wildcard.
 - **Sem porta de verdade**: só quando `PUBLIC_GATEWAY_DNS_PROVIDER=powerdns`
   está ligado — é o registro SRV que faz isso funcionar. Com a automação
   desligada, o hostname ainda é reservado e mostrado, mas com a porta
-  (`survival.gxhost.com.br:25566`), porque o SRV nunca foi publicado de
+  (`survival.mc.gxhost.com.br:25566`), porque o SRV nunca foi publicado de
   verdade.
 - **Trocar de node/porta**: o hostname do cliente nunca muda — só o alvo
   (`target`/porta) do registro SRV é recalculado a cada reconciliação, o
