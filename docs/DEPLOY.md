@@ -42,6 +42,7 @@ this reason.
 | `api.gxhost.com.br` | A | **Proxied** (orange) | VPS public IP |
 | `node01.gxhost.com.br` | A | **DNS only** (grey) | Node 01 (R620) public IP |
 | `node02.gxhost.com.br` | A | **DNS only** (grey) | Node 02 (Dual Xeon) public IP |
+| `node03.gxhost.com.br` | A | **DNS only** (grey) | Node 03 (Ryzen 9 7900X) public IP |
 
 Create a scoped API token (Zone → DNS → Edit, restricted to this zone)
 for each node's Caddy to solve the DNS-01 ACME challenge — see
@@ -89,11 +90,26 @@ for each node's Caddy to solve the DNS-01 ACME challenge — see
 
 1. Install Docker, WireGuard tools, and Caddy (with the
    `caddy-dns/cloudflare` module built in — the stock `caddy:2-alpine`
-   image does not have it).
+   image does not have it), then **crie a conta de serviço do agente**:
+
+   ```bash
+   sudo useradd --system --create-home --home-dir /var/lib/gxhost \
+     --shell /usr/sbin/nologin gxhost
+   sudo usermod -aG docker gxhost
+   sudo mkdir -p /var/lib/gxhost/servers /var/lib/gxhost/transfers /var/lib/gxhost/backups
+   sudo chown -R gxhost:gxhost /var/lib/gxhost
+   ```
+
+   O agente **não** roda com a sua conta de login: o unit diz
+   `User=gxhost`, e o grupo `docker` é como ele fala com o daemon. Este
+   passo faltava aqui, e é provavelmente como o node02 acabou com um unit
+   escrito à mão — quem seguia o runbook travava no passo 8, sem a conta
+   que ele pressupõe, e improvisava.
 2. WireGuard spoke: copy `deploy/node/wg0.conf.example` to
    `/etc/wireguard/wg0.conf`, generate this node's key pair, fill in the
-   VPS's public key/IP, set `Address` to `10.10.0.2/24` (node 01) or
-   `10.10.0.3/24` (node 02). `systemctl enable --now wg-quick@wg0`, then
+   VPS's public key/IP, set `Address` to `10.10.0.<N+1>/24` — node01 é
+   `10.10.0.2`, node02 `10.10.0.3`, node03 `10.10.0.4`, e assim por
+   diante. `systemctl enable --now wg-quick@wg0`, then
    add this node's public key to the VPS's `wg0.conf` and reload it
    there (`wg syncconf wg0 <(wg-quick strip wg0)`).
 3. Firewall: edit the subnet/interface names in `deploy/node/firewall.sh`
@@ -140,8 +156,8 @@ for each node's Caddy to solve the DNS-01 ACME challenge — see
    # CapEff precisa ser 000000000000000b (bits 0, 1 e 3); 0 significa nenhuma
    ```
 9. Back in the panel, edit this node and set **Endereço de controle**
-   to its WireGuard address, e.g. `http://10.10.0.2:8443` (node 01) or
-   `http://10.10.0.3:8443` (node 02) — this is what makes
+   to its WireGuard address — `http://10.10.0.2:8443` para o node01,
+   `http://10.10.0.3:8443` para o node02, e assim por diante — this is what makes
    `AgentClientService` reach it over the VPN instead of the public
    hostname, per `Node.controlAddress`'s own doc comment in
    `apps/api/prisma/schema.prisma`. Leaving this blank would still work
