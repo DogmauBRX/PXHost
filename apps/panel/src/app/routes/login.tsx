@@ -17,6 +17,8 @@ import { HeroCircuitBackground } from '@/features/public/HeroCircuitBackground';
 // to the role-based dashboard exactly like before this field existed.
 const searchSchema = z.object({
   redirect: z.string().optional(),
+  oauthError: z.enum(['cancelled', 'unavailable', 'failed']).optional(),
+  oauth: z.literal('google').optional(),
 });
 
 export const Route = createFileRoute('/login')({
@@ -30,7 +32,14 @@ export const Route = createFileRoute('/login')({
 });
 
 function LoginPage() {
-  const { redirect: redirectTo } = Route.useSearch();
+  const { redirect: redirectTo, oauthError } = Route.useSearch();
+  const externalError = oauthError === 'cancelled'
+    ? 'O login com Google foi cancelado.'
+    : oauthError === 'unavailable'
+      ? 'O login com Google ainda não está configurado.'
+      : oauthError === 'failed'
+        ? 'Não foi possível concluir o login com Google. Tente novamente.'
+        : undefined;
 
   // `login-hero` (index.css) paints an opaque circuit-board backdrop —
   // the one set of screens where the brand gets the full-bleed moment,
@@ -74,7 +83,7 @@ function LoginPage() {
         </div>
         <div className="w-full rounded-xl border border-border-strong bg-surface p-8 shadow-lg">
           <h1 className="mb-6 text-lg font-semibold text-text">Entrar</h1>
-          <LoginForm redirectTo={redirectTo} />
+          <LoginForm redirectTo={redirectTo} externalError={externalError} />
           <div className="mt-4 flex flex-col items-center gap-2 text-sm">
             <Link to="/forgot-password" className="text-text-muted transition-colors hover:text-text">
               Esqueci minha senha

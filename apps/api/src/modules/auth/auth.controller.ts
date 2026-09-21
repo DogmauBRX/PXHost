@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query, Req, Res, UnauthorizedException } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -8,6 +8,7 @@ import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import type { AuthenticatedUser } from './guards/jwt-auth.guard';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { GoogleOAuthService } from './google-oauth.service';
 
 // __Host- (not used here) mandates Path=/ with NO exceptions — that's
 // incompatible with deliberately scoping this cookie to /api/auth
@@ -27,6 +28,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly prisma: PrismaService,
+    private readonly googleOAuth: GoogleOAuthService,
   ) {}
 
   @Public()
@@ -58,6 +60,36 @@ export class AuthController {
       expiresIn: result.expiresIn,
       user: result.user,
     };
+  }
+
+  @Public()
+  @Get('google')
+  async google(@Query('redirect') redirectTo: string | undefined, @Res() reply: FastifyReply) {
+    try {
+      return reply.redirect(await this.googleOAuth.begin(redirectTo));
+    } catch {
+      return reply.redirect(this.googleOAuth.failureRedirect('unavailable'));
+    }
+  }
+
+  @Public()
+  @Get('google/callback')
+  async googleCallback(
+    @Query('code') code: string | undefined,
+    @Query('state') state: string | undefined,
+    @Query('error') error: string | undefined,
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    if (error) return reply.redirect(this.googleOAuth.failureRedirect('cancelled'));
+    try {
+      const { identity, redirectTo } = await this.googleOAuth.complete(code, state);
+      const result = await this.auth.loginWithGoogle(identity, requestMeta(req));
+      setRefreshCookie(reply, result.refreshToken, result.refreshExpiresAt);
+      return reply.redirect(this.googleOAuth.successRedirect(redirectTo));
+    } catch {
+      return reply.redirect(this.googleOAuth.failureRedirect('failed'));
+    }
   }
 
   @Public()

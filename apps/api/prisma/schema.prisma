@@ -79,6 +79,7 @@ model User {
   subscriptionEventsActedOn SubscriptionEvent[] @relation("SubscriptionEventActor")
   orders         Order[]
   paymentCustomers PaymentCustomer[]
+  oauthIdentities OAuthIdentity[]
 
   @@map("users")
 }
@@ -825,6 +826,26 @@ model Server {
   modpackInstallations ModpackInstallation[]
 
   @@map("servers")
+}
+
+// A provider subject is immutable and is the only safe identity key to
+// persist. Email is retained as helpful metadata, but is never used to
+// authenticate a Google sign-in on its own.
+model OAuthIdentity {
+  id              String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  provider        String
+  providerSubject String   @map("provider_subject")
+  email           String?  @db.Citext
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@unique([provider, userId])
+  @@index([userId])
+  @@map("oauth_identities")
 }
 
 model ModpackInstallation {

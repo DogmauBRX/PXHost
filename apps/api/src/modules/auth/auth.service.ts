@@ -9,6 +9,7 @@ import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 import { SessionRevocationService } from './session-revocation.service';
 import { TurnstileService } from './turnstile.service';
+import type { GoogleIdentity } from './google-oauth.service';
 
 export interface RequestMeta {
   ip?: string | null;
@@ -227,6 +228,115 @@ export class AuthService {
 
     await this.audit.record({
       action: 'auth.register',
+      actorId: user.id,
+      actorEmail: user.email,
+      actorIp: meta.ip,
+    });
+
+    return {
+      ...result,
+      user: { id: user.id, email: user.email, username: user.username, globalRole: user.globalRole },
+    };
+  }
+
+  /**
+   * Completes an already-verified Google OpenID Connect authentication.
+   * A verified provider subject always wins; a verified email only links an
+   * existing local account the first time, so future logins are anchored to
+   * Google's immutable `sub` claim rather than a mutable email address.
+   */
+  async loginWithGoogle(identity: GoogleIdentity, meta: RequestMeta): Promise<LoginResult> {
+    let linked = await this.prisma.oAuthIdentity.findUnique({
+      where: { provider_providerSubject: { provider: 'google', providerSubject: identity.subject } },
+      include: { user: true },
+    });
+
+    let user = linked?.user ?? null;
+    let created = false;
+    let linkedExisting = false;
+
+    if (!user) {
+      user = await this.prisma.user.findFirst({
+        where: { email: { equals: identity.email, mode: 'insensitive' }, deletedAt: null },
+      });
+
+      if (user) {
+        linkedExisting = true;
+      } else {
+        const username = await this.generateUniqueUsername(identity.email);
+        // OAuth accounts have no usable password by default. The random,
+        // Argon2-hashed value prevents accidental password authentication;
+        // a person can still deliberately set one through recovery later.
+        const passwordHash = await this.password.hash(randomBytes(48).toString('base64url'));
+        try {
+          user = await this.prisma.user.create({
+            data: {
+              email: identity.email,
+              username,
+              passwordHash,
+              firstName: identity.name ?? undefined,
+              emailVerifiedAt: new Date(),
+              globalRole: 'user',
+            },
+          });
+          created = true;
+        } catch (error) {
+          // The email has a partial unique index, so a parallel first
+          // sign-in can win the race. Resolve the now-existing account and
+          // continue with the provider identity instead of failing a valid
+          // Google login.
+          user = await this.prisma.user.findFirst({
+            where: { email: { equals: identity.email, mode: 'insensitive' }, deletedAt: null },
+          });
+          if (!user) throw error;
+          linkedExisting = true;
+        }
+      }
+
+      try {
+        linked = await this.prisma.oAuthIdentity.create({
+          data: { userId: user.id, provider: 'google', providerSubject: identity.subject, email: identity.email },
+          include: { user: true },
+        });
+        user = linked.user;
+      } catch (error) {
+        // Same treatment for a concurrent callback that already linked this
+        // Google subject. Never attach a provider subject to a second user.
+        linked = await this.prisma.oAuthIdentity.findUnique({
+          where: { provider_providerSubject: { provider: 'google', providerSubject: identity.subject } },
+          include: { user: true },
+        });
+        if (!linked) throw error;
+        user = linked.user;
+        created = false;
+        linkedExisting = false;
+      }
+    }
+
+    // Every branch above either resolves a user or rethrows its database
+    // error. Keep this guard explicit for both TypeScript and defense in
+    // depth should a future provider path be added here.
+    if (!user) throw new UnauthorizedException('Não foi possível concluir o login com Google.');
+
+    if (!user.isActive || user.deletedAt) {
+      await this.audit.record({
+        action: 'auth.google.failed',
+        actorId: user.id,
+        actorEmail: user.email,
+        actorIp: meta.ip,
+        metadata: { reason: 'inactive' },
+      });
+      throw new UnauthorizedException('Esta conta não está ativa.');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { failedLogins: 0, lockedUntil: null, lastLoginAt: new Date(), emailVerifiedAt: user.emailVerifiedAt ?? new Date() },
+    });
+    const result = await this.issueSession(user.id, user.globalRole !== 'user', meta);
+
+    await this.audit.record({
+      action: created ? 'auth.google.register' : linkedExisting ? 'auth.google.linked' : 'auth.google.login',
       actorId: user.id,
       actorEmail: user.email,
       actorIp: meta.ip,

@@ -59,6 +59,14 @@ export const envSchema = z.object({
   PANEL_URL: z.string().url().default('http://localhost:5173'),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
 
+  // Google OpenID Connect is optional. All three settings are required
+  // together when the provider is enabled; GoogleOAuthService deliberately
+  // refuses the flow at use time when any is absent, so local/dev installs
+  // keep working without a Google Cloud project.
+  GOOGLE_OAUTH_CLIENT_ID: optionalSecret(),
+  GOOGLE_OAUTH_CLIENT_SECRET: optionalSecret(),
+  GOOGLE_OAUTH_REDIRECT_URI: optionalUrl(),
+
   // Client-features Fase 8: which AssistantProvider answers
   // /api/client/assistant/chat. 'kb' (default) is the deterministic
   // knowledge base — no external calls, no cost, no key needed. 'llm' is

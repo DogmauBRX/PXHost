@@ -1,4 +1,5 @@
 import { apiFetch } from '@/shared/api/client';
+import { API_URL } from '@/shared/api/client';
 import type { LoginResponse } from '@/shared/api/types';
 
 export function login(email: string, password: string, captchaToken?: string) {
@@ -27,4 +28,11 @@ export function forgotPassword(email: string, captchaToken?: string) {
 
 export function resetPassword(token: string, newPassword: string, confirmPassword: string) {
   return apiFetch<{ message: string }>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, newPassword, confirmPassword }) });
+}
+
+/** Starts the browser-only OAuth redirect; this is deliberately not fetch(). */
+export function loginWithGoogle(redirectTo?: string): void {
+  const url = new URL('/api/auth/google', API_URL);
+  if (redirectTo?.startsWith('/') && !redirectTo.startsWith('//')) url.searchParams.set('redirect', redirectTo);
+  window.location.assign(url.toString());
 }
