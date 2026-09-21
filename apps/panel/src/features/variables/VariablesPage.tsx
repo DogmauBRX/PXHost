@@ -107,21 +107,20 @@ function isLive(state: string | null): boolean {
 // read (non-Minecraft template, or not installed yet) rather than
 // showing a broken control.
 const ONLINE_MODE_LINE = /^online-mode=.*$/m;
+const WHITELIST_LINE = /^white-list=.*$/m;
 
-function parseOnlineMode(content: string): boolean {
-  const match = content.match(ONLINE_MODE_LINE);
-  // Minecraft's own default (a fresh server.properties with the line
-  // absent, or omitted entirely) is true — never silently read as off.
-  return match ? match[0].trim() !== 'online-mode=false' : true;
+function parseServerProperty(content: string, linePattern: RegExp, property: string, defaultValue: boolean): boolean {
+  const match = content.match(linePattern);
+  return match ? match[0].trim() !== `${property}=false` : defaultValue;
 }
 
-function withOnlineMode(content: string, value: boolean): string {
-  const line = `online-mode=${value}`;
-  if (ONLINE_MODE_LINE.test(content)) return content.replace(ONLINE_MODE_LINE, line);
+function withServerProperty(content: string, linePattern: RegExp, property: string, value: boolean): string {
+  const line = `${property}=${value}`;
+  if (linePattern.test(content)) return content.replace(linePattern, line);
   return content.replace(/\n+$/, '') + '\n' + line + '\n';
 }
 
-function OnlineModeToggle({ serverId, canEdit }: { serverId: string; canEdit: boolean }) {
+function MinecraftAccessSettings({ serverId, canEdit }: { serverId: string; canEdit: boolean }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -133,10 +132,13 @@ function OnlineModeToggle({ serverId, canEdit }: { serverId: string; canEdit: bo
   });
 
   const mutation = useMutation({
-    mutationFn: (nextValue: boolean) => writeFile(serverId, 'server.properties', withOnlineMode(propertiesFile!.content, nextValue)),
-    onSuccess: (_result, nextValue) => {
+    mutationFn: ({ property, linePattern, value }: { property: string; linePattern: RegExp; value: boolean }) =>
+      writeFile(serverId, 'server.properties', withServerProperty(propertiesFile!.content, linePattern, property, value)),
+    onSuccess: (_result, { property, value }) => {
       setError(null);
-      setNotice(`Online mode ${nextValue ? 'ativado' : 'desativado'} — reinicie o servidor para aplicar.`);
+      const setting = property === 'online-mode' ? 'Online mode' : 'Whitelist';
+      const state = property === 'online-mode' ? (value ? 'ativado' : 'desativado') : (value ? 'ativada' : 'desativada');
+      setNotice(`${setting} ${state} — reinicie o servidor para aplicar.`);
       void queryClient.invalidateQueries({ queryKey: ['server-properties', serverId] });
     },
     onError: (err) => {
@@ -146,38 +148,68 @@ function OnlineModeToggle({ serverId, canEdit }: { serverId: string; canEdit: bo
   });
 
   if (!propertiesFile) return null;
-  const value = mutation.isPending ? mutation.variables! : parseOnlineMode(propertiesFile.content);
+  const onlineMode = mutation.isPending && mutation.variables?.property === 'online-mode'
+    ? mutation.variables.value
+    : parseServerProperty(propertiesFile.content, ONLINE_MODE_LINE, 'online-mode', true);
+  const whitelist = mutation.isPending && mutation.variables?.property === 'white-list'
+    ? mutation.variables.value
+    : parseServerProperty(propertiesFile.content, WHITELIST_LINE, 'white-list', false);
+
+  function update(property: 'online-mode' | 'white-list', linePattern: RegExp, value: boolean) {
+    setNotice(null);
+    setError(null);
+    mutation.mutate({ property, linePattern, value });
+  }
 
   return (
-    <div className="mb-6 flex flex-col gap-3 rounded-card border border-border bg-surface p-5">
+    <div className="mb-6 space-y-4">
+      <PropertyToggleCard
+        title="Online Mode"
+        description="Exige que quem entra tenha uma conta Microsoft/Mojang autenticada. Desligue só para testes com contas não-premium — enquanto estiver desligado, qualquer pessoa entra com qualquer nome."
+        checked={onlineMode}
+        enabled={canEdit}
+        pending={mutation.isPending}
+        stateLabel={onlineMode ? 'Online mode ativado' : 'Online mode desativado'}
+        onChange={(value) => update('online-mode', ONLINE_MODE_LINE, value)}
+      />
+      <PropertyToggleCard
+        title="Whitelist"
+        description="Quando ativada, somente jogadores adicionados à whitelist poderão entrar no servidor. Use /whitelist add <jogador> no console para liberar acessos."
+        checked={whitelist}
+        enabled={canEdit}
+        pending={mutation.isPending}
+        stateLabel={whitelist ? 'Whitelist ativada' : 'Whitelist desativada'}
+        onChange={(value) => update('white-list', WHITELIST_LINE, value)}
+      />
+      {notice && <Alert tone="ok" onDismiss={() => setNotice(null)}>{notice}</Alert>}
+      {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
+    </div>
+  );
+}
+
+function PropertyToggleCard({ title, description, checked, enabled, pending, stateLabel, onChange }: { title: string; description: string; checked: boolean; enabled: boolean; pending: boolean; stateLabel: string; onChange: (value: boolean) => void }) {
+  return (
+    <div className="flex flex-col gap-3 rounded-card border border-border bg-surface p-5">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="font-semibold text-text">Online Mode</h2>
-          <p className="mt-1 text-sm text-text-muted">
-            Exige que quem entra tenha uma conta Microsoft/Mojang autenticada. Desligue só para testes com contas não-premium —
-            enquanto estiver desligado, qualquer pessoa entra com qualquer nome.
-          </p>
+          <h2 className="font-semibold text-text">{title}</h2>
+          <p className="mt-1 text-sm text-text-muted">{description}</p>
         </div>
-        {canEdit && (
+        {enabled && (
           <button
             type="button"
             role="switch"
-            aria-checked={value}
-            aria-label={value ? 'Desligar online mode' : 'Ligar online mode'}
-            disabled={mutation.isPending}
-            onClick={() => mutation.mutate(!value)}
-            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${value ? 'bg-accent' : 'bg-surface-2'}`}
+            aria-checked={checked}
+            aria-label={checked ? `Desligar ${title}` : `Ligar ${title}`}
+            disabled={pending}
+            onClick={() => onChange(!checked)}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${checked ? 'bg-accent' : 'bg-surface-2'}`}
           >
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
           </button>
         )}
       </div>
-      {notice && (
-        <Alert tone="ok" onDismiss={() => setNotice(null)}>
-          {notice}
-        </Alert>
-      )}
-      {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
+      <p className={`text-xs font-medium ${checked ? 'text-ok' : 'text-text-faint'}`}>{stateLabel}</p>
     </div>
   );
 }
@@ -284,7 +316,7 @@ export function VariablesPage({ serverId }: { serverId: string }) {
         />
       )}
 
-      <OnlineModeToggle serverId={serverId} canEdit={server?.permissions.includes('file.write') ?? false} />
+      <MinecraftAccessSettings serverId={serverId} canEdit={server?.permissions.includes('file.write') ?? false} />
 
       {/* Non-editable variables (e.g. SERVER_MEMORY, set by the plan) are
           never rendered here — a disabled field the customer can't act on

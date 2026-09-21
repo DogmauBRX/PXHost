@@ -38,7 +38,7 @@ function LoginPage() {
   // once a visitor is actually inside the panel (see that rule's own
   // doc comment).
   return (
-    <div className="login-hero relative flex h-screen items-center justify-center px-4">
+    <div className="login-hero login-hero--static relative flex h-screen items-center justify-center px-4">
       <HeroCircuitBackground className="login-hero__circuit pointer-events-none absolute inset-0 h-full w-full" />
       {/* Back to the public landing page (`/` — see that route's own doc
           comment: it's the logged-out home, not an auth-gated dispatcher)

@@ -168,7 +168,10 @@ html[data-app-ready] body {
     linear-gradient(0deg, transparent 0 18%, color-mix(in srgb, var(--color-accent) 4%, transparent) 18.04% 18.1%, transparent 18.18% 67%, color-mix(in srgb, var(--color-accent) 2%, transparent) 67.04% 67.09%, transparent 67.16%);
   background-size: 100% 100%, 100% 100%, 760px 520px, 440px 340px, 520px 420px;
   background-repeat: no-repeat, no-repeat, repeat, repeat, repeat;
-  background-attachment: fixed, fixed, fixed, fixed, fixed;
+  /* Keep the wallpaper in the normal paint flow. Multiple fixed gradient
+     layers force a large composited surface while scrolling on lower-end
+     GPUs; the design remains intact and the page scrolls much more cheaply. */
+  background-attachment: scroll, scroll, scroll, scroll, scroll;
 }
 
 ::selection {
@@ -207,6 +210,19 @@ html[data-app-ready] body {
 
 .login-hero__circuit {
   opacity: 0.75;
+}
+
+/* Login is intentionally a still surface: the form is the task here, and
+   the SVG trace flow plus brand pulses otherwise keep the browser repainting
+   a full-screen scene while the user types. Other public pages retain their
+   motion. */
+.login-hero--static .circuit-trace-flow path,
+.login-hero--static .circuit-pad-pulse,
+.login-hero--static .brand-mark__status,
+.login-hero--static .brand-mark__status-halo,
+.login-hero--static .brand-wordmark__gx,
+.login-hero--static .brand-wordmark::after {
+  animation: none !important;
 }
 
 /*

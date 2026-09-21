@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Terminal as XTerm } from '@xterm/xterm';
-import { Clock, Link2, RefreshCw, Server, Settings2, Wifi } from 'lucide-react';
+import { Check, Clock, Copy, Link2, RefreshCw, Server, Settings2, Wifi } from 'lucide-react';
 import { getServer, getServerDiskUsage } from '@/features/servers/servers.api';
 import { listServerVariables } from '@/features/variables/variables.api';
 import { updateServerHostname } from '@/features/variables/hostname.api';
@@ -65,6 +65,7 @@ export function ConsolePage({ serverId }: { serverId: string }) {
   const [editingHostname, setEditingHostname] = useState(false);
   const [hostnameDraft, setHostnameDraft] = useState('');
   const [hostnameError, setHostnameError] = useState<string | null>(null);
+  const [addressCopied, setAddressCopied] = useState(false);
   const termRef = useRef<XTerm | null>(null);
   const cpuGaugeRef = useRef<GaugeHandle>(null);
   const ramGaugeRef = useRef<GaugeHandle>(null);
@@ -111,6 +112,18 @@ export function ConsolePage({ serverId }: { serverId: string }) {
   const displayState = powerState ?? server?.powerState ?? 'offline';
   const connected = connectionState === 'open';
   const canEditHostname = server?.permissions.includes('hostname.update') ?? false;
+
+  async function copyPublicAddress() {
+    if (!server?.publicAddress) return;
+    try {
+      await navigator.clipboard.writeText(server.publicAddress);
+      setAddressCopied(true);
+      window.setTimeout(() => setAddressCopied(false), 2_000);
+    } catch {
+      // The address remains visible and selectable when the browser blocks
+      // clipboard access (for example, on an insecure custom origin).
+    }
+  }
 
   const hostnameMutation = useMutation({
     mutationFn: (hostname: string | null) => updateServerHostname(serverId, hostname),
@@ -219,16 +232,22 @@ export function ConsolePage({ serverId }: { serverId: string }) {
                   <p className="truncate font-mono text-sm font-semibold text-text">{server.publicAddress}</p>
                 </div>
               </div>
-              {canEditHostname && (
-                <button
-                  type="button"
-                  onClick={openHostnameEditor}
-                  className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-accent-strong transition hover:text-accent"
-                >
-                  <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
-                  {server.customHostname ? 'Alterar endereço' : 'Personalizar endereço'}
-                </button>
-              )}
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={() => void copyPublicAddress()}>
+                  {addressCopied ? <Check className="h-4 w-4 text-ok" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+                  {addressCopied ? 'Copiado' : 'Copiar endereço'}
+                </Button>
+                {canEditHostname && (
+                  <button
+                    type="button"
+                    onClick={openHostnameEditor}
+                    className="inline-flex items-center gap-1.5 px-1 text-xs font-semibold text-accent-strong transition hover:text-accent"
+                  >
+                    <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    {server.customHostname ? 'Alterar endereço' : 'Personalizar endereço'}
+                  </button>
+                )}
+              </div>
               {editingHostname && (
                 <form
                   onSubmit={saveHostname}
