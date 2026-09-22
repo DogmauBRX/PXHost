@@ -10,8 +10,8 @@ interface Dimension {
 // One row per dimension, generated dynamically from whatever the backend
 // actually returned for each plan (commercial plan §6) — never a
 // hardcoded per-plan column. A dimension row is dropped entirely when
-// NO plan in the current catalog publishes it (e.g. no plan sets a
-// recommended plugin range), rather than rendering a row of blank cells.
+// NO plan in the current catalog publishes it, rather than rendering a row
+// of blank cells.
 const DIMENSIONS: Dimension[] = [
   { label: 'Preço', render: (p) => `${formatPrice(p.priceCents, p.currency)}/${formatBillingPeriod(p.billingPeriod)}` },
   { label: 'RAM', render: (p) => formatMemory(p.memoryMb) },
@@ -20,8 +20,6 @@ const DIMENSIONS: Dimension[] = [
   { label: 'Servidores', render: (p) => (p.maxServers != null ? String(p.maxServers) : '1') },
   { label: 'Backups', render: (p) => (p.maxBackups > 0 ? String(p.maxBackups) : null) },
   { label: 'Jogadores recomendados', render: (p) => formatRange(p.recommendedPlayersMin, p.recommendedPlayersMax) },
-  { label: 'Mods recomendados', render: (p) => formatRange(p.recommendedModsMin, p.recommendedModsMax) },
-  { label: 'Plugins recomendados', render: (p) => formatRange(p.recommendedPluginsMin, p.recommendedPluginsMax) },
 ];
 
 export function ComparisonTable({ plans }: { plans: PublicPlan[] }) {

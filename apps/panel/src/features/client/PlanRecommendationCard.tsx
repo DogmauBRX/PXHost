@@ -1,5 +1,5 @@
 import { Lightbulb } from 'lucide-react';
-import type { ClientPlan, SoftwareInfo } from '@/shared/api/types';
+import type { ClientPlan } from '@/shared/api/types';
 import { Card, CardBody } from '@/ui/primitives';
 import { formatMemory, formatRange } from '@/shared/format/plan';
 
@@ -8,8 +8,6 @@ interface PlanRecommendationCardProps {
   /** The SERVER's own memoryMb (the snapshot truth), not the plan's — a plan can drift after the server was created. */
   memoryMb: number;
   plan: ClientPlan;
-  /** Omit on the dashboard (no single software there); pass it on a server page to show only the relevant noun. */
-  software?: SoftwareInfo;
 }
 
 /**
@@ -18,22 +16,11 @@ interface PlanRecommendationCardProps {
  * recommendation at all, rather than an empty card — a plan is free to
  * simply not have this metadata yet.
  */
-export function PlanRecommendationCard({ planName, memoryMb, plan, software }: PlanRecommendationCardProps) {
+export function PlanRecommendationCard({ planName, memoryMb, plan }: PlanRecommendationCardProps) {
   const players = formatRange(plan.recommendedPlayersMin, plan.recommendedPlayersMax);
-  const mods = formatRange(plan.recommendedModsMin, plan.recommendedModsMax);
-  const plugins = formatRange(plan.recommendedPluginsMin, plan.recommendedPluginsMax);
-
-  // On a specific server, only the noun that server's software actually
-  // uses makes sense to show (a Fabric server has no plugins slot to
-  // fill). On the dashboard (no `software` passed) show whatever the plan
-  // publishes.
-  const showMods = software ? software.addonNoun === 'mod' : true;
-  const showPlugins = software ? software.addonNoun === 'plugin' : true;
 
   const rows: { icon: string; label: string; value: string }[] = [];
   if (players) rows.push({ icon: '👥', label: 'jogadores', value: players });
-  if (mods && showMods) rows.push({ icon: '🧩', label: 'mods', value: mods });
-  if (plugins && showPlugins) rows.push({ icon: '🔌', label: 'plugins', value: plugins });
 
   if (rows.length === 0) return null;
 
@@ -56,7 +43,7 @@ export function PlanRecommendationCard({ planName, memoryMb, plan, software }: P
             ))}
           </ul>
           <p className="mt-2 text-xs text-text-faint">
-            Esses valores são recomendações e podem variar dependendo dos mods, plugins, mapa e configuração do servidor.
+            Esse valor é uma recomendação e pode variar dependendo do mapa e da configuração do servidor.
           </p>
         </div>
       </CardBody>

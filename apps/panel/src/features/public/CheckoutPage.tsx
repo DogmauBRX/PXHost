@@ -513,8 +513,6 @@ function CycleOption({ plan, selected, onSelect }: { plan: PublicPlan; selected:
 /** Read-only spec cards for "③ Recursos do plano" — every field this plan actually publishes; never renders a row for a null recommendation (Plan's own "no fake 0-0" rule, see `formatRange`). */
 function PlanSpecCards({ plan }: { plan: PublicPlan }) {
   const players = formatRange(plan.recommendedPlayersMin, plan.recommendedPlayersMax);
-  const mods = formatRange(plan.recommendedModsMin, plan.recommendedModsMax);
-  const plugins = formatRange(plan.recommendedPluginsMin, plan.recommendedPluginsMax);
 
   const specs: { label: string; value: string }[] = [
     { label: 'Memória RAM', value: formatMemory(plan.memoryMb) },
@@ -524,8 +522,6 @@ function PlanSpecCards({ plan }: { plan: PublicPlan }) {
   if (plan.maxBackups > 0) specs.push({ label: 'Backups', value: `até ${plan.maxBackups}` });
   if (plan.maxDatabases > 0) specs.push({ label: 'Bancos de dados', value: `até ${plan.maxDatabases}` });
   if (players) specs.push({ label: 'Jogadores recomendados', value: players });
-  if (mods) specs.push({ label: 'Mods recomendados', value: mods });
-  if (plugins) specs.push({ label: 'Plugins recomendados', value: plugins });
 
   return (
     // Fixed at 2 columns regardless of viewport — this renders inside the

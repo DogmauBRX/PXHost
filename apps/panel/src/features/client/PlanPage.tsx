@@ -38,7 +38,7 @@ export function PlanPage() {
                     Disco: <span className="font-mono text-text">{s.diskMb} MB</span>
                   </p>
                 </div>
-                {s.plan && <PlanRecommendationCard planName={s.plan.name} memoryMb={s.memoryMb} plan={s.plan} software={s.software} />}
+                {s.plan && <PlanRecommendationCard planName={s.plan.name} memoryMb={s.memoryMb} plan={s.plan} />}
               </CardBody>
             </Card>
           ))}

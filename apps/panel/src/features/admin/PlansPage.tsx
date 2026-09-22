@@ -63,10 +63,6 @@ interface PlanFormValues {
   highlightLabel: string;
   recommendedPlayersMin: string;
   recommendedPlayersMax: string;
-  recommendedModsMin: string;
-  recommendedModsMax: string;
-  recommendedPluginsMin: string;
-  recommendedPluginsMax: string;
 }
 
 const EMPTY_FORM: PlanFormValues = {
@@ -96,10 +92,6 @@ const EMPTY_FORM: PlanFormValues = {
   highlightLabel: '',
   recommendedPlayersMin: '',
   recommendedPlayersMax: '',
-  recommendedModsMin: '',
-  recommendedModsMax: '',
-  recommendedPluginsMin: '',
-  recommendedPluginsMax: '',
 };
 
 function planToForm(p: AdminPlan): PlanFormValues {
@@ -130,10 +122,6 @@ function planToForm(p: AdminPlan): PlanFormValues {
     highlightLabel: p.highlightLabel ?? '',
     recommendedPlayersMin: p.recommendedPlayersMin != null ? String(p.recommendedPlayersMin) : '',
     recommendedPlayersMax: p.recommendedPlayersMax != null ? String(p.recommendedPlayersMax) : '',
-    recommendedModsMin: p.recommendedModsMin != null ? String(p.recommendedModsMin) : '',
-    recommendedModsMax: p.recommendedModsMax != null ? String(p.recommendedModsMax) : '',
-    recommendedPluginsMin: p.recommendedPluginsMin != null ? String(p.recommendedPluginsMin) : '',
-    recommendedPluginsMax: p.recommendedPluginsMax != null ? String(p.recommendedPluginsMax) : '',
   };
 }
 
@@ -205,10 +193,6 @@ function toInput(v: PlanFormValues): CreatePlanInput {
     highlightLabel: v.highlightLabel.trim() || undefined,
     recommendedPlayersMin: n(v.recommendedPlayersMin),
     recommendedPlayersMax: n(v.recommendedPlayersMax),
-    recommendedModsMin: n(v.recommendedModsMin),
-    recommendedModsMax: n(v.recommendedModsMax),
-    recommendedPluginsMin: n(v.recommendedPluginsMin),
-    recommendedPluginsMax: n(v.recommendedPluginsMax),
   };
 }
 
@@ -216,8 +200,6 @@ function isValid(v: PlanFormValues): boolean {
   if (!v.name.trim() || !v.slug.trim() || !v.memoryGb.trim() || !v.diskGb.trim()) return false;
   const ranges: [string, string][] = [
     [v.recommendedPlayersMin, v.recommendedPlayersMax],
-    [v.recommendedModsMin, v.recommendedModsMax],
-    [v.recommendedPluginsMin, v.recommendedPluginsMax],
   ];
   if (!ranges.every(([min, max]) => n(min) == null || n(max) == null || n(min)! <= n(max)!)) return false;
   // Mirrors the API's plans_compare_at_price_check — an anchor price
@@ -473,10 +455,8 @@ function PlanFormModal({ open, mode, plan, onClose }: { open: boolean; mode: 'cr
 
         <fieldset className="space-y-4">
           <legend className="text-xs font-semibold tracking-wide text-text-faint uppercase">Recomendações (exibidas ao cliente)</legend>
-          <p className="text-xs text-text-faint">
-            Deixe o campo máximo em branco para exibir “80+”. Deixe os dois em branco para não exibir essa recomendação.
-          </p>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <p className="text-xs text-text-faint">Deixe o campo máximo em branco para exibir “80+”. Deixe os dois em branco para não exibir essa recomendação.</p>
+          <div className="grid grid-cols-1 gap-4">
             <RangeField
               label="👥 Jogadores"
               hint="Ex.: 15–30"
@@ -484,22 +464,6 @@ function PlanFormModal({ open, mode, plan, onClose }: { open: boolean; mode: 'cr
               max={values.recommendedPlayersMax}
               onMin={(v) => patch({ recommendedPlayersMin: v })}
               onMax={(v) => patch({ recommendedPlayersMax: v })}
-            />
-            <RangeField
-              label="🧩 Mods"
-              hint="Ex.: 30–80"
-              min={values.recommendedModsMin}
-              max={values.recommendedModsMax}
-              onMin={(v) => patch({ recommendedModsMin: v })}
-              onMax={(v) => patch({ recommendedModsMax: v })}
-            />
-            <RangeField
-              label="🔌 Plugins"
-              hint="Ex.: 15–40"
-              min={values.recommendedPluginsMin}
-              max={values.recommendedPluginsMax}
-              onMin={(v) => patch({ recommendedPluginsMin: v })}
-              onMax={(v) => patch({ recommendedPluginsMax: v })}
             />
           </div>
         </fieldset>
@@ -779,7 +743,6 @@ interface PlanCardProps {
 
 function PlanCard({ plan: p, occ, driftOpen, nodesOpen, onToggleDrift, onToggleNodes, onEdit, onDelete }: PlanCardProps) {
   const players = formatRange(p.recommendedPlayersMin, p.recommendedPlayersMax);
-  const mods = formatRange(p.recommendedModsMin, p.recommendedModsMax);
   // Capacity plan (auto-derivation) §6/§11 — `effectiveSlots` is
   // min(capacidade real dos nodes, maxSlots) whenever occ is loaded; `null`
   // means genuinely unlimited (no maxSlots AND every eligible node
@@ -809,7 +772,6 @@ function PlanCard({ plan: p, occ, driftOpen, nodesOpen, onToggleDrift, onToggleN
             <p className="mt-0.5 font-mono text-xs text-text-faint">
               {p.slug} · {p.memoryMb} MB RAM · {formatPrice(p.priceCents, p.currency)}/mês
               {players && ` · 👥 ${players}`}
-              {mods && ` · 🧩 ${mods}`}
             </p>
           </div>
           <div className="flex items-center gap-2">
