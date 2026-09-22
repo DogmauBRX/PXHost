@@ -5,6 +5,7 @@ import { Check, Clock, Copy, Link2, RefreshCw, Server, Settings2, Wifi } from 'l
 import { getServer, getServerDiskUsage } from '@/features/servers/servers.api';
 import { listServerVariables } from '@/features/variables/variables.api';
 import { updateServerHostname } from '@/features/variables/hostname.api';
+import { MinecraftAccessSettings } from '@/features/variables/MinecraftAccessSettings';
 import { powerStateLabel } from '@/features/servers/status-labels';
 import { useServerSocket } from '@/shared/realtime/useServerSocket';
 import { ApiError } from '@/shared/api/client';
@@ -290,7 +291,14 @@ export function ConsolePage({ serverId }: { serverId: string }) {
           )}
         </div>
         <div className="border-t border-border bg-surface-2/35 px-5 py-4 sm:px-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <PowerControls state={displayState} permissions={permissions} onAction={sendPower} />
+            <MinecraftAccessSettings
+              serverId={serverId}
+              canEdit={server?.permissions.includes('file.write') ?? false}
+              presentation="compact"
+            />
+          </div>
         </div>
       </section>
 
