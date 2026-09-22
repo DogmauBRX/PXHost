@@ -2,7 +2,12 @@ package srv
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/gxhost/agent/internal/spec"
 )
@@ -119,4 +124,93 @@ func (m *Manager) UUIDs() []string {
 		out = append(out, uuid)
 	}
 	return out
+}
+
+// oldDirSuffixes are every "swap leftover" naming convention this agent
+// uses (modpack.go's install, backup.go's restore) — both are atomic
+// rename-swaps that leave the PREVIOUS data directory sitting at
+// "<uuid>.modpack-old" / "<uuid>.restore-old" as a short-lived recovery
+// copy, normally deleted by a delayed goroutine an hour later. See
+// SweepStaleOldDirs' own doc comment for why that goroutine alone isn't
+// enough.
+var oldDirSuffixes = []string{".modpack-old", ".restore-old"}
+
+// staleOldDirAge is deliberately shorter than the 1-hour delay
+// modpack.go/backup.go's own delayed goroutines use for a directory they
+// KNOW just got created — this sweep only runs once, at agent startup,
+// against directories that could only be genuine leftovers from a PAST
+// process lifetime (nothing this same boot has run yet), so there is no
+// in-flight swap to race. Still nonzero, not zero, as defense in depth
+// against a clock skew or a boot racing something unexpected.
+const staleOldDirAge = 5 * time.Minute
+
+// SweepStaleOldDirs removes abandoned "<uuid>.modpack-old" /
+// "<uuid>.restore-old" directories directly under dataDir — the OTHER
+// half of the leak srv.ReconcileOrphans and the delete-server path fix:
+// modpack.go/backup.go's own cleanup goroutines schedule themselves for
+// an hour later and are lost entirely if the agent restarts before then
+// (found live: several still present on disk from restarts that happened
+// hours earlier, one holding ~390MB). Meant to be called once at serve
+// startup, before anything else runs.
+//
+// A "<uuid>.old-suffix" directory is deleted ONLY when its live sibling
+// "<uuid>" also exists. Their absence is the one case that must NEVER be
+// swept: it means the agent died between renaming the live directory
+// AWAY (the swap's first step) and renaming the new content INTO place
+// (its second) — the "-old" directory is then the server's ONLY
+// remaining copy of its data, not a leftover. Age-gated on top of that as
+// defense in depth, not as the primary guard.
+//
+// Best-effort per entry: one directory this process cannot stat or
+// remove (a permissions quirk, a concurrent operator action) must never
+// abort the sweep for every other server on the node.
+func SweepStaleOldDirs(dataDir string, log *slog.Logger) {
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		log.Warn("stale-old-dir sweep: failed to list data directory", "dir", dataDir, "err", err)
+		return
+	}
+
+	cutoff := time.Now().Add(-staleOldDirAge)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		var liveUUID string
+		for _, suffix := range oldDirSuffixes {
+			if strings.HasSuffix(name, suffix) {
+				liveUUID = strings.TrimSuffix(name, suffix)
+				break
+			}
+		}
+		if liveUUID == "" {
+			continue
+		}
+
+		oldPath := filepath.Join(dataDir, name)
+		livePath := filepath.Join(dataDir, liveUUID)
+		if _, err := os.Stat(livePath); err != nil {
+			// No live sibling: an incomplete swap, not a leftover. Leave
+			// it — this is the case the age gate alone cannot protect
+			// against, since the agent could stay down well past
+			// staleOldDirAge.
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			log.Warn("stale-old-dir sweep: failed to stat entry", "dir", oldPath, "err", err)
+			continue
+		}
+		if info.ModTime().After(cutoff) {
+			continue // young enough that its own delayed goroutine, if any, may still be alive
+		}
+
+		if err := os.RemoveAll(oldPath); err != nil {
+			log.Warn("stale-old-dir sweep: failed to remove", "dir", oldPath, "err", err)
+			continue
+		}
+		log.Warn("stale-old-dir sweep: removed abandoned swap leftover", "dir", oldPath)
+	}
 }

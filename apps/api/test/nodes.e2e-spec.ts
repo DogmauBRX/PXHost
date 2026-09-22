@@ -664,6 +664,7 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
   describe('node inventory reconciliation', () => {
     let ownerId: string;
     let token: string;
+    let templateId: string;
     const made: string[] = [];
 
     const asAdmin = <T>(fn: (tx: Parameters<Parameters<PrismaService['withRLS']>[1]>[0]) => Promise<T>) =>
@@ -673,8 +674,16 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
     // create — it has to be forced afterwards with raw SQL. Every case
     // here depends on the row being OLDER than the grace window, which is
     // exactly what stops a freshly-dispatched server being condemned.
+    //
+    // servers_setup_consistency ties THREE columns to status together —
+    // (status = 'setup_pending') must equal (template_id IS NULL), and a
+    // non-setup_pending row also needs docker_image/startup_command set —
+    // so a real templateId fixture is unavoidable for anything that
+    // transitions away from setup_pending, even though nothing under test
+    // reads the template itself.
     async function makeServer(status: string, ageMinutes: number): Promise<string> {
       const shortId = Math.random().toString(36).slice(2, 10);
+      const isPending = status === 'setup_pending';
       const id = await asAdmin((tx) =>
         tx.server.create({
           data: { shortId, ownerId, nodeId, name: `inv-${shortId}`, memoryMb: 1024, diskMb: 5120, status: 'setup_pending' },
@@ -682,7 +691,7 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
         }),
       ).then((s) => s.id);
       await asAdmin((tx) =>
-        tx.$executeRaw`UPDATE servers SET status = ${status}, updated_at = NOW() - (${ageMinutes} * INTERVAL '1 minute') WHERE id = ${id}::uuid`,
+        tx.$executeRaw`UPDATE servers SET status = ${status}, template_id = ${isPending ? null : templateId}::uuid, docker_image = ${isPending ? null : 'dummy-image'}, startup_command = ${isPending ? null : 'dummy-startup'}, updated_at = NOW() - (${ageMinutes} * INTERVAL '1 minute') WHERE id = ${id}::uuid`,
       );
       made.push(id);
       return id;
@@ -699,6 +708,8 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
         payload: { serverUuids: uuids },
       });
 
+    let inventoryGroupId: string;
+
     beforeAll(async () => {
       const owner = await prisma.user.findFirstOrThrow({ where: { email: `nodes-admin-${suffix}@gxhost.local` }, select: { id: true } });
       ownerId = owner.id;
@@ -709,10 +720,26 @@ describe('Nodes: bootstrap + heartbeat (e2e)', () => {
         payload: { token: bt, hostname: 'e2e-inventory-host' },
       });
       token = JSON.parse(redeemed.body).nodeToken;
+
+      const group = await prisma.templateGroup.create({ data: { name: `inventory-e2e-group-${suffix}` } });
+      inventoryGroupId = group.id;
+      const template = await prisma.serverTemplate.create({
+        data: {
+          groupId: inventoryGroupId,
+          name: 'inventory-e2e template',
+          author: 'test',
+          dockerImages: { default: 'alpine:3.19' },
+          startupCommand: 'cat',
+          installScript: '#!/bin/sh' + String.fromCharCode(10) + 'true',
+        },
+      });
+      templateId = template.id;
     });
 
     afterAll(async () => {
       await asAdmin((tx) => tx.server.deleteMany({ where: { id: { in: made } } }));
+      await prisma.serverTemplate.deleteMany({ where: { id: templateId } });
+      await prisma.templateGroup.deleteMany({ where: { id: inventoryGroupId } });
     });
 
     it('moves a stuck `installing` server the node does not have to install_failed', async () => {

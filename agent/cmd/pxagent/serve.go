@@ -96,6 +96,15 @@ func runServeCmd(args []string) error {
 		return err
 	}
 
+	// Best-effort, and deliberately BEFORE anything else touches
+	// node.DataDir: a modpack install / backup restore's own delayed
+	// cleanup goroutine (1h) does not survive an agent restart, so a
+	// server that is never touched again after such an operation leaks
+	// its swap-leftover directory forever. See srv.SweepStaleOldDirs'
+	// own doc comment for the safety rule that keeps this from ever
+	// touching an in-progress or incomplete swap.
+	srv.SweepStaleOldDirs(node.DataDir, slog.Default())
+
 	manager := srv.NewManager()
 	adopted, err := reconcileManagedContainers(ctx, manager, dc, node)
 	if err != nil {
