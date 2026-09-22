@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState, type DragEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { File as FileIcon, FileArchive, FilePlus, Folder, FolderPlus, Upload } from 'lucide-react';
+import { File as FileIcon, FileArchive, FilePlus, Folder, FolderPlus, RotateCcw, Upload } from 'lucide-react';
 import { chmod, compress, decompress, deleteFile, listFiles, mintDownloadLink, mintUploadLink, mkdir, renameFile, writeFile } from './files.api';
+import { listBackups, restoreBackup } from '@/features/backups/backups.api';
 import { formatBytes, formatDateTimeShort as formatDate } from '@/shared/format/datetime';
 import { getServer } from '@/features/servers/servers.api';
 import { FileEditor } from './FileEditor';
@@ -13,6 +14,7 @@ import {
   EmptyState,
   Input,
   LoadingRow,
+  Modal,
   PageHeader,
   PromptDialog,
   TBody,
@@ -74,12 +76,21 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' });
   const [dragActive, setDragActive] = useState(false);
+  const [restorePickerOpen, setRestorePickerOpen] = useState(false);
+  const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
 
   const { data: entries, isLoading, isError } = useQuery({ queryKey: ['files', serverId, path], queryFn: () => listFiles(serverId, path) });
   const { data: server } = useQuery({ queryKey: ['server', serverId], queryFn: () => getServer(serverId) });
+  const { data: backups, isLoading: backupsLoading } = useQuery({
+    queryKey: ['backups', serverId],
+    queryFn: () => listBackups(serverId),
+    enabled: restorePickerOpen,
+  });
   const permissions = server?.permissions ?? [];
   const canWrite = permissions.includes('file.write');
   const canDelete = permissions.includes('file.delete');
+  const canRestore = permissions.includes('backup.restore');
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: ['files', serverId, path] });
@@ -223,6 +234,32 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
     });
   }
 
+  async function handleConfirmRestore() {
+    if (!restoreTarget) return;
+    setRestoring(true);
+    setActionError(null);
+    try {
+      await restoreBackup(serverId, restoreTarget);
+      setRestoreTarget(null);
+      setRestorePickerOpen(false);
+      setPath('.');
+      setSelected(new Set());
+      setActionNotice('Arquivos restaurados a partir do backup selecionado. O servidor permanece desligado até você iniciá-lo novamente.');
+      void queryClient.invalidateQueries({ queryKey: ['files', serverId] });
+      void queryClient.invalidateQueries({ queryKey: ['backups', serverId] });
+    } catch (err) {
+      setActionError(
+        err instanceof ApiError && err.status === 409
+          ? 'O servidor precisa estar parado antes de restaurar os arquivos.'
+          : err instanceof ApiError
+            ? err.message
+            : 'Não foi possível restaurar os arquivos.',
+      );
+    } finally {
+      setRestoring(false);
+    }
+  }
+
   function handleDragOver(e: DragEvent<HTMLDivElement>) {
     if (!canWrite) return;
     e.preventDefault();
@@ -249,31 +286,41 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
       <PageHeader
         title="Arquivos"
         actions={
-          canWrite ? (
+          canWrite || canRestore ? (
             <div className="flex items-center gap-2">
-              <Button variant="secondary" onClick={() => setPrompt({ kind: 'mkdir' })}>
-                <FolderPlus className="h-4 w-4" aria-hidden="true" />
-                Nova pasta
-              </Button>
-              <Button variant="secondary" onClick={() => setPrompt({ kind: 'newfile' })}>
-                <FilePlus className="h-4 w-4" aria-hidden="true" />
-                Novo arquivo
-              </Button>
-              <Button variant="primary" disabled={uploadProgress !== null} onClick={() => fileInputRef.current?.click()}>
-                <Upload className="h-4 w-4" aria-hidden="true" />
-                {uploadProgress ? `Enviando ${uploadProgress.done}/${uploadProgress.total}…` : 'Enviar arquivos'}
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  const files = Array.from(e.target.files ?? []);
-                  e.target.value = '';
-                  if (files.length) void uploadFiles(files);
-                }}
-              />
+              {canRestore && (
+                <Button variant="secondary" onClick={() => setRestorePickerOpen(true)}>
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                  Restaurar arquivos
+                </Button>
+              )}
+              {canWrite && (
+                <>
+                  <Button variant="secondary" onClick={() => setPrompt({ kind: 'mkdir' })}>
+                    <FolderPlus className="h-4 w-4" aria-hidden="true" />
+                    Nova pasta
+                  </Button>
+                  <Button variant="secondary" onClick={() => setPrompt({ kind: 'newfile' })}>
+                    <FilePlus className="h-4 w-4" aria-hidden="true" />
+                    Novo arquivo
+                  </Button>
+                  <Button variant="primary" disabled={uploadProgress !== null} onClick={() => fileInputRef.current?.click()}>
+                    <Upload className="h-4 w-4" aria-hidden="true" />
+                    {uploadProgress ? `Enviando ${uploadProgress.done}/${uploadProgress.total}…` : 'Enviar arquivos'}
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? []);
+                      e.target.value = '';
+                      if (files.length) void uploadFiles(files);
+                    }}
+                  />
+                </>
+              )}
             </div>
           ) : undefined
         }
@@ -452,6 +499,44 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
         tone="danger"
         onConfirm={() => void handleBulkDelete()}
         onCancel={() => setDeleteTargets(null)}
+      />
+
+      <Modal open={restorePickerOpen} onClose={() => setRestorePickerOpen(false)} title="Restaurar arquivos" size="md">
+        <p className="mb-4 text-sm text-text-muted">
+          Escolha um backup para recuperar todos os arquivos do servidor. O servidor precisa estar desligado e os arquivos atuais serão substituídos.
+        </p>
+        {backupsLoading ? (
+          <LoadingRow label="Carregando backups…" />
+        ) : !backups || backups.length === 0 ? (
+          <div className="rounded-card border border-border bg-surface-2/50 p-4">
+            <p className="font-medium text-text">Nenhum backup disponível</p>
+            <p className="mt-1 text-sm text-text-muted">Sem um backup anterior, arquivos excluídos não podem ser recuperados. Crie backups regularmente na aba Backups.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {backups.map((backup) => (
+              <div key={backup.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2/50 p-3">
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-sm font-medium text-text">{backup.id}</p>
+                  <p className="mt-0.5 text-xs text-text-faint">{formatDate(backup.createdAt)} · {formatBytes(backup.sizeBytes)}</p>
+                </div>
+                <Button variant="secondary" size="sm" onClick={() => { setRestorePickerOpen(false); setRestoreTarget(backup.id); }}>Selecionar</Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={restoreTarget !== null}
+        title="Restaurar todos os arquivos"
+        message="Essa ação substitui TODOS os arquivos atuais pelo conteúdo do backup selecionado. O servidor precisa estar desligado."
+        confirmLabel="Restaurar"
+        confirmPhrase="RESTAURAR"
+        tone="danger"
+        loading={restoring}
+        onConfirm={() => void handleConfirmRestore()}
+        onCancel={() => setRestoreTarget(null)}
       />
 
       <PromptDialog
