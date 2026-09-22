@@ -314,17 +314,17 @@ export function ConsolePage({ serverId }: { serverId: string }) {
         </CardBody>
       </Card>
 
-      <div id="console-live" className="flex scroll-mt-5 items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-ok shadow-[0_0_10px_rgb(52_211_153/0.65)]" aria-hidden="true" />
-        <p className="text-sm font-semibold text-text">Console ao vivo</p>
+      <div id="console-live" className="flex scroll-mt-5 items-center gap-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-ok shadow-[0_0_10px_rgb(52_211_153/0.65)]" aria-hidden="true" />
+        <p className="text-lg font-semibold tracking-tight text-text">Console ao vivo</p>
         <button
           type="button"
           onClick={reconnect}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-faint transition hover:border-accent/40 hover:bg-accent/10 hover:text-accent-strong"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-accent/30 bg-accent/10 text-accent-strong transition hover:border-accent/55 hover:bg-accent/15"
           title="Reconectar o console"
           aria-label="Reconectar o console"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${connectionState === 'connecting' || connectionState === 'authenticating' || connectionState === 'reconnecting' ? 'animate-spin' : ''}`} aria-hidden="true" />
+          <RefreshCw className={`h-4 w-4 ${connectionState === 'connecting' || connectionState === 'authenticating' || connectionState === 'reconnecting' ? 'animate-spin' : ''}`} aria-hidden="true" />
         </button>
       </div>
 
