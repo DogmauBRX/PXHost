@@ -92,7 +92,7 @@ export function ServerSetupPage({ serverId }: { serverId: string }) {
 
       {isRetry && (
         <Alert tone="fail" title="A instalação anterior falhou">
-          Confira as opções abaixo e tente novamente — nada do que você já pagou foi perdido.
+          Confira as opções abaixo e tente novamente.
         </Alert>
       )}
       {error && (
