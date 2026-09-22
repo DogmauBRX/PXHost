@@ -39,7 +39,7 @@ export function AppShell({ children, area }: { children: ReactNode; area: 'admin
     <div className="min-h-screen">
       <Sidebar sections={sections} panelLabel={panelLabel} settingsTo={settingsTo} area={area} />
       <div className={`transition-[padding] duration-300 ${sidebarCollapsed ? 'lg:pl-[5.25rem]' : 'lg:pl-72'}`}>
-        <Topbar />
+        <Topbar area={area} />
         <AnnouncementBanner />
         <main className="mx-auto w-full max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
