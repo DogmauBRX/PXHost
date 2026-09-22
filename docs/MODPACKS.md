@@ -17,7 +17,7 @@ This document records the analysis that preceded the catalog implementation and 
 
 `ModpackProvider` normalizes search, project, release and metadata responses. The UI and controllers only consume normalized values and select a provider from a registry; provider-specific JSON remains inside its adapter.
 
-The Phase 1 Modrinth adapter uses the official v2 API, an identifying User-Agent, bounded timeouts, one safe retry for GET requests, explicit 429 handling and Redis TTLs. The CurseForge adapter will implement the same contract and keep its API key exclusively in the backend.
+The Modrinth adapter uses the official v2 API, an identifying User-Agent, bounded timeouts, one safe retry for GET requests, explicit 429 handling and Redis TTLs. Modrinth is the single supported catalog, keeping the installation path focused on the `.mrpack` format validated by the Agent.
 
 ## Rollout
 
@@ -36,12 +36,6 @@ The Phase 1 Modrinth adapter uses the official v2 API, an identifying User-Agent
 - Stop and confirm process termination, optionally create a normal server backup, preflight disk space, safely inspect/extract the `.mrpack`, resolve server-required files, update loader/template/startup data and restart only after validation.
 - Stream real byte/stage progress from the Agent. On failure, retain diagnostics and expose restore when a backup exists.
 - Security limits must cover canonical-path confinement, symlink rejection, archive entry/expanded-size/compression-ratio limits, per-file and total download limits, content-length mismatch, checksum failure and insufficient disk.
-
-### Phase 3 — CurseForge
-
-- Add `CurseForgeProvider` to the registry and configure its secret only in the API/Agent environment.
-- Respect per-file distribution permissions. A blocked file produces a clear actionable result; it is never scraped or bypassed.
-- Provider failures remain isolated so Modrinth continues to work.
 
 ### Phase 4 — installed history and updates
 

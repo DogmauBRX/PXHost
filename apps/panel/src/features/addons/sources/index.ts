@@ -4,7 +4,7 @@ import { InstalledPanel } from './installed';
 import { UploadPanel } from './upload';
 import { ModrinthPluginsPanel } from './modrinth';
 
-// Modrinth/CurseForge catalog source goes here later: one file + one entry.
+// The Modrinth modpack catalog is implemented separately in ModpacksPanel.
 // Nothing in AddonsPage, the tab bar, or the routes needs to change.
 export const ADDON_SOURCES: AddonSource[] = [
   { id: 'installed', label: 'Instalados', icon: Package, available: () => true, Panel: InstalledPanel },

@@ -6,7 +6,7 @@ const SAFE_FILTER = /^[a-zA-Z0-9_.+\- ]+$/;
 
 export class SearchModpacksDto {
   @IsOptional()
-  @IsIn(['modrinth', 'curseforge'])
+  @IsIn(['modrinth'])
   source: ModpackSource = 'modrinth';
 
   @IsOptional()

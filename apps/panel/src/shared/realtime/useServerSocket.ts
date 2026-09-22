@@ -269,5 +269,23 @@ export function useServerSocket({ serverId, terminal, onStats, onStatus }: UseSe
     wsRef.current.send(JSON.stringify({ event: EventPowerSet, data: { action } } satisfies Envelope));
   }, []);
 
-  return { connectionState, permissions, lastError, sendCommand, sendPower };
+  // Manual escape hatch for a socket that's gone quietly dead without
+  // firing `onclose` — some networks/proxies never deliver the TCP
+  // teardown, so `connectionState` keeps reading "open" while nothing a
+  // customer sends actually reaches the agent. Same teardown as the
+  // unmount cleanup (bump generation, mark closedByUs, drop the socket)
+  // but immediately followed by a fresh connect() instead of leaving it
+  // closed, and reset attemptRef so this doesn't inherit backoff from
+  // whatever the connection was doing before.
+  const reconnect = useCallback(() => {
+    attemptRef.current = 0;
+    generationRef.current += 1;
+    closedByUsRef.current = true;
+    clearTimers();
+    wsRef.current?.close(1000, 'manual-refresh');
+    wsRef.current = null;
+    void connect();
+  }, [connect]);
+
+  return { connectionState, permissions, lastError, sendCommand, sendPower, reconnect };
 }

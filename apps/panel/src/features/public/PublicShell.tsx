@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   BookOpenCheck,
   CreditCard,
+  ExternalLink,
   LayoutDashboard,
   LifeBuoy,
   LogIn,
@@ -245,7 +246,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          <div className="grid gap-10 border-b border-white/8 pb-10 md:grid-cols-[1.1fr_0.6fr_1.4fr] lg:gap-16">
+          <div className="grid gap-10 pb-10 md:grid-cols-[1.1fr_0.6fr_1.4fr] lg:gap-16">
             <div>
               <Link to="/" search={homeSearch} className="group inline-flex items-center gap-3" aria-label="GXhost — página inicial">
                 <span className="public-footer__logo flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/5">
@@ -299,6 +300,55 @@ export function PublicShell({ children }: { children: ReactNode }) {
             </div>
           </div>
 
+          <section className="border-y border-white/8 py-6" aria-labelledby="footer-trust-title">
+            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p id="footer-trust-title" className="text-[0.65rem] font-bold tracking-[0.2em] text-white/35 uppercase">Segurança e pagamentos</p>
+                <p className="mt-1 text-xs text-white/35">Consulte a segurança do domínio e conheça os meios aceitos.</p>
+              </div>
+              <p className="text-[0.62rem] text-white/25">Ambiente protegido por HTTPS</p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <a
+                href="https://transparencyreport.google.com/safe-browsing/search?url=gxhost.com.br"
+                target="_blank"
+                rel="noreferrer"
+                className="group flex min-h-24 items-center justify-between gap-4 rounded-xl border border-white/10 bg-white px-4 py-3 text-[#202124] transition-all hover:-translate-y-0.5 hover:border-[#4285f4]/50 hover:shadow-[0_14px_35px_-22px_rgb(66_133_244/0.75)]"
+                aria-label="Consultar o status de segurança de gxhost.com.br no Google Safe Browsing"
+              >
+                <span className="flex items-center gap-3">
+                  <GoogleMark />
+                  <span>
+                    <span className="block text-sm font-semibold">Google Safe Browsing</span>
+                    <span className="mt-0.5 block text-[0.67rem] text-[#5f6368]">Consultar status do domínio</span>
+                  </span>
+                </span>
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[#5f6368] transition-colors group-hover:text-[#4285f4]" aria-hidden="true" />
+              </a>
+
+              <Link
+                to="/central"
+                hash="pagamentos"
+                className="group flex min-h-24 items-center justify-center gap-4 rounded-xl border border-white/10 bg-white px-5 py-3 transition-all hover:-translate-y-0.5 hover:border-[#77b6a8]/60 hover:shadow-[0_14px_35px_-22px_rgb(119_182_168/0.8)]"
+                aria-label="Saiba mais sobre pagamentos via Pix"
+              >
+                <img src="/brand/pix.svg" alt="Pix" className="h-auto w-[145px] max-w-[48%]" loading="lazy" decoding="async" />
+                <span className="text-[0.67rem] leading-4 font-medium text-slate-500">Pagamento<br />instantâneo</span>
+              </Link>
+
+              <Link
+                to="/central"
+                hash="pagamentos"
+                className="group flex min-h-24 items-center justify-center gap-4 rounded-xl border border-white/10 bg-white px-5 py-3 transition-all hover:-translate-y-0.5 hover:border-[#00b1ea]/50 hover:shadow-[0_14px_35px_-22px_rgb(0_177_234/0.75)]"
+                aria-label="Saiba mais sobre pagamentos processados pelo Mercado Pago"
+              >
+                <img src="/brand/mercado-pago.svg" alt="Mercado Pago" className="h-auto w-[145px] max-w-[48%]" loading="lazy" decoding="async" />
+                <span className="text-[0.67rem] leading-4 font-medium text-slate-500">Pagamentos<br />processados</span>
+              </Link>
+            </div>
+          </section>
+
           <div className="flex flex-col gap-4 pt-7 text-[0.68rem] leading-5 text-white/30 sm:flex-row sm:items-end sm:justify-between">
             <div className="space-y-3">
               <p>© {new Date().getFullYear()} GXhost. Todos os direitos reservados.</p>
@@ -313,5 +363,16 @@ export function PublicShell({ children }: { children: ReactNode }) {
         </div>
       </footer>
     </div>
+  );
+}
+
+function GoogleMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-7 w-7 shrink-0" focusable="false">
+      <path fill="#4285F4" d="M21.8 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.5a4.7 4.7 0 0 1-2 3.1v2.5h3.2c1.9-1.8 3.1-4.4 3.1-7.4Z" />
+      <path fill="#34A853" d="M12 22c2.7 0 5-.9 6.7-2.4l-3.2-2.5c-.9.6-2 .9-3.5.9-2.7 0-5-1.8-5.8-4.3H2.9v2.6A10 10 0 0 0 12 22Z" />
+      <path fill="#FBBC05" d="M6.2 13.7a6 6 0 0 1 0-3.4V7.7H2.9a10 10 0 0 0 0 8.6l3.3-2.6Z" />
+      <path fill="#EA4335" d="M12 6a5.4 5.4 0 0 1 3.9 1.5l2.9-2.8A9.8 9.8 0 0 0 2.9 7.7l3.3 2.6C7 7.8 9.3 6 12 6Z" />
+    </svg>
   );
 }

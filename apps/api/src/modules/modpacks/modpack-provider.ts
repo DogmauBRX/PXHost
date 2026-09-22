@@ -1,4 +1,4 @@
-export type ModpackSource = 'modrinth' | 'curseforge';
+export type ModpackSource = 'modrinth';
 export type ModpackSort = 'relevance' | 'popularity' | 'downloads' | 'updated';
 
 export interface ModpackSearchQuery {
@@ -50,7 +50,6 @@ export interface ModpackVersion {
     primary: boolean;
     url: string;
     hashes: { sha1?: string; sha512?: string };
-    /** CurseForge may prohibit automated delivery for a release file. */
     distributable?: boolean;
     distributionMessage?: string;
   }>;

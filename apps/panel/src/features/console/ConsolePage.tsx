@@ -79,7 +79,7 @@ export function ConsolePage({ serverId }: { serverId: string }) {
   const uptimeBaseRef = useRef<{ uptimeMs: number; capturedAt: number } | null>(null);
   const [, tickUptime] = useState(0);
 
-  const { connectionState, permissions, lastError, sendCommand, sendPower } = useServerSocket({
+  const { connectionState, permissions, lastError, sendCommand, sendPower, reconnect } = useServerSocket({
     serverId,
     terminal: termRef.current,
     // The agent never writes power_state back to the database (M2's
@@ -229,25 +229,30 @@ export function ConsolePage({ serverId }: { serverId: string }) {
                 <Link2 className="h-4 w-4 shrink-0 text-accent-strong" aria-hidden="true" />
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-text-faint">Endereço para conexão</p>
-                  <p className="truncate font-mono text-sm font-semibold text-text">{server.publicAddress}</p>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <p className="truncate font-mono text-sm font-semibold text-text">{server.publicAddress}</p>
+                    <button
+                      type="button"
+                      onClick={() => void copyPublicAddress()}
+                      aria-label={addressCopied ? 'Endereço copiado' : 'Copiar endereço'}
+                      title={addressCopied ? 'Endereço copiado' : 'Copiar endereço'}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border text-text-faint transition hover:border-accent/40 hover:bg-accent/10 hover:text-accent-strong"
+                    >
+                      {addressCopied ? <Check className="h-3.5 w-3.5 text-ok" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <Button variant="secondary" size="sm" onClick={() => void copyPublicAddress()}>
-                  {addressCopied ? <Check className="h-4 w-4 text-ok" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
-                  {addressCopied ? 'Copiado' : 'Copiar endereço'}
-                </Button>
-                {canEditHostname && (
-                  <button
-                    type="button"
-                    onClick={openHostnameEditor}
-                    className="inline-flex items-center gap-1.5 px-1 text-xs font-semibold text-accent-strong transition hover:text-accent"
-                  >
-                    <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    {server.customHostname ? 'Alterar endereço' : 'Personalizar endereço'}
-                  </button>
-                )}
-              </div>
+              {canEditHostname && (
+                <button
+                  type="button"
+                  onClick={openHostnameEditor}
+                  className="inline-flex shrink-0 items-center gap-1.5 px-1 text-xs font-semibold text-accent-strong transition hover:text-accent"
+                >
+                  <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  {server.customHostname ? 'Alterar endereço' : 'Personalizar endereço'}
+                </button>
+              )}
               {editingHostname && (
                 <form
                   onSubmit={saveHostname}
@@ -306,6 +311,28 @@ export function ConsolePage({ serverId }: { serverId: string }) {
           </div>
         </CardBody>
       </Card>
+
+      {/* The socket can go quietly dead without ever firing `onclose` (some
+          networks/proxies swallow the TCP teardown), leaving the badge
+          above stuck on "Conectado" while nothing typed below actually
+          reaches the agent — found live: commands stopped sending with no
+          visible error. This button forces a fresh connection on demand
+          instead of waiting for the automatic reconnect to eventually
+          notice, right next to the terminal so it's obvious what to reach
+          for when a command seems to hang. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-text">Console</p>
+        <button
+          type="button"
+          onClick={reconnect}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-text-muted transition hover:border-accent/40 hover:bg-accent/10 hover:text-accent-strong"
+          title="Reconecta o console agora — use se um comando parar de enviar ou o console travar"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${connectionState === 'connecting' || connectionState === 'authenticating' || connectionState === 'reconnecting' ? 'animate-spin' : ''}`} aria-hidden="true" />
+          Atualizar console
+        </button>
+      </div>
+      <p className="-mt-2 text-xs text-text-faint">Reconecta o console na hora — use se um comando parar de enviar ou o console travar.</p>
 
       {/* Deliberately bounded. xterm's FitAddon derives its row count from
           the container's clientHeight — an auto-height parent measures 0 and

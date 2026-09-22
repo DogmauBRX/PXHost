@@ -9,7 +9,6 @@ import { getModpackMetadata, searchModpacks, type ModpackSort, type ModpackSourc
 const PAGE_SIZE = 20;
 
 export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonContext }) {
-  const [sourceTab, setSourceTab] = useState<ModpackSource>('modrinth');
   const [draftQuery, setDraftQuery] = useState('');
   const [query, setQuery] = useState('');
   const [minecraftVersion, setMinecraftVersion] = useState('');
@@ -18,7 +17,7 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
   const [sort, setSort] = useState<ModpackSort>('relevance');
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<{ source: ModpackSource; projectId: string } | null>(null);
-  const source = sourceTab;
+  const source: ModpackSource = 'modrinth';
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -49,21 +48,6 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-1 border-b border-border">
-        {(['modrinth', 'curseforge'] as const).map((item) => {
-          return (
-            <button
-              key={item}
-              type="button"
-              onClick={() => { setSourceTab(item); setOffset(0); }}
-              className={`border-b-2 px-3 py-2 text-sm font-medium transition ${sourceTab === item ? 'border-accent text-accent-strong' : 'border-transparent text-text-muted hover:text-text'}`}
-            >
-              {item === 'modrinth' ? 'Modrinth' : 'CurseForge'}
-            </button>
-          );
-        })}
-      </div>
-
       <div className="grid gap-3 lg:grid-cols-[minmax(16rem,2fr)_repeat(4,minmax(8rem,1fr))]">
         <Input icon={Search} value={draftQuery} onChange={(e) => setDraftQuery(e.target.value)} placeholder="Pesquisar modpacks..." aria-label="Pesquisar modpacks" />
         <Select value={minecraftVersion} onChange={(e) => resetPage(setMinecraftVersion, e.target.value)} aria-label="Versão do Minecraft">
@@ -87,7 +71,7 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
       </div>
 
       {results.isError && <Alert title="Catálogo indisponível">{results.error.message}</Alert>}
-      {results.isLoading && <LoadingRow label={`Buscando modpacks no ${source === 'curseforge' ? 'CurseForge' : 'Modrinth'}…`} />}
+      {results.isLoading && <LoadingRow label="Buscando modpacks no Modrinth…" />}
       {!results.isLoading && !results.isError && results.data?.items.length === 0 && (
         <EmptyState icon={Search} title="Nenhum modpack encontrado" description="Tente remover um filtro ou pesquisar outro nome." />
       )}
@@ -117,7 +101,7 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
         projectId={selected?.projectId ?? null}
         serverMinecraftVersion={ctx.server.minecraftVersion}
         serverSoftware={ctx.software.kind}
-        canInstall={canInstall && selected?.source !== 'curseforge'}
+        canInstall={canInstall}
         onClose={() => setSelected(null)}
       />
     </div>
@@ -130,7 +114,7 @@ function ModpackCard({ item, onDetails }: { item: ModpackSummary; onDetails: () 
     <article className="flex min-h-64 flex-col rounded-card border border-border bg-surface p-4 shadow-xs transition hover:border-border-strong">
       <div className="flex items-start gap-3">
         {item.icon ? <img src={item.icon} alt="" loading="lazy" className="h-14 w-14 shrink-0 rounded-xl object-cover" /> : <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-surface-2"><PackageOpen className="h-6 w-6 text-text-faint" /></div>}
-        <div className="min-w-0 flex-1"><h3 className="truncate font-semibold text-text">{item.name}</h3><p className="truncate text-xs text-text-faint">{item.author ? `por ${item.author}` : 'Autor não informado'}</p><Badge>{item.source === 'curseforge' ? 'CurseForge' : 'Modrinth'}</Badge></div>
+        <div className="min-w-0 flex-1"><h3 className="truncate font-semibold text-text">{item.name}</h3><p className="truncate text-xs text-text-faint">{item.author ? `por ${item.author}` : 'Autor não informado'}</p><Badge>Modrinth</Badge></div>
       </div>
       <p className="mt-3 line-clamp-3 text-sm leading-5 text-text-muted">{item.description}</p>
       <div className="mt-3 flex flex-wrap gap-1.5">

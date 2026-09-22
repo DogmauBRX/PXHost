@@ -1,7 +1,7 @@
 import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class InstallModpackDto {
-  @IsIn(['modrinth', 'curseforge']) source!: 'modrinth' | 'curseforge';
+  @IsIn(['modrinth']) source!: 'modrinth';
   @IsString() projectId!: string;
   @IsString() versionId!: string;
 }
