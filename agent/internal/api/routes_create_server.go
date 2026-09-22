@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path"
 	"strconv"
 	"time"
 
@@ -327,6 +329,10 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 			writeErrorResp(w, http.StatusNotFound, "SERVER_NOT_FOUND", "no server registered with that uuid")
 			return
 		}
+		// Same data-dir cleanup as the registered branch below — an agent
+		// restart having dropped this server from the in-memory manager
+		// must not also mean its world silently outlives the delete.
+		s.removeServerDataDir(uuid)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -349,7 +355,48 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.manager.Remove(uuid)
+	// The data directory was deliberately left untouched here since M5
+	// (see srv.Server.Remove's own doc comment: "deletion of on-disk data
+	// is a separate, explicit operation ... never implied by removing the
+	// container") — that separate step never landed. Found live: 30
+	// abandoned world directories on node01 alone (7.4 GB, 95% of all
+	// server-directory disk usage), some from servers deleted days
+	// earlier. A customer who deletes a server expects the world to be
+	// gone, not sitting on a node's disk indefinitely — this is also a
+	// privacy question, not just a housekeeping one.
+	s.removeServerDataDir(uuid)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// removeServerDataDir deletes a server's data directory
+// (<node.DataDir>/<uuid>) after its container is already gone. Logged,
+// never fatal to the delete request itself — the container is the part a
+// customer's next action (re-creating a server with the same name, the
+// panel's own row already gone) actually depends on; a lingering
+// directory the panel no longer references is real disk waste but not a
+// correctness problem for anything downstream, so it must not turn an
+// otherwise-successful delete into a 502 the panel would only retry
+// against a server row that no longer exists to retry it FOR.
+func (s *Server) removeServerDataDir(uuid string) {
+	dir := path.Join(s.node.DataDir, uuid)
+	if err := os.RemoveAll(dir); err != nil {
+		s.log.Warn("failed to remove server data directory after delete", "uuid", uuid, "dir", dir, "err", err)
+	}
+	// Siblings from an atomic modpack-install/backup-restore rename-swap
+	// (modpack.go, backup.go) — "<uuid>.modpack-old" / "<uuid>.restore-old".
+	// srv.SweepStaleOldDirs handles these when they outlive their own
+	// 1-hour delayed cleanup goroutine across an agent RESTART; a server
+	// that is deleted before either happens needs the exact same cleanup
+	// here, at delete time, or a leftover from a server's last modpack
+	// install/restore would sit on disk with nothing left to ever sweep
+	// it (the live "<uuid>" directory SweepStaleOldDirs requires as
+	// proof-of-completed-swap is gone the instant this function returns).
+	for _, suffix := range []string{".modpack-old", ".restore-old"} {
+		oldDir := dir + suffix
+		if err := os.RemoveAll(oldDir); err != nil {
+			s.log.Warn("failed to remove server swap-leftover directory after delete", "uuid", uuid, "dir", oldDir, "err", err)
+		}
+	}
 }
 
 // findContainerByUUID returns the id/running-state of the first container
