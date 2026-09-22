@@ -27,15 +27,6 @@ export function Topbar({ area }: { area: 'admin' | 'client' }) {
             Sidebar's brand box (icon-only, awkwardly overlapping the logo)
             to a real labeled button. */}
         <div className="flex items-center gap-2">
-          {area === 'client' && (
-            <Link
-              to="/client/community"
-              className="group relative flex items-center gap-2 rounded-xl border border-border bg-surface-2/55 px-3 py-2 text-sm font-medium text-text-muted shadow-xs transition-all hover:-translate-y-px hover:border-accent/35 hover:bg-accent/10 hover:text-accent-strong"
-            >
-              <Gamepad2 className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Comunidade</span>
-            </Link>
-          )}
           <Link
             to="/"
             search={{ stay: true }}
@@ -46,7 +37,18 @@ export function Topbar({ area }: { area: 'admin' | 'client' }) {
           </Link>
         </div>
       </div>
-      {area === 'client' && <FriendsDrawer />}
+      {area === 'client' && (
+        <div className="flex items-center gap-2">
+          <Link
+            to="/client/community"
+            className="group relative flex items-center gap-2 rounded-xl border border-emerald-300/45 bg-surface-2 px-3 py-2 text-sm font-medium text-emerald-300 shadow-xs transition-all hover:-translate-y-px hover:border-emerald-200 hover:bg-surface-3 hover:text-emerald-200"
+          >
+            <Gamepad2 className="h-4 w-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Comunidade</span>
+          </Link>
+          <FriendsDrawer />
+        </div>
+      )}
     </header>
   );
 }
