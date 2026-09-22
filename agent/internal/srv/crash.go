@@ -39,10 +39,18 @@ func classifyStreamEnd(state State, agentStopping, inspectOK, containerRunning b
 	if agentStopping {
 		return outcomeIgnore
 	}
-	// Anything other than "running" means some deliberate transition
-	// (Stop/Kill/Remove/UpdateVariables) already owns this server's state
-	// and tore the collector down on purpose.
-	if state != StateRunning {
+	// Anything other than "running" or "starting" means some deliberate
+	// transition (Stop/Kill/Remove/UpdateVariables) already owns this
+	// server's state and tore the collector down on purpose. StateStarting
+	// is included, not excluded: Start() no longer flips straight to
+	// StateRunning (see its own doc comment — awaitReady only promotes
+	// once the boot-done log line appears), so a JVM that crashes DURING
+	// that window is a real crash too, not just one that happens to occur
+	// after the promotion. Missing this was the exact live bug that
+	// motivated this function in the first place, just moved earlier: a
+	// corrupt jar failing before "Done (" would otherwise sit
+	// unclassified in StateStarting forever.
+	if state != StateRunning && state != StateStarting {
 		return outcomeIgnore
 	}
 	if !inspectOK || containerRunning {
@@ -54,11 +62,11 @@ func classifyStreamEnd(state State, agentStopping, inspectOK, containerRunning b
 	return outcomeCrashed
 }
 
-// handleStatsStreamEnded runs when a running server's stats stream ends.
-// Docker keeps that stream open for exactly as long as the container
-// lives, so the stream ending on its own — with nobody having asked for a
-// stop — is the agent's only signal today that a container died by
-// itself.
+// handleStatsStreamEnded runs when a running (or still-starting) server's
+// stats stream ends. Docker keeps that stream open for exactly as long as
+// the container lives, so the stream ending on its own — with nobody
+// having asked for a stop — is the agent's only signal today that a
+// container died by itself.
 //
 // Found live: a Paper install that downloaded a corrupt jar left the JVM
 // exiting immediately with "Invalid or corrupt jarfile", yet the panel's
@@ -77,8 +85,10 @@ func (s *Server) handleStatsStreamEnded(dc dockerFull) {
 	s.mu.Unlock()
 
 	// Cheap pre-checks before paying for a Docker round trip — the common
-	// case by far is a deliberate stop, which is never a crash.
-	if state != StateRunning || s.bgCtx.Err() != nil || containerID == "" {
+	// case by far is a deliberate stop, which is never a crash. Includes
+	// StateStarting for the same reason classifyStreamEnd does — see its
+	// own doc comment.
+	if (state != StateRunning && state != StateStarting) || s.bgCtx.Err() != nil || containerID == "" {
 		return
 	}
 

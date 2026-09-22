@@ -22,7 +22,13 @@ export function PowerControls({ state, permissions, onAction }: PowerControlsPro
 
   const running = state === 'running' || state === 'starting';
   const canStart = !running;
-  const canStop = state === 'running';
+  // Was `state === 'running'` only — harmless while the agent flipped
+  // straight to "running" the instant the container existed, but the
+  // agent now stays "starting" until the server software itself finishes
+  // booting (real boot times, not a millisecond blip), which left Parar/
+  // Reiniciar disabled for as long as a customer's server took to load —
+  // exactly when a misclick or bad config is most likely to need it.
+  const canStop = running;
 
   function handleKillClick() {
     if (!armedKill) {

@@ -6,8 +6,10 @@ package srv
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -236,19 +238,29 @@ func (s *Server) Start(ctx context.Context, dc dockerFull) error {
 		return fmt.Errorf("srv: attaching console before start: %w", err)
 	}
 	s.pump = pump
+	// Subscribed BEFORE the container actually starts, same "attach
+	// first" reasoning as the pump itself just above — no boot line can
+	// be missed between here and dc.StartContainer below.
+	readySub := s.Hub.Subscribe()
 
 	s.State = StateStarting
 	if err := dc.StartContainer(ctx, s.ContainerID); err != nil {
 		s.State = StateCrashed
 		_ = s.pump.Close()
 		s.pump = nil
+		s.Hub.Unsubscribe(readySub)
 		return err
 	}
-	// M3 (Docker event listener) promotes starting->running from the real
-	// event stream / the template's log "ready" marker. For M2's direct
-	// power-action flow, we mark running immediately after a successful
-	// start call — good enough until the event listener lands.
-	s.State = StateRunning
+	// Found live: the container starting is not the Minecraft server
+	// being ready — a modded/heavy server can take well over a minute
+	// past this point to finish loading, and every consumer (the panel's
+	// "Ativo" badge, its uptime counter, "server must be offline"
+	// preconditions elsewhere) treated the two as the same moment. This
+	// used to flip straight to StateRunning right here; now it stays
+	// StateStarting until awaitReady sees the software's own boot-done
+	// log line (or its bounded timeout), so "Ativo" means the world is
+	// actually loaded, not just that a process exists.
+	go s.awaitReady(readySub)
 
 	memLimitBytes := uint64(s.spec.Limits.MemoryMB) * 1024 * 1024
 	cpuLimitPercent := uint64(s.spec.Limits.CPUPercent)
@@ -264,6 +276,102 @@ func (s *Server) Start(ctx context.Context, dc dockerFull) error {
 	}()
 
 	return nil
+}
+
+// readyLogMarker is the line every Minecraft server distribution this
+// platform supports (vanilla, Paper, Purpur, Fabric, Quilt, Forge,
+// NeoForge — all built on, or reimplementing, the vanilla
+// MinecraftServer boot sequence) prints exactly once, when the world has
+// finished loading and it starts accepting connections: e.g.
+// `[09:15:32] [Server thread/INFO]: Done (12.345s)! For help, type
+// "help"`. A plain substring match, not a regex: the timestamp/thread
+// prefix varies by software, but this exact fragment does not.
+const readyLogMarker = "Done ("
+
+// readyWaitCap bounds how long Start() waits for readyLogMarker before
+// promoting to StateRunning anyway. A safety net, not the expected path:
+// a template with a genuinely different log format, a boot that somehow
+// never prints the line, or any other surprise must never leave a
+// customer's server stuck showing "Iniciando" forever — that would be
+// strictly worse than this fix's starting point (which was always wrong
+// early, never wrong forever).
+const readyWaitCap = 5 * time.Minute
+
+// readyPollInterval is how often awaitReady re-checks the state even
+// without new console output — what lets it notice a Stop()/Kill()/crash
+// that happened elsewhere and stop watching promptly instead of only on
+// the next log line or the full readyWaitCap timeout.
+const readyPollInterval = 2 * time.Second
+
+// isReadyLine reports whether data is the server software's own
+// boot-complete line. Split out from awaitReady so the matching rule
+// itself is unit-testable without a console subscriber or goroutine.
+func isReadyLine(data string) bool {
+	return strings.Contains(data, readyLogMarker)
+}
+
+// awaitReady watches sub for readyLogMarker and promotes StateStarting to
+// StateRunning the moment it appears — or after readyWaitCap, whichever
+// comes first. Runs for the lifetime of one Start() call; always
+// unsubscribes on the way out, whichever of the three exits below fires.
+//
+// Deliberately re-checks the CURRENT state (not just "did I see the
+// marker") before promoting: if a Stop()/Kill()/crash already moved the
+// server off StateStarting for its own reasons by the time this fires,
+// overwriting that with StateRunning would be a real regression, not a
+// no-op.
+func (s *Server) awaitReady(sub *console.Subscriber) {
+	defer s.Hub.Unsubscribe(sub)
+
+	deadline := time.NewTimer(readyWaitCap)
+	defer deadline.Stop()
+	ticker := time.NewTicker(readyPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.bgCtx.Done():
+			return
+		case line, ok := <-sub.C():
+			if !ok {
+				return
+			}
+			if isReadyLine(line.Data) {
+				s.promoteStartingTo(StateRunning)
+				return
+			}
+		case <-ticker.C:
+			if !s.isStarting() {
+				return // Stop/Kill/crash already decided this server's state elsewhere
+			}
+		case <-deadline.C:
+			// Not necessarily wrong — a genuinely slow modpack could
+			// still be mid-boot — but readyLogMarker never showing up
+			// within readyWaitCap is unusual enough to be worth an
+			// operator's attention rather than a silent promotion.
+			slog.Default().Warn("server did not print its boot-done line within the timeout; marking running anyway", "server", s.UUID, "waited", readyWaitCap)
+			s.promoteStartingTo(StateRunning)
+			return
+		}
+	}
+}
+
+func (s *Server) isStarting() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.State == StateStarting
+}
+
+// promoteStartingTo sets the server's state, but ONLY from StateStarting —
+// see awaitReady's own doc comment for why a stale promotion must be a
+// no-op rather than clobbering whatever a concurrent Stop/Kill/crash
+// already decided.
+func (s *Server) promoteStartingTo(state State) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.State == StateStarting {
+		s.State = state
+	}
 }
 
 // Adopt reconnects an in-memory Server handle to a container that survived
