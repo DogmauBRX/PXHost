@@ -124,6 +124,7 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
   const {
     register: registerField,
     handleSubmit,
+    setValue: setAccountValue,
     formState: { errors, isSubmitting },
   } = useForm<AccountFormValues>({ resolver: zodResolver(accountSchema) });
 
@@ -187,6 +188,7 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
   const {
     register: registerBillingField,
     handleSubmit: handleBillingSubmit,
+    setValue: setBillingValue,
     formState: { errors: billingErrors, isSubmitting: billingSubmitting },
   } = useForm<BillingFormValues>({ resolver: zodResolver(billingSchema), values: accountData ? accountToBillingForm(accountData) : undefined });
 
@@ -406,7 +408,7 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
                 <CardBody>
                   <p className="mb-4 text-sm text-text-muted">Complete seus dados de cobrança para assinar.</p>
                   <form id="checkout-data-form" onSubmit={(e) => void handleBillingSubmit(submitBilling)(e)}>
-                    <BillingProfileFields register={registerBillingField} errors={billingErrors} />
+                    <BillingProfileFields register={registerBillingField} errors={billingErrors} setValue={setBillingValue} />
                   </form>
                 </CardBody>
               </Card>
@@ -446,7 +448,7 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
                   </div>
 
                   <SectionHeading icon={MapPin}>Endereço de cobrança</SectionHeading>
-                  <BillingProfileFields register={registerField} errors={errors} />
+                  <BillingProfileFields register={registerField} errors={errors} setValue={setAccountValue} />
 
                   <SectionHeading icon={ShieldCheck}>Segurança da conta</SectionHeading>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

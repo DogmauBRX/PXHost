@@ -163,6 +163,7 @@ function BillingCard() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<BillingFormValues>({
     resolver: zodResolver(billingSchema),
@@ -207,7 +208,7 @@ function BillingCard() {
             )}
             {serverError && <Alert onDismiss={() => setServerError(null)}>{serverError}</Alert>}
 
-            <BillingProfileFields register={register} errors={errors} />
+            <BillingProfileFields register={register} errors={errors} setValue={setValue} />
 
             <div>
               <Button type="submit" variant="primary" disabled={isSubmitting}>

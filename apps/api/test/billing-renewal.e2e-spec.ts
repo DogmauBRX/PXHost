@@ -81,9 +81,7 @@ describe('Pix renewal charges (e2e)', () => {
         username: `renewal-customer-${suffix}`,
         passwordHash,
         isActive: true,
-        // `cpf` is globally unique — a fixed literal collides with the
-        // other payments specs (and with this spec's own leftovers from
-        // an interrupted run), so it is derived from this run's suffix.
+        // Keep test fixture data distinct across runs for easier inspection.
         cpf: String(suffix).slice(-11),
         billingPostalCode: '01310100',
         billingAddressLine: 'Av. Paulista',

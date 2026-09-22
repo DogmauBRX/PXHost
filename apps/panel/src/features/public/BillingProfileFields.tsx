@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { z } from 'zod';
-import type { FieldErrors, UseFormRegister } from 'react-hook-form';
+import type { FieldErrors, UseFormRegister, UseFormSetValue } from 'react-hook-form';
 import { CreditCard, Hash, Home, Landmark, MapPin } from 'lucide-react';
 import { Field, Input, Select } from '@/ui/primitives';
 import type { ClientAccount } from '@/shared/api/types';
@@ -69,10 +70,56 @@ export function accountToBillingForm(account: ClientAccount): BillingFormValues 
 export function BillingProfileFields<T extends BillingFormValues>({
   register,
   errors,
+  setValue,
 }: {
   register: UseFormRegister<T>;
   errors: FieldErrors<T>;
+  setValue: UseFormSetValue<T>;
 }) {
+  const [typedCep, setTypedCep] = useState('');
+  const [cepStatus, setCepStatus] = useState<'idle' | 'loading' | 'found' | 'missing' | 'error'>('idle');
+  const postalField = register('billingPostalCode' as never);
+
+  useEffect(() => {
+    const cep = typedCep.replace(/\D/g, '');
+    if (cep.length !== 8) return;
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setCepStatus('loading');
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`, { signal: controller.signal });
+        if (!response.ok) throw new Error('CEP lookup failed');
+        const address = await response.json() as {
+          erro?: boolean;
+          logradouro?: string;
+          bairro?: string;
+          localidade?: string;
+          uf?: string;
+        };
+        if (controller.signal.aborted) return;
+        if (address.erro) {
+          setCepStatus('missing');
+          return;
+        }
+        // Some CEPs cover a whole city and have no street or neighborhood.
+        // Fill what exists and leave every field editable for corrections.
+        if (address.logradouro) setValue('billingAddressLine' as never, address.logradouro as never, { shouldValidate: true });
+        if (address.bairro) setValue('billingNeighborhood' as never, address.bairro as never, { shouldValidate: true });
+        if (address.localidade) setValue('billingCity' as never, address.localidade as never, { shouldValidate: true });
+        if (address.uf) setValue('billingState' as never, address.uf as never, { shouldValidate: true });
+        setCepStatus('found');
+      } catch {
+        if (!controller.signal.aborted) setCepStatus('error');
+      }
+    }, 400);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [typedCep, setValue]);
+
   return (
     <div className="space-y-4">
       <Field label="CPF" htmlFor="billing-cpf" error={errors.cpf?.message as string | undefined}>
@@ -86,8 +133,19 @@ export function BillingProfileFields<T extends BillingFormValues>({
             icon={Hash}
             placeholder="00000-000"
             invalid={!!errors.billingPostalCode}
-            {...register('billingPostalCode' as never)}
+            {...postalField}
+            onChange={(event) => {
+              void postalField.onChange(event);
+              setTypedCep(event.target.value);
+              setCepStatus('idle');
+            }}
           />
+          <p className="mt-1 text-xs text-text-muted" aria-live="polite">
+            {cepStatus === 'loading' && 'Buscando endereço…'}
+            {cepStatus === 'found' && 'Endereço preenchido. Confira os dados e informe o número.'}
+            {cepStatus === 'missing' && 'CEP não encontrado. Confira o número ou preencha o endereço manualmente.'}
+            {cepStatus === 'error' && 'Não foi possível consultar o CEP. Preencha o endereço manualmente.'}
+          </p>
         </Field>
         <Field label="Endereço" htmlFor="billing-address-line" error={errors.billingAddressLine?.message as string | undefined}>
           <Input id="billing-address-line" icon={Home} invalid={!!errors.billingAddressLine} {...register('billingAddressLine' as never)} />

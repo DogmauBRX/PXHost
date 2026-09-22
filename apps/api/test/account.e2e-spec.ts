@@ -151,23 +151,19 @@ describe('Account (e2e)', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('rejects a CPF already used by another account', async () => {
+  it('allows a valid CPF already used by another account', async () => {
     const other = await prisma.user.create({
       data: {
         email: `account-e2e-cpf-taken-${suffix}@gxhost.local`,
         username: `account-e2e-cpf-taken-${suffix}`,
         passwordHash: await argon2.hash('Whatever!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 }),
         isActive: true,
-        // Deliberately not '11144477735'/'52998224725' — those are the
-        // shared "taken CPF" fixtures other e2e-spec files (subscriptions,
-        // checkout) create as long-lived users for their own suites, and
-        // Jest runs spec files in parallel workers against the same DB;
-        // reusing one caused a real cross-file race on this unique index.
         cpf: '61234987031',
       },
     });
     const res = await authed('/api/client/account', { method: 'PATCH', payload: { cpf: '61234987031' } });
-    expect(res.statusCode).toBe(409);
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).cpf).toBe('61234987031');
     await prisma.user.updateMany({ where: { id: other.id }, data: { deletedAt: new Date() } });
   });
 

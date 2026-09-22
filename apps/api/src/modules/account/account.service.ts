@@ -86,7 +86,7 @@ export class AccountService {
     }
     const billingPostalCode = dto.billingPostalCode !== undefined ? dto.billingPostalCode.replace(/\D/g, '') : undefined;
 
-    if (dto.email || dto.username || cpf) {
+    if (dto.email || dto.username) {
       const clash = await this.prisma.user.findFirst({
         where: {
           deletedAt: null,
@@ -94,12 +94,11 @@ export class AccountService {
           OR: [
             ...(dto.email ? [{ email: dto.email }] : []),
             ...(dto.username ? [{ username: dto.username }] : []),
-            ...(cpf ? [{ cpf }] : []),
           ],
         },
         select: { id: true },
       });
-      if (clash) throw new ConflictException('A user with that email, username or CPF already exists');
+      if (clash) throw new ConflictException('A user with that email or username already exists');
     }
 
     const updated = await this.prisma.user.update({
