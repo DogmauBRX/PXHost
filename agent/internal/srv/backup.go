@@ -62,6 +62,20 @@ func (s *Server) Restore(ctx context.Context, provider backup.Provider, backupID
 	if err := os.MkdirAll(stagingDir, 0o750); err != nil {
 		return fmt.Errorf("srv: preparing restore staging dir: %w", err)
 	}
+	// os.MkdirAll leaves stagingDir itself owned by the AGENT's own uid —
+	// provider.Restore below only chowns the ENTRIES it extracts from the
+	// archive (via dest.MkdirAll/dest.WriteFile), never this root, since a
+	// backup tar has no entry for its own ".". Without this, the root
+	// stays agent-owned through the swap below (rename never changes
+	// ownership), leaving the live data directory unreadable to the
+	// server's own sandboxed uid — exactly modpack.go's copyTree bug
+	// (chownStagedPath's own doc comment), just never fixed here. Found
+	// live: a restored server whose every install/start attempt failed
+	// with "Permission denied" cd'ing into its own data directory.
+	if err := chownStagedPath(stagingDir, s.spec.UID); err != nil {
+		_ = os.RemoveAll(stagingDir)
+		return fmt.Errorf("srv: preparing restore staging dir: %w", err)
+	}
 	stagingJail, err := fsx.Open(stagingDir)
 	if err != nil {
 		_ = os.RemoveAll(stagingDir)

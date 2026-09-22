@@ -214,3 +214,37 @@ func SweepStaleOldDirs(dataDir string, log *slog.Logger) {
 		log.Warn("stale-old-dir sweep: removed abandoned swap leftover", "dir", oldPath)
 	}
 }
+
+// ReassertDataDirOwnership re-chowns every registered server's LIVE data
+// directory to its own sandboxed uid — the self-healing half of the
+// ownership bug backup.go's Restore had (see its own doc comment): a
+// server whose directory silently ended up agent-owned (a swap whose
+// staging root was never chowned, or any other silent chown(2) failure —
+// New()'s own creation-time chown is itself best-effort and, like
+// Restore's, never surfaced a failure anywhere) needs SOMETHING that
+// notices and fixes it without a person finding the "Permission denied"
+// first. Found live: two servers with a live-owned-by-agent directory at
+// once, only one of which could be traced to the Restore bug — the other
+// had no on-disk evidence of a cause at all, which is exactly what an
+// unlogged best-effort chown failure looks like after the fact.
+//
+// os.Chown is idempotent and cheap on an already-correctly-owned
+// directory — this is safe to run on every tick, not just at boot, so a
+// FUTURE silent failure (still possible: this doesn't remove every
+// best-effort chown elsewhere, it backstops them) self-heals within one
+// reconcile interval instead of needing a restart.
+func (m *Manager) ReassertDataDirOwnership(log *slog.Logger) {
+	m.mu.RLock()
+	servers := make([]*Server, 0, len(m.servers))
+	for _, s := range m.servers {
+		servers = append(servers, s)
+	}
+	m.mu.RUnlock()
+
+	for _, s := range servers {
+		dataDir := filepath.Join(s.node.DataDir, s.UUID)
+		if err := os.Chown(dataDir, s.spec.UID, s.spec.UID); err != nil {
+			log.Warn("failed to reassert data directory ownership", "uuid", s.UUID, "dir", dataDir, "uid", s.spec.UID, "err", err)
+		}
+	}
+}

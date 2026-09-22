@@ -110,6 +110,15 @@ func runServeCmd(args []string) error {
 	if err != nil {
 		return fmt.Errorf("reconciling managed containers: %w", err)
 	}
+	// Self-healing for the class of bug backup.go's Restore had (now
+	// fixed, but the same "MkdirAll leaves a directory agent-owned"
+	// mistake could recur anywhere a chown is best-effort — New()'s own
+	// creation-time one included): re-chown every adopted server's data
+	// directory now, so a server that has carried a wrong owner since
+	// before this fix existed gets corrected on this restart rather than
+	// needing someone to notice a "Permission denied" first.
+	manager.ReassertDataDirOwnership(slog.Default())
+
 	for _, p := range serverPaths {
 		if err := loadAndAdopt(ctx, manager, dc, node, p, *autostart); err != nil {
 			return fmt.Errorf("loading %s: %w", p, err)
@@ -594,6 +603,13 @@ func runReconcileLoop(ctx context.Context, manager *srv.Manager, nf config.NodeF
 		if err := client.ReportInventory(reqCtx, tokenStore.Get(), panel.InventoryRequest{ServerUUIDs: manager.UUIDs()}); err != nil {
 			fmt.Printf("orphan reconcile: failed to report inventory (will retry in %s): %v\n", orphanReconcileInterval, err)
 		}
+
+		// Same self-healing as the one-shot call at boot (see its own doc
+		// comment) — run every tick too, so a chown that silently failed
+		// AFTER this node last restarted (a server created since, a
+		// restore or modpack swap whose own best-effort chown missed) is
+		// corrected within one interval instead of needing a restart.
+		manager.ReassertDataDirOwnership(log)
 	}
 
 	reconcile()
