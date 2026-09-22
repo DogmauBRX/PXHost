@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, UserPlus, UsersRound, X } from 'lucide-react';
 import {
@@ -57,7 +58,7 @@ export function FriendsDrawer() {
         {incomingCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[0.65rem] font-bold text-accent-contrast">{incomingCount > 9 ? '9+' : incomingCount}</span>}
       </button>
 
-      {open && (
+      {open && createPortal(
         <div className="fixed inset-0 z-50" role="presentation">
           <button className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" aria-label="Fechar amigos" onClick={() => setOpen(false)} />
           <aside className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl" role="dialog" aria-modal="true" aria-label="Amigos">
@@ -90,7 +91,8 @@ export function FriendsDrawer() {
               </>}
             </div>
           </aside>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
