@@ -40,6 +40,18 @@ export interface CommunityServer {
   isOwner: boolean;
 }
 
+export interface CommunityServerDetails extends CommunityServer {
+  modpack: {
+    source: string;
+    projectId: string;
+    projectName: string;
+    versionName: string;
+    minecraftVersion: string;
+    loader: string;
+    completedAt: string | null;
+  } | null;
+}
+
 export interface PublishableServer {
   id: string;
   name: string;
@@ -55,6 +67,8 @@ export const requestFriend = (userId: string) => apiFetch(`/api/client/community
 export const acceptFriend = (friendshipId: string) => apiFetch(`/api/client/community/friends/${friendshipId}/accept`, { method: 'POST' });
 export const removeFriend = (friendshipId: string) => apiFetch(`/api/client/community/friends/${friendshipId}`, { method: 'DELETE' });
 export const getCommunityServers = () => apiFetch<CommunityServer[]>('/api/client/community/servers');
+export const getCommunityServerDetails = (listingId: string) => apiFetch<CommunityServerDetails>(`/api/client/community/servers/${listingId}/details`);
+export const downloadCommunityClientFiles = (listingId: string) => apiFetch<{ url: string; filename: string; expiresIn: number }>(`/api/client/community/servers/${listingId}/download`, { method: 'POST' });
 export const getPublishableServers = () => apiFetch<PublishableServer[]>('/api/client/community/my-servers');
 export const publishServer = (serverId: string, description: string) => apiFetch(`/api/client/community/servers/${serverId}`, { method: 'PUT', body: JSON.stringify({ description }) });
 export const unpublishServer = (serverId: string) => apiFetch(`/api/client/community/servers/${serverId}`, { method: 'DELETE' });

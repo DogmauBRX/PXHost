@@ -2,6 +2,11 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { toClientServerSummary } from '../servers/server-view';
+import { AgentClient } from '../nodes/agent-client.service';
+import { CapabilityTokenService } from '../../core/capability-token/capability-token.service';
+
+const CLIENT_MODS_ARCHIVE = '.gxhost-community-client-mods.zip';
+const DOWNLOAD_TOKEN_TTL_SECONDS = 60;
 
 const publicUser = { id: true, username: true, firstName: true, lastName: true } as const;
 
@@ -10,6 +15,8 @@ export class SocialService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly agent: AgentClient,
+    private readonly capabilityTokens: CapabilityTokenService,
   ) {}
 
   private pairKey(a: string, b: string) {
@@ -106,6 +113,60 @@ export class SocialService {
     ]);
     const friendIds = new Set(friendships.map((f) => (f.requesterId === userId ? f.addresseeId : f.requesterId)));
     return listings.map((listing) => ({ ...listing, isFriend: friendIds.has(listing.ownerId), isOwner: listing.ownerId === userId }));
+  }
+
+  async details(listingId: string) {
+    const listing = await this.prisma.communityServer.findUnique({
+      where: { id: listingId },
+      include: { owner: { select: publicUser } },
+    });
+    if (!listing) throw new NotFoundException('Servidor publicado não encontrado.');
+    const modpack = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+      tx.modpackInstallation.findFirst({
+        where: { serverId: listing.serverId, status: 'completed' },
+        orderBy: { completedAt: 'desc' },
+        select: {
+          source: true,
+          projectId: true,
+          projectName: true,
+          versionName: true,
+          minecraftVersion: true,
+          loader: true,
+          completedAt: true,
+        },
+      }),
+    );
+    return { ...listing, modpack };
+  }
+
+  async downloadClientFiles(userId: string, listingId: string) {
+    const listing = await this.prisma.communityServer.findUnique({ where: { id: listingId }, select: { serverId: true } });
+    if (!listing) throw new NotFoundException('Servidor publicado não encontrado.');
+    const server = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+      tx.server.findUnique({
+        where: { id: listing.serverId },
+        select: { id: true, nodeId: true, node: { select: { scheme: true, fqdn: true, daemonPort: true } } },
+      }),
+    );
+    if (!server) throw new NotFoundException('Servidor não encontrado.');
+    const mods = await this.agent.listFiles(server.nodeId, server.id, 'mods');
+    if (!mods.some((entry) => !entry.isDir)) throw new BadRequestException('Este servidor não possui mods adicionais para download.');
+    await this.agent.compress(server.nodeId, server.id, ['mods'], CLIENT_MODS_ARCHIVE);
+    const token = this.capabilityTokens.mint({
+      serverUuid: server.id,
+      nodeUuid: server.nodeId,
+      userId,
+      cap: 'file.download',
+      permissions: [],
+      ttlSeconds: DOWNLOAD_TOKEN_TTL_SECONDS,
+      ctx: { path: CLIENT_MODS_ARCHIVE },
+    });
+    const target = this.agent.fileTransferUrl(server.node.scheme, server.node.fqdn, server.node.daemonPort, server.id, 'download');
+    return {
+      url: `${target}?path=${encodeURIComponent(CLIENT_MODS_ARCHIVE)}&token=${token}`,
+      filename: 'gxhost-client-mods.zip',
+      expiresIn: DOWNLOAD_TOKEN_TTL_SECONDS,
+    };
   }
 
   async myServers(userId: string) {

@@ -38,6 +38,16 @@ export class SocialController {
     return this.social.directory(user.id);
   }
 
+  @Get('servers/:listingId/details')
+  details(@Param('listingId') listingId: string) {
+    return this.social.details(listingId);
+  }
+
+  @Post('servers/:listingId/download')
+  downloadClientFiles(@CurrentUser() user: AuthenticatedUser, @Param('listingId') listingId: string) {
+    return this.social.downloadClientFiles(user.id, listingId);
+  }
+
   @Get('my-servers')
   myServers(@CurrentUser() user: AuthenticatedUser) {
     return this.social.myServers(user.id);
