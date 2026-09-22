@@ -13,7 +13,7 @@ import { formatBytes } from '@/shared/format/datetime';
 import { Terminal } from './Terminal';
 import { PowerControls } from './PowerControls';
 import { cpuSeverity, memorySeverity, type Severity } from '@/features/client/advisory';
-import { Alert, Button, Card, CardBody, Gauge, Input, StatusBadge, type GaugeHandle } from '@/ui/primitives';
+import { Alert, Button, Card, CardBody, Gauge, Input, type GaugeHandle } from '@/ui/primitives';
 
 // Same three-tone vocabulary Gauge/Meter already use — 'warn'/'critical'
 // from advisory.ts's Severity just needed renaming to line up with it.
@@ -111,6 +111,16 @@ export function ConsolePage({ serverId }: { serverId: string }) {
   });
 
   const displayState = powerState ?? server?.powerState ?? 'offline';
+  const serverIsActive = displayState === 'running';
+  const serverStateDetail = serverIsActive
+    ? 'Servidor online e recebendo conexões.'
+    : displayState === 'starting'
+      ? 'O servidor está iniciando.'
+      : displayState === 'stopping'
+        ? 'O servidor está sendo desligado.'
+        : displayState === 'crashed'
+          ? 'O servidor parou inesperadamente.'
+          : 'Inicie o servidor para receber conexões.';
   const connected = connectionState === 'open';
   const canEditHostname = server?.permissions.includes('hostname.update') ?? false;
 
@@ -208,10 +218,7 @@ export function ConsolePage({ serverId }: { serverId: string }) {
                 <Server className="h-5 w-5" aria-hidden="true" />
               </div>
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <h1 className="truncate text-2xl font-semibold tracking-tight text-text">{server?.name ?? '…'}</h1>
-                  <StatusBadge status={displayState} label={powerStateLabel(displayState)} />
-                </div>
+                <h1 className="truncate text-2xl font-semibold tracking-tight text-text">{server?.name ?? '…'}</h1>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-muted">
                   {server?.template && <span className="font-medium text-text-muted">{server.template.name}{minecraftVersion ? ` ${minecraftVersion}` : ''}</span>}
                   {liveUptimeMs != null && <span className="inline-flex items-center gap-1.5"><Clock className="h-4 w-4" aria-hidden="true" />Ativo há {formatUptime(liveUptimeMs)}</span>}
@@ -317,6 +324,18 @@ export function ConsolePage({ serverId }: { serverId: string }) {
           </div>
         </CardBody>
       </Card>
+
+      <section
+        className={`flex items-center gap-4 rounded-card border px-5 py-4 shadow-xs ${serverIsActive ? 'border-ok/30 bg-ok/10' : displayState === 'crashed' ? 'border-fail/30 bg-fail/10' : 'border-border bg-surface'}`}
+        aria-live="polite"
+      >
+        <span className={`h-4 w-4 shrink-0 rounded-full ${serverIsActive ? 'bg-ok shadow-[0_0_18px_rgb(52_211_153/0.8)]' : displayState === 'crashed' ? 'bg-fail shadow-[0_0_18px_rgb(251_113_133/0.75)]' : 'bg-text-faint shadow-[0_0_14px_rgb(148_163_184/0.4)]'}`} aria-hidden="true" />
+        <div>
+          <p className="text-xs font-bold tracking-[0.16em] text-text-faint uppercase">Status do servidor</p>
+          <p className={`mt-0.5 text-2xl font-bold tracking-tight ${serverIsActive ? 'text-ok' : displayState === 'crashed' ? 'text-fail' : 'text-text'}`}>{powerStateLabel(displayState)}</p>
+          <p className="mt-0.5 text-sm text-text-muted">{serverStateDetail}</p>
+        </div>
+      </section>
 
       <div id="console-live" className="flex scroll-mt-5 items-center gap-2.5">
         <span className="h-2.5 w-2.5 rounded-full bg-ok shadow-[0_0_10px_rgb(52_211_153/0.65)]" aria-hidden="true" />
