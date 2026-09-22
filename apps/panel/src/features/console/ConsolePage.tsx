@@ -224,12 +224,6 @@ export function ConsolePage({ serverId }: { serverId: string }) {
                 </div>
               </div>
             </div>
-            <div className="flex w-fit items-center gap-2">
-              <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${connected ? 'border-ok/25 bg-ok/10 text-ok' : 'border-border bg-surface-2 text-text-faint'}`}>
-                <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
-                {CONN_LABEL[connectionState]}
-              </span>
-            </div>
           </div>
 
           {server?.publicAddress && (
@@ -345,9 +339,13 @@ export function ConsolePage({ serverId }: { serverId: string }) {
         </div>
       </section>
 
-      <div id="console-live" className="flex scroll-mt-5 items-center gap-2.5">
+      <div id="console-live" className="flex scroll-mt-5 flex-wrap items-center gap-2.5">
         <span className="h-2.5 w-2.5 rounded-full bg-ok shadow-[0_0_10px_rgb(52_211_153/0.65)]" aria-hidden="true" />
         <p className="text-lg font-semibold tracking-tight text-text">Console ao vivo</p>
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${connected ? 'border-ok/25 bg-ok/10 text-ok' : 'border-border bg-surface-2 text-text-faint'}`}>
+          <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
+          {CONN_LABEL[connectionState]}
+        </span>
         <button
           type="button"
           onClick={reconnect}
