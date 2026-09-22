@@ -221,7 +221,6 @@ export function ConsolePage({ serverId }: { serverId: string }) {
                 <h1 className="truncate text-2xl font-semibold tracking-tight text-text">{server?.name ?? '…'}</h1>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-muted">
                   {server?.template && <span className="font-medium text-text-muted">{server.template.name}{minecraftVersion ? ` ${minecraftVersion}` : ''}</span>}
-                  {liveUptimeMs != null && <span className="inline-flex items-center gap-1.5"><Clock className="h-4 w-4" aria-hidden="true" />Ativo há {formatUptime(liveUptimeMs)}</span>}
                 </div>
               </div>
             </div>
@@ -333,7 +332,15 @@ export function ConsolePage({ serverId }: { serverId: string }) {
         <div>
           <p className="text-xs font-bold tracking-[0.16em] text-text-faint uppercase">Status do servidor</p>
           <p className={`mt-0.5 text-2xl font-bold tracking-tight ${serverIsActive ? 'text-ok' : displayState === 'crashed' ? 'text-fail' : 'text-text'}`}>{powerStateLabel(displayState)}</p>
-          <p className="mt-0.5 text-sm text-text-muted">{serverStateDetail}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-muted">
+            <p>{serverStateDetail}</p>
+            {liveUptimeMs != null && (
+              <span className="inline-flex items-center gap-1.5 font-medium text-ok">
+                <Clock className="h-4 w-4" aria-hidden="true" />
+                Ativo há {formatUptime(liveUptimeMs)}
+              </span>
+            )}
+          </div>
         </div>
       </section>
 
