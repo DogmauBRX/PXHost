@@ -1,6 +1,7 @@
-import { Home, Menu, Users } from 'lucide-react';
+import { Gamepad2, Home, Menu } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { useUiStore } from '@/shared/stores/ui.store';
+import { FriendsDrawer } from './FriendsDrawer';
 
 export function Topbar({ area }: { area: 'admin' | 'client' }) {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
@@ -30,7 +31,7 @@ export function Topbar({ area }: { area: 'admin' | 'client' }) {
             to="/client/community"
             className="group relative flex items-center gap-2 rounded-xl border border-border bg-surface-2/55 px-3 py-2 text-sm font-medium text-text-muted shadow-xs transition-all hover:-translate-y-px hover:border-accent/35 hover:bg-accent/10 hover:text-accent-strong"
           >
-            <Users className="h-4 w-4" aria-hidden="true" />
+            <Gamepad2 className="h-4 w-4" aria-hidden="true" />
             <span className="hidden sm:inline">Comunidade</span>
           </Link>
         )}
@@ -42,6 +43,7 @@ export function Topbar({ area }: { area: 'admin' | 'client' }) {
           <Home className="h-4 w-4 transition-transform group-hover:-translate-y-px" aria-hidden="true" />
           <span className="hidden sm:inline">Página principal</span>
         </Link>
+        {area === 'client' && <FriendsDrawer />}
       </div>
     </header>
   );
