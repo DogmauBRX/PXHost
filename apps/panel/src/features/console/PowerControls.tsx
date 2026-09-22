@@ -40,28 +40,37 @@ export function PowerControls({ state, permissions, onAction }: PowerControlsPro
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <Button variant="primary" disabled={!canStart || !has('start')} onClick={() => onAction('start')}>
-        <Play className="h-4 w-4" aria-hidden="true" />
-        {LABEL.start}
-      </Button>
-      <Button variant="secondary" disabled={!canStop || !has('restart')} onClick={() => onAction('restart')}>
-        <RotateCcw className="h-4 w-4" aria-hidden="true" />
-        {LABEL.restart}
-      </Button>
-      <Button variant="secondary" disabled={!canStop || !has('stop')} onClick={() => onAction('stop')}>
-        <Square className="h-3.5 w-3.5" aria-hidden="true" />
-        {LABEL.stop}
-      </Button>
-      <Button
-        variant="danger"
-        disabled={!has('kill')}
-        onClick={handleKillClick}
-        title={armedKill ? 'Clique novamente para confirmar' : undefined}
-      >
-        <OctagonAlert className="h-4 w-4" aria-hidden="true" />
-        {armedKill ? 'Confirmar?' : LABEL.kill}
-      </Button>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-1 w-full text-[0.62rem] font-bold tracking-[0.16em] text-text-faint uppercase sm:mr-0 sm:w-auto">Operação</span>
+        <Button variant="primary" disabled={!canStart || !has('start')} onClick={() => onAction('start')}>
+          <Play className="h-4 w-4" aria-hidden="true" />
+          {LABEL.start}
+        </Button>
+        <Button variant="secondary" disabled={!canStop || !has('restart')} onClick={() => onAction('restart')}>
+          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+          {LABEL.restart}
+        </Button>
+        <Button variant="secondary" disabled={!canStop || !has('stop')} onClick={() => onAction('stop')}>
+          <Square className="h-3.5 w-3.5" aria-hidden="true" />
+          {LABEL.stop}
+        </Button>
+      </div>
+
+      <div className="hidden w-px bg-border sm:block" aria-hidden="true" />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-1 w-full text-[0.62rem] font-bold tracking-[0.16em] text-text-faint uppercase sm:mr-0 sm:w-auto">Emergência</span>
+        <Button
+          variant="danger"
+          disabled={!has('kill')}
+          onClick={handleKillClick}
+          title={armedKill ? 'Clique novamente para confirmar' : 'Interrompe o servidor sem esperar o desligamento seguro'}
+        >
+          <OctagonAlert className="h-4 w-4" aria-hidden="true" />
+          {armedKill ? 'Confirmar parada' : LABEL.kill}
+        </Button>
+      </div>
     </div>
   );
 }

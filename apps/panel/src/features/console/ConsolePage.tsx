@@ -217,10 +217,21 @@ export function ConsolePage({ serverId }: { serverId: string }) {
                 </div>
               </div>
             </div>
-            <span className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${connected ? 'border-ok/25 bg-ok/10 text-ok' : 'border-border bg-surface-2 text-text-faint'}`}>
-              <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
-              {CONN_LABEL[connectionState]}
-            </span>
+            <div className="flex w-fit items-center gap-2">
+              <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${connected ? 'border-ok/25 bg-ok/10 text-ok' : 'border-border bg-surface-2 text-text-faint'}`}>
+                <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
+                {CONN_LABEL[connectionState]}
+              </span>
+              <button
+                type="button"
+                onClick={reconnect}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-text-faint transition hover:border-accent/40 hover:bg-accent/10 hover:text-accent-strong"
+                title="Reconectar o console"
+                aria-label="Reconectar o console"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${connectionState === 'connecting' || connectionState === 'authenticating' || connectionState === 'reconnecting' ? 'animate-spin' : ''}`} aria-hidden="true" />
+              </button>
+            </div>
           </div>
 
           {server?.publicAddress && (
@@ -287,10 +298,10 @@ export function ConsolePage({ serverId }: { serverId: string }) {
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-3 border-t border-border bg-surface-2/35 px-5 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-4 border-t border-border bg-surface-2/35 px-5 py-4 sm:px-6 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-sm font-semibold text-text">Controles de energia</p>
-            <p className="mt-0.5 text-xs text-text-faint">As ações são aplicadas imediatamente ao servidor.</p>
+            <p className="mt-0.5 text-xs text-text-faint">Use a parada forçada somente se o desligamento normal não responder.</p>
           </div>
           <PowerControls state={displayState} permissions={permissions} onAction={sendPower} />
         </div>
@@ -312,27 +323,10 @@ export function ConsolePage({ serverId }: { serverId: string }) {
         </CardBody>
       </Card>
 
-      {/* The socket can go quietly dead without ever firing `onclose` (some
-          networks/proxies swallow the TCP teardown), leaving the badge
-          above stuck on "Conectado" while nothing typed below actually
-          reaches the agent — found live: commands stopped sending with no
-          visible error. This button forces a fresh connection on demand
-          instead of waiting for the automatic reconnect to eventually
-          notice, right next to the terminal so it's obvious what to reach
-          for when a command seems to hang. */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-text">Console</p>
-        <button
-          type="button"
-          onClick={reconnect}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-text-muted transition hover:border-accent/40 hover:bg-accent/10 hover:text-accent-strong"
-          title="Reconecta o console agora — use se um comando parar de enviar ou o console travar"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${connectionState === 'connecting' || connectionState === 'authenticating' || connectionState === 'reconnecting' ? 'animate-spin' : ''}`} aria-hidden="true" />
-          Atualizar console
-        </button>
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-ok shadow-[0_0_10px_rgb(52_211_153/0.65)]" aria-hidden="true" />
+        <p className="text-sm font-semibold text-text">Console ao vivo</p>
       </div>
-      <p className="-mt-2 text-xs text-text-faint">Reconecta o console na hora — use se um comando parar de enviar ou o console travar.</p>
 
       {/* Deliberately bounded. xterm's FitAddon derives its row count from
           the container's clientHeight — an auto-height parent measures 0 and
