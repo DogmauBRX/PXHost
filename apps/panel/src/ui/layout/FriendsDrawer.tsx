@@ -52,7 +52,7 @@ export function FriendsDrawer() {
         onClick={() => setOpen(true)}
         aria-label="Abrir amigos"
         title="Amigos"
-        className="group relative flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface-2/55 text-text-muted shadow-xs transition-all hover:-translate-y-px hover:border-accent/35 hover:bg-accent/10 hover:text-accent-strong"
+        className="group relative flex h-10 w-10 items-center justify-center rounded-xl border border-sky-300/45 bg-surface-2 text-sky-300 shadow-xs transition-all hover:-translate-y-px hover:border-sky-200 hover:bg-surface-3 hover:text-sky-200"
       >
         <UsersRound className="h-[18px] w-[18px]" aria-hidden="true" />
         {incomingCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[0.65rem] font-bold text-accent-contrast">{incomingCount > 9 ? '9+' : incomingCount}</span>}
