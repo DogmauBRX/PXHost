@@ -289,11 +289,7 @@ export function ConsolePage({ serverId }: { serverId: string }) {
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-4 border-t border-border bg-surface-2/35 px-5 py-4 sm:px-6 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-text">Controles de energia</p>
-            <p className="mt-0.5 text-xs text-text-faint">Use a parada forçada somente se o desligamento normal não responder.</p>
-          </div>
+        <div className="border-t border-border bg-surface-2/35 px-5 py-4 sm:px-6">
           <PowerControls state={displayState} permissions={permissions} onAction={sendPower} />
         </div>
       </section>
