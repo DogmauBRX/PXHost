@@ -14,6 +14,7 @@ describe('Checkout (e2e)', () => {
   let redis: RedisService;
   let fakeProvider: FakePaymentProvider;
   let customerToken: string;
+  let customerId: string;
   let intruderToken: string;
   let cardCustomerToken: string;
   let cardCustomerId: string;
@@ -49,7 +50,7 @@ describe('Checkout (e2e)', () => {
     await prisma.user.create({
       data: { email: `checkout-admin-${suffix}@gxhost.local`, username: `checkout-admin-${suffix}`, passwordHash, globalRole: 'admin', isActive: true },
     });
-    await prisma.user.create({
+    const customer = await prisma.user.create({
       data: {
         email: `checkout-customer-${suffix}@gxhost.local`,
         username: `checkout-customer-${suffix}`,
@@ -70,6 +71,7 @@ describe('Checkout (e2e)', () => {
         billingState: 'SP',
       },
     });
+    customerId = customer.id;
     await prisma.user.create({
       data: {
         email: `checkout-intruder-${suffix}@gxhost.local`,
@@ -194,6 +196,11 @@ describe('Checkout (e2e)', () => {
     expect(body.provisioningStatus).toBe('pending');
     expect(subscriptionId).toBeTruthy();
 
+    const storedOrder: any = await asAdmin((tx) => tx.order.findUniqueOrThrow({ where: { id: body.id } }));
+    expect(storedOrder.userId).toBe(customerId);
+    expect((fakeProvider.payments.get(`fake-pay-${body.externalReference}`)?.raw as { payerEmail?: string }).payerEmail)
+      .toBe(`checkout-customer-${suffix}@gxhost.local`);
+
     const subscription: any = await asAdmin((tx) => tx.subscription.findUniqueOrThrow({ where: { id: subscriptionId } }));
     // A pix subscription has NO provider-side object: Mercado Pago has
     // no recurring pix, so there is no preapproval to point at. The
@@ -201,6 +208,21 @@ describe('Checkout (e2e)', () => {
     expect(subscription.externalSubscriptionId).toBeNull();
     expect(subscription.status).toBe('pending'); // activation is exclusively the webhook's job
     expect(subscription.autoRenew).toBe(false); // pix never auto-renews — billing-cycle generates each cycle's charge
+  });
+
+  it('rejects browser-supplied ownership and reference fields', async () => {
+    const res = await authed(customerToken, '/api/client/checkout', {
+      method: 'POST',
+      payload: {
+        planId,
+        paymentMethod: 'pix',
+        payerEmail: `checkout-customer-${suffix}@gxhost.local`,
+        userId: cardCustomerId,
+        orderId: '00000000-0000-0000-0000-000000000000',
+        externalReference: 'attacker-controlled-reference',
+      },
+    });
+    expect(res.statusCode).toBe(422);
   });
 
   it('a Pix checkout already recorded a payment row (pending), so the future webhook upserts instead of duplicating', async () => {
@@ -213,7 +235,7 @@ describe('Checkout (e2e)', () => {
   it("card checkout returns Mercado Pago's own hosted authorization URL — no card data ever reaches this platform, and activation is exclusively the webhook's job", async () => {
     const res = await authed(cardCustomerToken, '/api/client/checkout', {
       method: 'POST',
-      payload: { planId, paymentMethod: 'card' },
+      payload: { planId, paymentMethod: 'card', payerEmail: `third-party-${suffix}@outlook.com` },
     });
     expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body);
@@ -226,6 +248,10 @@ describe('Checkout (e2e)', () => {
     const subscription: any = await asAdmin((tx) => tx.subscription.findUniqueOrThrow({ where: { id: body.subscriptionId } }));
     expect(subscription.externalSubscriptionId).toBe(`fake-preapproval-${body.externalReference}`);
     expect(subscription.status).toBe('pending');
+    const storedOrder: any = await asAdmin((tx) => tx.order.findUniqueOrThrow({ where: { id: body.id } }));
+    expect(storedOrder.userId).toBe(cardCustomerId);
+    expect((fakeProvider.subscriptions.get(subscription.externalSubscriptionId)?.raw as { payerEmail?: string }).payerEmail)
+      .toBe(`third-party-${suffix}@outlook.com`);
 
     await asAdmin((tx) => tx.subscriptionEvent.deleteMany({ where: { subscriptionId: subscription.id } }));
     await asAdmin((tx) => tx.order.update({ where: { id: body.id }, data: { subscriptionId: null, status: 'cancelled' } }));

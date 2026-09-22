@@ -1,4 +1,4 @@
-import { IsIn, IsUUID } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsUUID } from 'class-validator';
 
 /**
  * Everything the customer actually chooses at checkout. Notably absent:
@@ -28,4 +28,11 @@ export class CreateCheckoutDto {
 
   @IsIn(['pix', 'card'])
   paymentMethod!: 'pix' | 'card';
+
+  // Deliberately distinct from the GXHost account e-mail. This is sent
+  // only to Mercado Pago as the payer for this checkout; ownership is
+  // always derived from the authenticated user on the server.
+  @IsOptional()
+  @IsEmail()
+  payerEmail?: string;
 }

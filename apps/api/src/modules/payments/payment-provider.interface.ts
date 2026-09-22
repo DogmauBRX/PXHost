@@ -79,8 +79,10 @@ export interface PayerAddressInput {
 }
 
 /**
- * The payer, straight off the billing profile checkout already requires
- * to be complete. Mercado Pago has no mandatory customer resource for
+ * The payer sent to Mercado Pago. Its e-mail is collected separately at
+ * checkout and may differ from the GXHost account which owns the Order;
+ * billing identity/address fields remain from that account's profile.
+ * Mercado Pago has no mandatory customer resource for
  * either flow used here — a Pix charge identifies the payer inline
  * (`payer.email` + CPF) and a preapproval by `payer_email` alone — so
  * there is deliberately no `ensureCustomer` on this interface.

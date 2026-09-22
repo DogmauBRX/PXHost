@@ -242,6 +242,7 @@ export class PaymentsWebhookService {
               paidAmountCents: payment.paidAmountCents ?? payment.amountCents,
             },
           });
+          this.logger.log(`Mercado Pago payment approved providerPaymentId=${payment.id} orderId=${order.id} userId=${order.userId}`);
           await this.audit.record({ action: 'payment.approved', targetType: 'order', targetId: order.id, metadata: { paymentId: payment.id } });
 
           if (order.kind === 'plan_renewal') {

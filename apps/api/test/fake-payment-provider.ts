@@ -64,7 +64,7 @@ export class FakePaymentProvider implements PaymentProvider {
       paymentTypeId: 'bank_transfer',
       installments: null,
       approvedAt: null,
-      raw: {},
+      raw: { payerEmail: input.payer.email },
       qrCode: `fake-qr-copy-paste-${id}`,
       qrCodeBase64: 'ZmFrZS1xci1wbmc=',
       expiresAt: input.expiresAt,
@@ -87,7 +87,7 @@ export class FakePaymentProvider implements PaymentProvider {
       externalReference: input.externalReference,
       nextDueDate: null,
       initPoint: `https://fake.mercadopago.test/checkout/${id}`,
-      raw: {},
+      raw: { payerEmail: input.payer.email },
     };
     this.subscriptions.set(id, subscription);
     return subscription;

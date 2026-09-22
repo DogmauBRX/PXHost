@@ -121,18 +121,16 @@ export class OrdersService {
   }
 
   /**
-   * The payer, as every Mercado Pago call here wants it. There is no
-   * `ensureCustomer` step anymore: Mercado Pago requires no customer
-   * resource for either flow this platform uses — a Pix charge
-   * identifies the payer inline (`payer.email` + CPF) and a preapproval
-   * by `payer_email` alone. The `payment_customers` table stays in place
-   * holding the previous provider's ids (financial history is never
-   * deleted because the provider changed), simply unused from here on.
+   * Builds the payer sent to Mercado Pago. The billing profile provides
+   * the required tax/address data, while `payerEmail` is intentionally a
+   * separate checkout field: it may belong to a different person/account
+   * than the GXHost user that owns the order. The `PaymentCustomer` table
+   * stays unused under Mercado Pago; it only retains old provider history.
    */
-  private toPayerInput(profile: BillingProfile): PayerInput {
+  private toPayerInput(profile: BillingProfile, payerEmail = profile.email): PayerInput {
     return {
       userId: profile.userId,
-      email: profile.email,
+      email: payerEmail,
       firstName: profile.firstName,
       lastName: profile.lastName,
       cpf: profile.cpf,
@@ -297,6 +295,10 @@ export class OrdersService {
       paymentMethod: dto.paymentMethod,
       billingPeriod,
       externalReference: order.externalReference,
+      // Old clients may omit it during rollout: retain their established
+      // same-email behavior. The current checkout always supplies it and
+      // lets the customer choose a different Mercado Pago account.
+      payerEmail: dto.payerEmail?.trim().toLowerCase(),
     });
   }
 
@@ -338,11 +340,12 @@ export class OrdersService {
       paymentMethod: 'pix' | 'card';
       billingPeriod: SubscriptionBillingPeriod;
       externalReference: string;
+      payerEmail?: string;
     },
   ) {
     try {
       const profile = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => this.loadBillingProfile(tx, input.userId));
-      const payer = this.toPayerInput(profile);
+      const payer = this.toPayerInput(profile, input.payerEmail);
 
       if (input.paymentMethod === 'pix') {
         const ttlMinutes = this.config.get<number>('CHECKOUT_ORDER_TTL_MINUTES') ?? 1440;

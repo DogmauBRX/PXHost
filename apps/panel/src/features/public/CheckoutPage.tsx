@@ -112,6 +112,7 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
   const [forceBillingForm, setForceBillingForm] = useState(false);
 
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card'>('pix');
+  const [payerEmail, setPayerEmail] = useState('');
   const [submittingCheckout, setSubmittingCheckout] = useState(false);
   // Checkout redesign (WHMCS-style) — which billing-cycle SIBLING of the
   // route's plan is actually selected. Switching cycles never navigates
@@ -185,6 +186,13 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
   const notFound = error instanceof ApiError && error.status === 404;
   const billingComplete = accountData ? isBillingProfileComplete(accountData) : false;
 
+  // The Mercado Pago payer is a checkout-specific identity. Prefill it
+  // from the GXHost login only as a convenience; the customer may replace
+  // it with the account that will actually authorize/pay the charge.
+  useEffect(() => {
+    if (accountData?.email) setPayerEmail((current) => current || accountData.email);
+  }, [accountData?.email]);
+
   const {
     register: registerBillingField,
     handleSubmit: handleBillingSubmit,
@@ -252,7 +260,12 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
       // place a bug here would turn into wrong billing (a customer
       // switches to Trimestral in section ①, the order must be created
       // against THAT plan, not `basico`'s own id from the URL).
-      const created = await createCheckoutOrder({ planId: (selectedPlan ?? plan).id, paymentMethod });
+      const normalizedPayerEmail = payerEmail.trim();
+      if (!normalizedPayerEmail) {
+        setSubmitError('Informe o e-mail da conta que fará o pagamento no Mercado Pago.');
+        return;
+      }
+      const created = await createCheckoutOrder({ planId: (selectedPlan ?? plan).id, paymentMethod, payerEmail: normalizedPayerEmail });
       setOrder(created);
     } catch (err) {
       if (err instanceof ApiError && err.message.includes('BILLING_PROFILE_REQUIRED')) {
@@ -425,6 +438,8 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
                       onPlanChange={setSelectedPlanId}
                       paymentMethod={paymentMethod}
                       onPaymentMethodChange={setPaymentMethod}
+                      payerEmail={payerEmail}
+                      onPayerEmailChange={setPayerEmail}
                     />
                   )}
                 </CardBody>
@@ -558,12 +573,16 @@ function ConfigureStep({
   onPlanChange,
   paymentMethod,
   onPaymentMethodChange,
+  payerEmail,
+  onPayerEmailChange,
 }: {
   familyCycles: PublicPlan[];
   selectedPlanId: string;
   onPlanChange: (id: string) => void;
   paymentMethod: 'pix' | 'card';
   onPaymentMethodChange: (m: 'pix' | 'card') => void;
+  payerEmail: string;
+  onPayerEmailChange: (email: string) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -601,6 +620,24 @@ function ConfigureStep({
             ? 'No cartão, a renovação é automática a cada período — o Mercado Pago cobra sozinho, sem precisar fazer nada. Os dados do cartão são inseridos na página segura do Mercado Pago, nunca aqui.'
             : 'No Pix não existe cobrança automática: a cada período geramos um novo QR Code e avisamos você para pagar.'}
         </p>
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <Field
+          label="E-mail do pagador no Mercado Pago"
+          htmlFor="checkout-payer-email"
+          hint="Pode ser diferente do e-mail da sua conta GXHost"
+        >
+          <Input
+            id="checkout-payer-email"
+            type="email"
+            autoComplete="email"
+            value={payerEmail}
+            onChange={(event) => onPayerEmailChange(event.target.value)}
+            icon={Mail}
+            placeholder="pagador@exemplo.com"
+          />
+        </Field>
       </div>
     </div>
   );

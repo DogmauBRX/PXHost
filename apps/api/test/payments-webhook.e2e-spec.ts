@@ -50,6 +50,7 @@ describe('Payments webhook processing (e2e)', () => {
   let webhookService: PaymentsWebhookService;
   let fakeProvider: FakePaymentProvider;
   let customerToken: string;
+  let customerId: string;
   let planId: string;
   let templateId: string;
   let groupId: string;
@@ -91,12 +92,12 @@ describe('Payments webhook processing (e2e)', () => {
     await prisma.paymentWebhookEvent.create({ data: { id: notificationId, provider: 'mercadopago', type: 'test', raw: {} } });
   }
 
-  async function createOrder(): Promise<{ orderId: string; subscriptionId: string; amountCents: number; paymentExternalId: string; externalReference: string }> {
+  async function createOrder(payerEmail?: string): Promise<{ orderId: string; subscriptionId: string; amountCents: number; paymentExternalId: string; externalReference: string }> {
     const res = await app.inject({
       method: 'POST',
       url: '/api/client/checkout',
       headers: { authorization: `Bearer ${customerToken}` },
-      payload: { planId, paymentMethod: 'pix' },
+      payload: { planId, paymentMethod: 'pix', payerEmail },
     });
     expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body);
@@ -154,7 +155,7 @@ describe('Payments webhook processing (e2e)', () => {
     if (staleRlKeys.length > 0) await redis.client.del(...staleRlKeys);
 
     const passwordHash = await argon2.hash('WebhookPass!234567', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2 });
-    await prisma.user.create({
+    const customer = await prisma.user.create({
       data: {
         email: `webhook-customer-${suffix}@gxhost.local`,
         username: `webhook-customer-${suffix}`,
@@ -169,6 +170,7 @@ describe('Payments webhook processing (e2e)', () => {
         billingState: 'SP',
       },
     });
+    customerId = customer.id;
     const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: `webhook-customer-${suffix}@gxhost.local`, password: 'WebhookPass!234567' } });
     customerToken = JSON.parse(login.body).accessToken;
 
@@ -233,6 +235,24 @@ describe('Payments webhook processing (e2e)', () => {
 
     const event = await prisma.paymentWebhookEvent.findUnique({ where: { id: notificationId } });
     expect(event?.status).toBe('processed');
+  });
+
+  it('accepts a Pix paid by a different Mercado Pago e-mail while keeping the GXHost order owner', async () => {
+    const payerEmail = `pix-third-party-${suffix}@outlook.com`;
+    const { orderId, subscriptionId, amountCents, paymentExternalId, externalReference } = await createOrder(payerEmail);
+    expect((fakeProvider.payments.get(paymentExternalId)?.raw as { payerEmail?: string }).payerEmail).toBe(payerEmail);
+    fakeProvider.payments.set(paymentExternalId, fakePayment({ id: paymentExternalId, externalReference, amountCents, status: 'approved' }));
+
+    const notificationId = nextNotificationId();
+    await seedWebhookEventRow(notificationId);
+    await webhookService.process(paymentNotification('approved', paymentExternalId, notificationId));
+
+    const order = await asAdmin((tx) => tx.order.findUniqueOrThrow({ where: { id: orderId } }));
+    expect(order.status).toBe('paid');
+    expect(order.userId).toBe(customerId);
+    const subscription = await asAdmin((tx) => tx.subscription.findUniqueOrThrow({ where: { id: subscriptionId } }));
+    expect(subscription.userId).toBe(customerId);
+    expect(subscription.status).toBe('active');
   });
 
   it('redelivering the exact same notification is an idempotent no-op', async () => {

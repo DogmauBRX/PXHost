@@ -15,6 +15,8 @@ import type { Order } from '@/shared/api/types';
 export interface CreateCheckoutInput {
   planId: string;
   paymentMethod: 'pix' | 'card';
+  /** Used only by Mercado Pago as the payer; it never determines order ownership. */
+  payerEmail?: string;
 }
 
 export const createCheckoutOrder = (input: CreateCheckoutInput) =>
