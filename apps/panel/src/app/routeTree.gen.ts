@@ -33,6 +33,7 @@ import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as CheckoutPlanSlugRouteImport } from './routes/checkout.$planSlug'
 import { Route as ClientIndexRouteImport } from './routes/client.index'
 import { Route as ClientAssistantRouteImport } from './routes/client.assistant'
+import { Route as ClientCommunityRouteImport } from './routes/client.community'
 import { Route as ClientPlanRouteImport } from './routes/client.plan'
 import { Route as ClientSettingsRouteImport } from './routes/client.settings'
 import { Route as ClientSubscriptionRouteImport } from './routes/client.subscription'
@@ -183,6 +184,11 @@ const ClientIndexRoute = ClientIndexRouteImport.update({
 const ClientAssistantRoute = ClientAssistantRouteImport.update({
   id: '/assistant',
   path: '/assistant',
+  getParentRoute: () => ClientRoute,
+} as any)
+const ClientCommunityRoute = ClientCommunityRouteImport.update({
+  id: '/community',
+  path: '/community',
   getParentRoute: () => ClientRoute,
 } as any)
 const ClientPlanRoute = ClientPlanRouteImport.update({
@@ -382,6 +388,7 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AdminUsersRoute
   '/checkout/$planSlug': typeof CheckoutPlanSlugRoute
   '/client/assistant': typeof ClientAssistantRoute
+  '/client/community': typeof ClientCommunityRoute
   '/client/plan': typeof ClientPlanRoute
   '/client/settings': typeof ClientSettingsRoute
   '/client/subscription': typeof ClientSubscriptionRoute
@@ -437,6 +444,7 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AdminUsersRoute
   '/checkout/$planSlug': typeof CheckoutPlanSlugRoute
   '/client/assistant': typeof ClientAssistantRoute
+  '/client/community': typeof ClientCommunityRoute
   '/client/plan': typeof ClientPlanRoute
   '/client/settings': typeof ClientSettingsRoute
   '/client/subscription': typeof ClientSubscriptionRoute
@@ -493,6 +501,7 @@ export interface FileRoutesById {
   '/admin/users': typeof AdminUsersRoute
   '/checkout/$planSlug': typeof CheckoutPlanSlugRoute
   '/client/assistant': typeof ClientAssistantRoute
+  '/client/community': typeof ClientCommunityRoute
   '/client/plan': typeof ClientPlanRoute
   '/client/settings': typeof ClientSettingsRoute
   '/client/subscription': typeof ClientSubscriptionRoute
@@ -552,6 +561,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/checkout/$planSlug'
     | '/client/assistant'
+    | '/client/community'
     | '/client/plan'
     | '/client/settings'
     | '/client/subscription'
@@ -607,6 +617,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/checkout/$planSlug'
     | '/client/assistant'
+    | '/client/community'
     | '/client/plan'
     | '/client/settings'
     | '/client/subscription'
@@ -662,6 +673,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/checkout/$planSlug'
     | '/client/assistant'
+    | '/client/community'
     | '/client/plan'
     | '/client/settings'
     | '/client/subscription'
@@ -880,6 +892,13 @@ declare module '@tanstack/react-router' {
       path: '/assistant'
       fullPath: '/client/assistant'
       preLoaderRoute: typeof ClientAssistantRouteImport
+      parentRoute: typeof ClientRoute
+    }
+    '/client/community': {
+      id: '/client/community'
+      path: '/community'
+      fullPath: '/client/community'
+      preLoaderRoute: typeof ClientCommunityRouteImport
       parentRoute: typeof ClientRoute
     }
     '/client/plan': {
@@ -1200,6 +1219,7 @@ const ClientServersServerIdRouteWithChildren =
 
 interface ClientRouteChildren {
   ClientAssistantRoute: typeof ClientAssistantRoute
+  ClientCommunityRoute: typeof ClientCommunityRoute
   ClientPlanRoute: typeof ClientPlanRoute
   ClientSettingsRoute: typeof ClientSettingsRoute
   ClientSubscriptionRoute: typeof ClientSubscriptionRoute
@@ -1212,6 +1232,7 @@ interface ClientRouteChildren {
 
 const ClientRouteChildren: ClientRouteChildren = {
   ClientAssistantRoute: ClientAssistantRoute,
+  ClientCommunityRoute: ClientCommunityRoute,
   ClientPlanRoute: ClientPlanRoute,
   ClientSettingsRoute: ClientSettingsRoute,
   ClientSubscriptionRoute: ClientSubscriptionRoute,

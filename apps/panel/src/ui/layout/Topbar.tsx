@@ -1,8 +1,8 @@
-import { Home, Menu } from 'lucide-react';
+import { Home, Menu, Users } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { useUiStore } from '@/shared/stores/ui.store';
 
-export function Topbar({ area: _area }: { area: 'admin' | 'client' }) {
+export function Topbar({ area }: { area: 'admin' | 'client' }) {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
 
   return (
@@ -24,14 +24,25 @@ export function Topbar({ area: _area }: { area: 'admin' | 'client' }) {
           PublicShell's own homeSearch already document). Moved here from
           Sidebar's brand box (icon-only, awkwardly overlapping the logo)
           to a real labeled button. */}
-      <Link
-        to="/"
-        search={{ stay: true }}
-        className="group relative flex items-center gap-2 rounded-xl border border-border bg-surface-2/55 px-3 py-2 text-sm font-medium text-text-muted shadow-xs transition-all hover:-translate-y-px hover:border-accent/35 hover:bg-accent/10 hover:text-accent-strong"
-      >
-        <Home className="h-4 w-4 transition-transform group-hover:-translate-y-px" aria-hidden="true" />
-        <span className="hidden sm:inline">Página principal</span>
-      </Link>
+      <div className="flex items-center gap-2">
+        {area === 'client' && (
+          <Link
+            to="/client/community"
+            className="group relative flex items-center gap-2 rounded-xl border border-border bg-surface-2/55 px-3 py-2 text-sm font-medium text-text-muted shadow-xs transition-all hover:-translate-y-px hover:border-accent/35 hover:bg-accent/10 hover:text-accent-strong"
+          >
+            <Users className="h-4 w-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Comunidade</span>
+          </Link>
+        )}
+        <Link
+          to="/"
+          search={{ stay: true }}
+          className="group relative flex items-center gap-2 rounded-xl border border-border bg-surface-2/55 px-3 py-2 text-sm font-medium text-text-muted shadow-xs transition-all hover:-translate-y-px hover:border-accent/35 hover:bg-accent/10 hover:text-accent-strong"
+        >
+          <Home className="h-4 w-4 transition-transform group-hover:-translate-y-px" aria-hidden="true" />
+          <span className="hidden sm:inline">Página principal</span>
+        </Link>
+      </div>
     </header>
   );
 }

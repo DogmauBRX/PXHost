@@ -80,8 +80,55 @@ model User {
   orders         Order[]
   paymentCustomers PaymentCustomer[]
   oauthIdentities OAuthIdentity[]
+  friendshipsSent     Friendship[]      @relation("FriendshipRequester")
+  friendshipsReceived Friendship[]      @relation("FriendshipAddressee")
+  communityServers    CommunityServer[]
 
   @@map("users")
+}
+
+// Social graph for GXHost customers. `pairKey` is the two user UUIDs in
+// lexical order, so reverse requests cannot create a duplicate friendship.
+model Friendship {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  pairKey     String    @unique @map("pair_key")
+  requesterId String    @map("requester_id") @db.Uuid
+  addresseeId String    @map("addressee_id") @db.Uuid
+  status      String    @default("pending")
+  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  requester User @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@index([requesterId, status])
+  @@index([addresseeId, status])
+  @@map("friendships")
+}
+
+// Deliberately denormalized directory row: authenticated customers can
+// discover a published server without gaining RLS access to its Server row.
+// The owner can only create/update it through SocialService, which derives
+// every field from a server they own and an active public gateway route.
+model CommunityServer {
+  id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  serverId    String   @unique @map("server_id") @db.Uuid
+  ownerId     String   @map("owner_id") @db.Uuid
+  name        String
+  description String   @default("")
+  address     String
+  software    String?
+  version     String?
+  publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  owner  User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@index([publishedAt])
+  @@map("community_servers")
 }
 
 model Session {
@@ -813,6 +860,7 @@ model Server {
   // separate steps now (see the 'setup_pending' status and
   // ServerSetupService.complete).
   subscription  Subscription?
+  communityListing CommunityServer?
   // Same shape as `subscription` above, one level up the chain: the
   // Order that paid for this server, once ProvisioningService attaches
   // it. NULL for every server created outside the checkout flow
