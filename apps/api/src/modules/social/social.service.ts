@@ -30,6 +30,9 @@ export class SocialService {
         id: { not: userId },
         isActive: true,
         deletedAt: null,
+        // The community directory is for customer accounts only. Keep
+        // operational/admin identities out of discovery and friend requests.
+        globalRole: 'user',
         OR: [
           { username: { contains: q, mode: 'insensitive' } },
           { firstName: { contains: q, mode: 'insensitive' } },
@@ -76,7 +79,10 @@ export class SocialService {
 
   async requestFriend(userId: string, targetId: string) {
     if (userId === targetId) throw new BadRequestException('Você não pode adicionar a si mesmo.');
-    const target = await this.prisma.user.findFirst({ where: { id: targetId, isActive: true, deletedAt: null }, select: { id: true } });
+    const target = await this.prisma.user.findFirst({
+      where: { id: targetId, isActive: true, deletedAt: null, globalRole: 'user' },
+      select: { id: true },
+    });
     if (!target) throw new NotFoundException('Usuário não encontrado.');
     const pairKey = this.pairKey(userId, targetId);
     const existing = await this.prisma.friendship.findUnique({ where: { pairKey } });
