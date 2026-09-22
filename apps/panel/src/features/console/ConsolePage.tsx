@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Terminal as XTerm } from '@xterm/xterm';
-import { Check, Clock, Copy, Link2, RefreshCw, Server, Settings2, Wifi } from 'lucide-react';
+import { Check, Clock, Copy, Link2, RefreshCw, Server, Settings2, TerminalSquare, Wifi } from 'lucide-react';
 import { getServer, getServerDiskUsage } from '@/features/servers/servers.api';
 import { listServerVariables } from '@/features/variables/variables.api';
 import { updateServerHostname } from '@/features/variables/hostname.api';
@@ -222,6 +222,14 @@ export function ConsolePage({ serverId }: { serverId: string }) {
                 <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
                 {CONN_LABEL[connectionState]}
               </span>
+              <a
+                href="#console-live"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-semibold text-text-muted transition hover:border-accent/40 hover:bg-accent/10 hover:text-accent-strong"
+                title="Ir para o console"
+              >
+                <TerminalSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                Console
+              </a>
               <button
                 type="button"
                 onClick={reconnect}
@@ -323,7 +331,7 @@ export function ConsolePage({ serverId }: { serverId: string }) {
         </CardBody>
       </Card>
 
-      <div className="flex items-center gap-2">
+      <div id="console-live" className="flex scroll-mt-5 items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-ok shadow-[0_0_10px_rgb(52_211_153/0.65)]" aria-hidden="true" />
         <p className="text-sm font-semibold text-text">Console ao vivo</p>
       </div>
