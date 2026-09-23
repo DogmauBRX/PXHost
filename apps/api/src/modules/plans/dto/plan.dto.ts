@@ -129,6 +129,11 @@ class PlanCommercialFields {
   @IsString()
   @Length(1, 60)
   highlightLabel?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  hardwareLabel?: string | null;
 }
 
 export class CreatePlanDto extends PlanCommercialFields {

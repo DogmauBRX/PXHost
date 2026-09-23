@@ -42,7 +42,7 @@ export function PublicPlansPage() {
         <div className="mx-auto mb-9 max-w-3xl text-center">
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-accent/25 bg-accent/10 px-3 py-1.5 font-mono text-[0.68rem] font-semibold tracking-[0.16em] text-accent uppercase">
             <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-            Capacidade real, sem overselling
+            Capacidade monitorada em tempo real
           </div>
           <h1 className="text-4xl leading-tight font-bold tracking-[-0.035em] text-text sm:text-5xl lg:text-6xl">
             Escolha a potência do <span className="plans-accent-text">seu servidor.</span>
@@ -54,8 +54,8 @@ export function PublicPlansPage() {
 
         <div className="mx-auto mb-12 grid max-w-2xl grid-cols-3 gap-2 sm:gap-3">
           {[
-            { icon: Zap, label: 'Ativação', value: 'simplificada' },
-            { icon: Gauge, label: 'Recursos', value: 'reservados' },
+            { icon: Zap, label: 'Ativação', value: 'automática' },
+            { icon: Gauge, label: 'Recursos', value: 'limites claros' },
             { icon: ShieldCheck, label: 'Ambiente', value: 'isolado' },
           ].map(({ icon: Icon, label, value }) => (
             <div key={label} className="plans-trust-chip rounded-xl border border-white/10 bg-white/[0.035] p-3 text-left backdrop-blur-sm sm:flex sm:items-center sm:gap-3">

@@ -48,8 +48,8 @@ function DeferredNodeStatusSection() {
 // what was explicitly asked for: platform capability, performance,
 // security and reliability — not an exhaustive changelog.
 const BENEFITS: { icon: LucideIcon; title: string; description: string }[] = [
-  { icon: ServerCog, title: 'Infraestrutura multi-node', description: 'Servidores distribuídos em nodes independentes, com capacidade controlada — sem overselling.' },
-  { icon: Zap, title: 'Performance dedicada', description: 'CPU e RAM reservados de verdade para o seu servidor — sem concorrência por recursos com outros clientes.' },
+  { icon: ServerCog, title: 'Infraestrutura multi-node', description: 'Servidores distribuídos em nodes independentes, com capacidade acompanhada em tempo real.' },
+  { icon: Zap, title: 'Recursos transparentes', description: 'Limites de CPU, RAM e armazenamento definidos por plano, com margens de segurança por node.' },
   { icon: ShieldCheck, title: 'Isolamento e permissões', description: 'Cada servidor roda isolado, e você controla exatamente o que cada colaborador pode fazer.' },
   { icon: Archive, title: 'Backups configuráveis', description: 'Proteja o progresso do seu mundo com backups sob seu controle.' },
   { icon: TerminalSquare, title: 'Console em tempo real', description: 'Acompanhe e envie comandos ao seu servidor direto do navegador, sem instalar nada.' },
@@ -63,7 +63,7 @@ export function LandingPage() {
     <>
       <Seo
         title="Hospedagem de servidores Minecraft"
-        description="Hospedagem de servidores Minecraft com RAM, CPU e armazenamento dedicados, vagas limitadas por capacidade real e um painel completo."
+        description="Hospedagem de servidores Minecraft com limites claros de RAM, CPU e armazenamento, capacidade monitorada e um painel completo."
         path="/"
       />
 
@@ -85,12 +85,12 @@ export function LandingPage() {
               </h1>
               <p className="mt-6 text-xl font-semibold text-text sm:text-2xl">Hospedagem Minecraft sob seu controle.</p>
               <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-text-muted lg:mx-0">
-                Recursos reservados, painel completo e infraestrutura distribuída para sua comunidade jogar com estabilidade — sem overselling.
+                Recursos transparentes, painel completo e infraestrutura distribuída para sua comunidade jogar com estabilidade.
               </p>
 
               <div className="mt-8 grid grid-cols-3 gap-2 sm:max-w-lg sm:gap-3 lg:mx-0">
                 {[
-                  { icon: Cpu, value: 'CPU', label: 'reservada' },
+                  { icon: Cpu, value: 'CPU', label: 'monitorada' },
                   { icon: HardDrive, value: 'NVMe', label: 'rápido' },
                   { icon: ShieldCheck, value: '24/7', label: 'isolamento' },
                 ].map(({ icon: Icon, value, label }) => (
@@ -180,10 +180,10 @@ export function LandingPage() {
                 <Ticket className="h-6 w-6" aria-hidden="true" />
               </div>
               <div className="flex-1">
-                <span className="font-mono text-[0.65rem] tracking-[0.16em] text-accent uppercase">Capacidade real</span>
-                <h2 className="mt-1 text-xl font-semibold text-text">Hospedagem por vagas, sem superlotação</h2>
+                <span className="font-mono text-[0.65rem] tracking-[0.16em] text-accent uppercase">Capacidade monitorada</span>
+                <h2 className="mt-1 text-xl font-semibold text-text">Vagas calculadas com margem de segurança</h2>
                 <p className="mt-2 max-w-4xl text-sm leading-6 text-text-muted">
-                  Cada plano respeita a capacidade física disponível. Quando as vagas terminam, novas ativações pausam até existir recurso livre — assim RAM, CPU e disco continuam entregando o que foi contratado.
+                  O painel acompanha memória, CPU e disco de cada node e interrompe novas ativações quando a capacidade segura termina. Assim, a infraestrutura cresce de forma controlada e os limites de cada plano permanecem claros.
                 </p>
               </div>
             </div>

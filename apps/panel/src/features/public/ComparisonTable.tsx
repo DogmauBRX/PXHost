@@ -1,6 +1,6 @@
 import type { PublicPlan } from '@/shared/api/types';
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from '@/ui/primitives';
-import { formatBillingPeriod, formatMemory, formatPrice, formatRange, formatVcpu } from '@/shared/format/plan';
+import { formatBillingPeriod, formatMemory, formatPrice, formatVcpu } from '@/shared/format/plan';
 
 interface Dimension {
   label: string;
@@ -14,12 +14,17 @@ interface Dimension {
 // of blank cells.
 const DIMENSIONS: Dimension[] = [
   { label: 'Preço', render: (p) => `${formatPrice(p.priceCents, p.currency)}/${formatBillingPeriod(p.billingPeriod)}` },
+  { label: 'Hardware', render: (p) => p.hardwareLabel },
   { label: 'RAM', render: (p) => formatMemory(p.memoryMb) },
   { label: 'CPU', render: (p) => formatVcpu(p.cpuLimitPercent) },
-  { label: 'Armazenamento', render: (p) => formatMemory(p.diskMb) },
+  { label: 'Armazenamento', render: (p) => `${formatMemory(p.diskMb)} SSD NVMe` },
   { label: 'Servidores', render: (p) => (p.maxServers != null ? String(p.maxServers) : '1') },
+  { label: 'Bancos MySQL', render: (p) => (p.maxDatabases > 0 ? String(p.maxDatabases) : null) },
   { label: 'Backups', render: (p) => (p.maxBackups > 0 ? String(p.maxBackups) : null) },
-  { label: 'Jogadores recomendados', render: (p) => formatRange(p.recommendedPlayersMin, p.recommendedPlayersMax) },
+  { label: 'Retenção dos backups', render: (p) => (p.maxBackups > 0 ? `${p.backupRetentionDays} dias` : null) },
+  { label: 'Agendamentos', render: (p) => (p.maxSchedules > 0 ? String(p.maxSchedules) : null) },
+  { label: 'Ativação após pagamento', render: () => 'Automática' },
+  { label: 'Subdomínio GXHost', render: () => 'Incluído' },
 ];
 
 export function ComparisonTable({ plans }: { plans: PublicPlan[] }) {

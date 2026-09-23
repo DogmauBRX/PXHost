@@ -728,6 +728,10 @@ model Plan {
   recommendedModsMax    Int?      @map("recommended_mods_max")
   recommendedPluginsMin Int?      @map("recommended_plugins_min")
   recommendedPluginsMax Int?      @map("recommended_plugins_max")
+  // Customer-facing hardware name (for example "AMD Ryzen 9 7900X").
+  // Display metadata only: scheduling and capacity continue to use the
+  // plan/node relations and the node's reported resources.
+  hardwareLabel         String?   @map("hardware_label")
   // Display-only today: clients cannot create servers (only admins can), so
   // there is no self-service flow for this to gate. Surfaced on "Meu Plano"
   // as information, not enforced anywhere.

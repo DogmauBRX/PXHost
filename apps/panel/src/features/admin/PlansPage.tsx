@@ -61,6 +61,7 @@ interface PlanFormValues {
   maxSlots: string;
   isFeatured: boolean;
   highlightLabel: string;
+  hardwareLabel: string;
   recommendedPlayersMin: string;
   recommendedPlayersMax: string;
 }
@@ -90,6 +91,7 @@ const EMPTY_FORM: PlanFormValues = {
   maxSlots: '',
   isFeatured: false,
   highlightLabel: '',
+  hardwareLabel: '',
   recommendedPlayersMin: '',
   recommendedPlayersMax: '',
 };
@@ -120,6 +122,7 @@ function planToForm(p: AdminPlan): PlanFormValues {
     maxSlots: p.maxSlots != null ? String(p.maxSlots) : '',
     isFeatured: p.isFeatured,
     highlightLabel: p.highlightLabel ?? '',
+    hardwareLabel: p.hardwareLabel ?? '',
     recommendedPlayersMin: p.recommendedPlayersMin != null ? String(p.recommendedPlayersMin) : '',
     recommendedPlayersMax: p.recommendedPlayersMax != null ? String(p.recommendedPlayersMax) : '',
   };
@@ -191,6 +194,7 @@ function toInput(v: PlanFormValues): CreatePlanInput {
     maxSlots: n(v.maxSlots),
     isFeatured: v.isFeatured,
     highlightLabel: v.highlightLabel.trim() || undefined,
+    hardwareLabel: v.hardwareLabel.trim() || null,
     recommendedPlayersMin: n(v.recommendedPlayersMin),
     recommendedPlayersMax: n(v.recommendedPlayersMax),
   };
@@ -358,6 +362,19 @@ function PlanFormModal({ open, mode, plan, onClose }: { open: boolean; mode: 'cr
             </Field>
             <Field label="Descrição" htmlFor="plan-description" className="sm:col-span-2">
               <Textarea id="plan-description" value={values.description} onChange={(e) => patch({ description: e.target.value })} rows={2} />
+            </Field>
+            <Field
+              label="Hardware exibido ao cliente"
+              htmlFor="plan-hardware-label"
+              hint="Nome comercial do processador ou da linha de hardware. Não altera o agendamento do plano."
+              className="sm:col-span-2"
+            >
+              <Input
+                id="plan-hardware-label"
+                value={values.hardwareLabel}
+                onChange={(e) => patch({ hardwareLabel: e.target.value })}
+                placeholder="AMD Ryzen 9 7900X"
+              />
             </Field>
           </div>
         </fieldset>
@@ -744,12 +761,12 @@ interface PlanCardProps {
 function PlanCard({ plan: p, occ, driftOpen, nodesOpen, onToggleDrift, onToggleNodes, onEdit, onDelete }: PlanCardProps) {
   const players = formatRange(p.recommendedPlayersMin, p.recommendedPlayersMax);
   // Capacity plan (auto-derivation) §6/§11 — `effectiveSlots` is
-  // min(capacidade real dos nodes, maxSlots) whenever occ is loaded; `null`
+  // min(capacidade calculada dos nodes, maxSlots) whenever occ is loaded; `null`
   // means genuinely unlimited (no maxSlots AND every eligible node
-  // unlimited). The physical number is called out separately only when
+  // unlimited). The calculated number is called out separately only when
   // it's the TIGHTER of the two — i.e. the admin's commercial ceiling is
   // unrealistic.
-  const physicalTighter = occ && p.maxSlots != null && occ.derivedSlots != null && occ.derivedSlots < p.maxSlots;
+  const calculatedTighter = occ && p.maxSlots != null && occ.derivedSlots != null && occ.derivedSlots < p.maxSlots;
   return (
     <Card>
       <CardBody>
@@ -763,11 +780,11 @@ function PlanCard({ plan: p, occ, driftOpen, nodesOpen, onToggleDrift, onToggleN
                 <Badge tone="warn">{discountPercent(p.priceCents, p.compareAtPriceCents)}% off</Badge>
               )}
               {occ && (
-                <Badge tone={occ.effectiveSlots != null && occ.occupied >= occ.effectiveSlots ? 'fail' : physicalTighter ? 'warn' : 'neutral'}>
+                <Badge tone={occ.effectiveSlots != null && occ.occupied >= occ.effectiveSlots ? 'fail' : calculatedTighter ? 'warn' : 'neutral'}>
                   {occ.occupied} / {occ.effectiveSlots ?? '∞'} vaga{occ.effectiveSlots === 1 ? '' : 's'}
                 </Badge>
               )}
-              {physicalTighter && <Badge tone="warn">capacidade física: {occ!.derivedSlots}</Badge>}
+              {calculatedTighter && <Badge tone="warn">capacidade calculada: {occ!.derivedSlots}</Badge>}
             </div>
             <p className="mt-0.5 font-mono text-xs text-text-faint">
               {p.slug} · {p.memoryMb} MB RAM · {formatPrice(p.priceCents, p.currency)}/mês

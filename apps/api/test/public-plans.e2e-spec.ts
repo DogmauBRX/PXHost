@@ -61,7 +61,7 @@ describe('Public plans catalog (e2e)', () => {
     keeperNodeId = keeper.id;
 
     const pub = await prisma.plan.create({
-      data: { name: `pub-plan-${suffix}`, slug: `pub-plan-${suffix}`, memoryMb: 4096, diskMb: 20480, priceCents: 5990, isPublic: true, isFeatured: true, highlightLabel: 'Mais popular' },
+      data: { name: `pub-plan-${suffix}`, slug: `pub-plan-${suffix}`, memoryMb: 4096, diskMb: 20480, priceCents: 5990, isPublic: true, isFeatured: true, highlightLabel: 'Mais popular', hardwareLabel: 'AMD Ryzen 9 7900X' },
     });
     publicPlanId = pub.id;
     // Restricted to the (deliberately generous) keeper node alone, so
@@ -109,6 +109,7 @@ describe('Public plans catalog (e2e)', () => {
     expect(found.availability.status).toBe('available');
     expect(found.isFeatured).toBe(true);
     expect(found.highlightLabel).toBe('Mais popular');
+    expect(found.hardwareLabel).toBe('AMD Ryzen 9 7900X');
   });
 
   it('a commercially-unlimited plan (maxSlots: null) is correctly sold_out when its only eligible node is too small for it', async () => {

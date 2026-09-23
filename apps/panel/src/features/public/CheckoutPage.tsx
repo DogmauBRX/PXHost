@@ -547,9 +547,10 @@ function PlanSpecCards({ plan }: { plan: PublicPlan }) {
 
   const specs: { label: string; value: string }[] = [
     { label: 'Memória RAM', value: formatMemory(plan.memoryMb) },
-    { label: 'Armazenamento', value: formatMemory(plan.diskMb) },
+    { label: 'Armazenamento', value: `${formatMemory(plan.diskMb)} SSD NVMe` },
     { label: 'CPU', value: formatVcpu(plan.cpuLimitPercent) },
   ];
+  if (plan.hardwareLabel) specs.unshift({ label: 'Hardware', value: plan.hardwareLabel });
   if (plan.maxBackups > 0) specs.push({ label: 'Backups', value: `até ${plan.maxBackups}` });
   if (plan.maxDatabases > 0) specs.push({ label: 'Bancos de dados', value: `até ${plan.maxDatabases}` });
   if (players) specs.push({ label: 'Jogadores recomendados', value: players });

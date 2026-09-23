@@ -198,6 +198,7 @@ export class PlansService {
         compareAtPriceCents: dto.compareAtPriceCents,
         isFeatured: dto.isFeatured ?? false,
         highlightLabel: dto.highlightLabel,
+        hardwareLabel: dto.hardwareLabel,
       },
     });
     await this.publicPlans.invalidateCache();

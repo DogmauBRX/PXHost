@@ -68,7 +68,9 @@ export interface ClientPlan {
   cpuLimitPercent: number;
   maxBackups: number;
   maxDatabases: number;
+  maxSchedules: number;
   backupRetentionDays: number;
+  hardwareLabel: string | null;
   priceCents: number;
   compareAtPriceCents: number | null;
   currency: string;
@@ -599,6 +601,7 @@ export interface AdminPlan {
   maxAllocations: number;
   maxSchedules: number;
   backupRetentionDays: number;
+  hardwareLabel: string | null;
   priceCents: number;
   compareAtPriceCents: number | null;
   currency: string;
@@ -831,7 +834,9 @@ export interface PublicPlan {
   cpuLimitPercent: number;
   maxBackups: number;
   maxDatabases: number;
+  maxSchedules: number;
   backupRetentionDays: number;
+  hardwareLabel: string | null;
   priceCents: number;
   compareAtPriceCents: number | null;
   currency: string;

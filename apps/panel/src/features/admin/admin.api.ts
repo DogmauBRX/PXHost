@@ -242,6 +242,7 @@ export interface CreatePlanInput {
   maxSlots?: number;
   isFeatured?: boolean;
   highlightLabel?: string;
+  hardwareLabel?: string | null;
   recommendedPlayersMin?: number;
   recommendedPlayersMax?: number;
   recommendedModsMin?: number;

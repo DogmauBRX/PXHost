@@ -5,7 +5,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { PublicPlan } from '@/shared/api/types';
 import { Badge, Button, Card, CardBody } from '@/ui/primitives';
 import { CircuitPattern } from '@/ui/brand/CircuitPattern';
-import { discountPercent, formatBillingPeriod, formatMemory, formatPrice, formatRange, formatVcpu } from '@/shared/format/plan';
+import { discountPercent, formatBillingPeriod, formatMemory, formatPrice, formatVcpu } from '@/shared/format/plan';
 
 const AVAILABILITY_LABEL: Record<PublicPlan['availability']['status'], string> = {
   available: 'Disponível',
@@ -42,8 +42,6 @@ function tierIcon(memoryMb: number): LucideIcon {
 export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPlan; highlight?: boolean }) {
   const soldOut = plan.availability.status === 'sold_out';
   const pctOff = discountPercent(plan.priceCents, plan.compareAtPriceCents);
-
-  const players = formatRange(plan.recommendedPlayersMin, plan.recommendedPlayersMax);
 
   const ctaLabel = soldOut ? 'Esgotado' : 'Assinar plano';
   const cta = soldOut ? (
@@ -104,11 +102,12 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
         </div>
 
         <ul className="flex flex-1 flex-col gap-2.5 border-t border-white/8 pt-5 text-sm text-text">
+          {plan.hardwareLabel && <SpecRow>{plan.hardwareLabel}</SpecRow>}
           <SpecRow>{formatMemory(plan.memoryMb)} de RAM</SpecRow>
           <SpecRow>{formatVcpu(plan.cpuLimitPercent)}</SpecRow>
-          <SpecRow>{formatMemory(plan.diskMb)} de armazenamento</SpecRow>
-          {plan.maxBackups > 0 && <SpecRow>Até {plan.maxBackups} backups</SpecRow>}
-          {players && <SpecRow>Recomendado para {players} jogadores</SpecRow>}
+          <SpecRow>{formatMemory(plan.diskMb)} em SSD NVMe</SpecRow>
+          {plan.maxDatabases > 0 && <SpecRow>Até {plan.maxDatabases} {plan.maxDatabases === 1 ? 'banco MySQL' : 'bancos MySQL'}</SpecRow>}
+          {plan.maxBackups > 0 && <SpecRow>Até {plan.maxBackups} backups · {plan.backupRetentionDays} dias</SpecRow>}
         </ul>
 
         <div className="mt-auto pt-1">{cta}</div>

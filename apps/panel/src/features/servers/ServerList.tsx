@@ -126,7 +126,7 @@ export function ServerList({ limit }: { limit?: number } = {}) {
             )}
 
             <div className="flex items-center justify-between gap-2 border-t border-border pt-3 text-xs text-text-muted">
-              <span className="font-mono text-[0.62rem] font-bold tracking-[0.14em] text-text-faint uppercase">Recursos reservados</span>
+              <span className="font-mono text-[0.62rem] font-bold tracking-[0.14em] text-text-faint uppercase">Recursos do plano</span>
               <span className="inline-flex items-center gap-1.5 font-mono tabular-nums">
                 <MemoryStick className="h-3.5 w-3.5" aria-hidden="true" />
                 {s.memoryMb} MB
