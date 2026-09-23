@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, X } from 'lucide-react';
+import { Bot, MessageCircle, X } from 'lucide-react';
 import { AssistantChat } from './AssistantChat';
 
 /**
@@ -37,10 +37,11 @@ export function AssistantDrawer({ serverId }: { serverId: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed right-6 bottom-6 z-40 flex items-center gap-2 rounded-full bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-accent-strong"
+        aria-label="Abrir assistente GXHOST"
+        title="Assistente GXHOST"
+        className="fixed right-4 bottom-20 z-40 flex h-11 w-11 items-center justify-center rounded-full bg-accent text-white shadow-lg transition hover:bg-accent-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
-        <Bot className="h-4 w-4" aria-hidden="true" />
-        Assistente GXHOST
+        <MessageCircle className="h-5 w-5" aria-hidden="true" />
       </button>
 
       <dialog
