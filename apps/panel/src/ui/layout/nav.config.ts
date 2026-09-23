@@ -66,6 +66,7 @@ export const ADMIN_NAV_SECTIONS: readonly NavSection[] = [
       { label: 'Plans', to: '/admin/plans', icon: Layers },
       { label: 'Assinaturas', to: '/admin/subscriptions', icon: CreditCard },
       { label: 'Pagamentos', to: '/admin/payments', icon: Receipt },
+      { label: 'Suporte', to: '/admin/support', icon: LifeBuoy },
     ],
   },
   {

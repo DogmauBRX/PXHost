@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { History, Plus, ServerCog } from 'lucide-react';
+import { History, Plus, Server, ServerCog } from 'lucide-react';
 import {
   createAdminServer,
   deleteAdminServer,
@@ -248,6 +248,11 @@ export function AdminServersPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string>('all');
+
+  const visibleServers =
+    selectedNodeId === 'all' ? servers : servers?.filter((server) => server.node.id === selectedNodeId);
+  const selectedNode = nodes?.find((node) => node.id === selectedNodeId);
 
   async function handleTransfer(serverId: string) {
     const targetNodeId = targetByServer[serverId];
@@ -326,13 +331,75 @@ export function AdminServersPage() {
       {error && <Alert className="mb-6">{error}</Alert>}
       {isError && <Alert className="mb-6">Não foi possível carregar os servidores.</Alert>}
 
+      {!isLoading && servers && servers.length > 0 && (
+        <section className="mb-6 rounded-card border border-border bg-surface p-4" aria-label="Filtrar servidores por node">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-text">Servidores por node</h2>
+              <p className="mt-0.5 text-xs text-text-muted">Selecione um node para ver os servidores hospedados nele.</p>
+            </div>
+            <span className="hidden text-xs text-text-faint sm:block">
+              {visibleServers?.length ?? 0} {(visibleServers?.length ?? 0) === 1 ? 'servidor' : 'servidores'}
+            </span>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Nodes">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={selectedNodeId === 'all'}
+              onClick={() => setSelectedNodeId('all')}
+              className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                selectedNodeId === 'all'
+                  ? 'border-accent bg-accent-tint text-accent-strong'
+                  : 'border-border bg-bg text-text-muted hover:border-border-strong hover:text-text'
+              }`}
+            >
+              <Server className="h-4 w-4" aria-hidden="true" />
+              Todos
+              <span className="rounded-full bg-surface-2 px-2 py-0.5 font-mono text-xs text-text-muted">{servers.length}</span>
+            </button>
+
+            {nodes?.map((node) => {
+              const count = servers.filter((server) => server.node.id === node.id).length;
+              const selected = selectedNodeId === node.id;
+              return (
+                <button
+                  key={node.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setSelectedNodeId(node.id)}
+                  className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    selected
+                      ? 'border-accent bg-accent-tint text-accent-strong'
+                      : 'border-border bg-bg text-text-muted hover:border-border-strong hover:text-text'
+                  }`}
+                >
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      node.healthStatus === 'online' ? 'bg-ok' : node.healthStatus === 'degraded' ? 'bg-warn' : 'bg-fail'
+                    }`}
+                    aria-hidden="true"
+                  />
+                  {node.name}
+                  <span className="rounded-full bg-surface-2 px-2 py-0.5 font-mono text-xs text-text-muted">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {isLoading ? (
         <LoadingRow />
       ) : !servers || servers.length === 0 ? (
         <EmptyState icon={ServerCog} title="Nenhum servidor ainda" />
+      ) : !visibleServers || visibleServers.length === 0 ? (
+        <EmptyState icon={ServerCog} title={`Nenhum servidor hospedado em ${selectedNode?.name ?? 'este node'}`} />
       ) : (
         <div className="space-y-3">
-          {servers.map((s) => {
+          {visibleServers.map((s) => {
             const otherNodes = nodes?.filter((n) => n.id !== s.node.id) ?? [];
             const canTransfer = s.status === 'ready';
             return (

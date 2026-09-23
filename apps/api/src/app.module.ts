@@ -35,6 +35,7 @@ import { GatewayModule } from './modules/gateway/gateway.module';
 import { ModpacksModule } from './modules/modpacks/modpacks.module';
 import { PluginsModule } from './modules/plugins/plugins.module';
 import { SocialModule } from './modules/social/social.module';
+import { SupportModule } from './modules/support/support.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { SocialModule } from './modules/social/social.module';
     ModpacksModule,
     PluginsModule,
     SocialModule,
+    SupportModule,
   ],
   providers: [
     // JwtAuthGuard is global: every route requires authentication unless

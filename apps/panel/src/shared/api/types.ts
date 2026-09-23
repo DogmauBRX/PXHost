@@ -699,6 +699,35 @@ export interface AdminServerDetail {
   publicRoute: { publicPort: number; state: string; lastError: string | null; gateway: { id: string; name: string; publicHost: string } } | null;
 }
 
+export type SupportTicketStatus = 'open' | 'in_progress' | 'waiting_customer' | 'closed';
+export type SupportTicketPriority = 'low' | 'normal' | 'high' | 'urgent';
+export type SupportTicketCategory = 'technical' | 'billing' | 'account' | 'other';
+
+export interface SupportTicketSummary {
+  id: string;
+  subject: string;
+  category: SupportTicketCategory;
+  priority: SupportTicketPriority;
+  status: SupportTicketStatus;
+  lastMessageAt: string;
+  createdAt: string;
+  closedAt: string | null;
+  server: { id: string; name: string; shortId: string } | null;
+  user: { id: string; username: string; email: string };
+  messages: { body: string; isStaff: boolean; createdAt: string }[];
+  _count: { messages: number };
+}
+
+export interface SupportTicketDetail extends Omit<SupportTicketSummary, 'messages' | '_count'> {
+  messages: {
+    id: string;
+    body: string;
+    isStaff: boolean;
+    createdAt: string;
+    author: { id: string; username: string; globalRole: string };
+  }[];
+}
+
 // Public-exposure plan — GET/POST/PATCH/DELETE /api/admin/gateways.
 export interface AdminGateway {
   id: string;

@@ -4,7 +4,6 @@ import {
   Check,
   Clock3,
   CreditCard,
-  ExternalLink,
   FileCheck2,
   LifeBuoy,
   Mail,
@@ -20,8 +19,7 @@ import {
 } from 'lucide-react';
 import { HeroCircuitBackground } from './HeroCircuitBackground';
 import { Seo } from './Seo';
-
-const SUPPORT_EMAIL = 'gxhostbr@gmail.com';
+import { CopySupportEmail, SUPPORT_EMAIL } from '@/features/support/CopySupportEmail';
 
 const summaryCards = [
   {
@@ -228,10 +226,7 @@ export function TrustCenterPage() {
                 <li className="flex gap-2.5"><Check className="mt-1 h-4 w-4 shrink-0 text-ok" />Faça uma cópia dos seus arquivos antes do encerramento; o acesso aos dados pode ser perdido após o cancelamento.</li>
                 <li className="flex gap-2.5"><Check className="mt-1 h-4 w-4 shrink-0 text-ok" />Falhas do serviço ou cobranças incorretas podem ser analisadas a qualquer momento, sem prejuízo dos direitos previstos em lei.</li>
               </ul>
-              <a href={`mailto:${SUPPORT_EMAIL}?subject=Solicitação%20de%20reembolso%20GXhost`} className="group mt-7 flex h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-contrast transition-all hover:-translate-y-0.5 hover:bg-accent-strong">
-                Solicitar por e-mail
-                <ExternalLink className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-              </a>
+              <CopySupportEmail label="Copiar e-mail para solicitar" className="mt-7 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-contrast transition-all hover:-translate-y-0.5 hover:bg-accent-strong" />
             </aside>
           </div>
         </section>
@@ -255,11 +250,8 @@ export function TrustCenterPage() {
               <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-center backdrop-blur-sm sm:min-w-80">
                 <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-accent/20 bg-accent/10 text-accent"><Mail className="h-5 w-5" /></span>
                 <p className="mt-4 text-[0.62rem] font-bold tracking-[0.16em] text-text-faint uppercase">E-mail oficial</p>
-                <a href={`mailto:${SUPPORT_EMAIL}`} className="mt-1 block text-lg font-semibold text-text transition-colors hover:text-accent">{SUPPORT_EMAIL}</a>
-                <a href={`mailto:${SUPPORT_EMAIL}?subject=Suporte%20GXhost`} className="mt-5 flex h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.055] px-4 text-sm font-semibold text-text transition-all hover:border-accent/30 hover:bg-accent/10 hover:text-accent">
-                  Abrir meu e-mail
-                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                </a>
+                <CopySupportEmail icon="none" className="mt-1 text-lg font-semibold text-text transition-colors hover:text-accent" />
+                <CopySupportEmail label="Copiar e-mail" className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.055] px-4 text-sm font-semibold text-text transition-all hover:border-accent/30 hover:bg-accent/10 hover:text-accent" />
               </div>
             </div>
           </div>

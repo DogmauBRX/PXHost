@@ -68,6 +68,11 @@ export const ADMIN_PERMISSIONS = [
   // hosting node (no capacity, no allocations, no agent).
   'gateway.view',
   'gateway.manage',
+  // In-panel ticket queue. Support agents need both keys by default so
+  // their role can actually answer customers; separating view/manage still
+  // lets a future custom admin seat be read-only.
+  'support.view',
+  'support.manage',
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
@@ -114,6 +119,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly (AdminPermission 
     'payments.manage',
     'gateway.view',
     'gateway.manage',
+    'support.view',
+    'support.manage',
   ],
   // The five `.view` keys preserve `support`'s CURRENT behavior — it
   // already passes AdminGuard and already reads nodes/plans/capacity/
@@ -121,7 +128,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly (AdminPermission 
   // hasn't my plan activated" needs to at least SEE the subscription —
   // this is not a grant of new mutation access, only read access
   // matching what every other resource here already gives `support`.
-  support: ['clients.view', 'clients.support', 'nodes.view', 'plans.view', 'capacity.view', 'servers.view', 'subscriptions.view', 'payments.view'],
+  support: ['clients.view', 'clients.support', 'nodes.view', 'plans.view', 'capacity.view', 'servers.view', 'subscriptions.view', 'payments.view', 'support.view', 'support.manage'],
   user: [],
 };
 

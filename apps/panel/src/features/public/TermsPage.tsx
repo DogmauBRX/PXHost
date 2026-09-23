@@ -12,8 +12,7 @@ import {
 } from 'lucide-react';
 import { HeroCircuitBackground } from './HeroCircuitBackground';
 import { Seo } from './Seo';
-
-const SUPPORT_EMAIL = 'gxhostbr@gmail.com';
+import { CopySupportEmail } from '@/features/support/CopySupportEmail';
 
 const prohibitedActivities = [
   'Invasão, tentativa de invasão, exploração de vulnerabilidades ou acesso não autorizado a sistemas, contas, dispositivos ou redes.',
@@ -70,7 +69,7 @@ export function TermsPage() {
             </nav>
             <div className="mt-4 border-t border-white/8 px-2 pt-4">
               <p className="text-xs leading-5 text-text-faint">Dúvidas sobre estes termos?</p>
-              <a href={`mailto:${SUPPORT_EMAIL}?subject=Dúvida%20sobre%20os%20Termos%20GXhost`} className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:text-accent-strong"><Mail className="h-3.5 w-3.5" />{SUPPORT_EMAIL}</a>
+              <CopySupportEmail icon="mail" className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:text-accent-strong" />
             </div>
           </aside>
 
@@ -136,7 +135,7 @@ export function TermsPage() {
             <section id="suporte" className="scroll-mt-28 rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-7">
               <TermHeading number="06" title="Suporte, comunicação e alterações" icon={Mail} />
               <div className="mt-5 space-y-4 text-sm leading-7 text-text-muted">
-                <p>O canal oficial de suporte é <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold text-accent hover:text-accent-strong">{SUPPORT_EMAIL}</a>. Para facilitar a análise, utilize o e-mail cadastrado e informe o servidor ou pedido relacionado.</p>
+                <p>O canal oficial de suporte é <CopySupportEmail icon="none" className="inline font-semibold text-accent hover:text-accent-strong" />. Para facilitar a análise, utilize o e-mail cadastrado e informe o servidor ou pedido relacionado.</p>
                 <p>Estes termos poderão ser atualizados para refletir mudanças legais, operacionais ou de segurança. A versão e a data de atualização permanecerão identificadas nesta página.</p>
               </div>
             </section>

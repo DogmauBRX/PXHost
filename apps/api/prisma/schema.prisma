@@ -83,6 +83,8 @@ model User {
   friendshipsSent     Friendship[]      @relation("FriendshipRequester")
   friendshipsReceived Friendship[]      @relation("FriendshipAddressee")
   communityServers    CommunityServer[]
+  supportTickets      SupportTicket[]       @relation("SupportTicketOwner")
+  supportMessages     SupportTicketMessage[] @relation("SupportMessageAuthor")
 
   @@map("users")
 }
@@ -861,6 +863,7 @@ model Server {
   // ServerSetupService.complete).
   subscription  Subscription?
   communityListing CommunityServer?
+  supportTickets   SupportTicket[]
   // Same shape as `subscription` above, one level up the chain: the
   // Order that paid for this server, once ProvisioningService attaches
   // it. NULL for every server created outside the checkout flow
@@ -1447,4 +1450,45 @@ model SiteAnnouncement {
   updatedBy String?   @map("updated_by") @db.Uuid
 
   @@map("site_announcements")
+}
+
+// Customer support lives inside the panel rather than being scattered
+// across email threads. A ticket belongs to exactly one customer and may
+// point at one of their servers; messages retain their author even when the
+// author's display name changes. RLS below is the tenant boundary.
+model SupportTicket {
+  id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  serverId      String?   @map("server_id") @db.Uuid
+  subject       String
+  category      String
+  priority      String    @default("normal")
+  status        String    @default("open")
+  lastMessageAt DateTime  @default(now()) @map("last_message_at") @db.Timestamptz
+  closedAt      DateTime? @map("closed_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  user     User                   @relation("SupportTicketOwner", fields: [userId], references: [id], onDelete: Restrict)
+  server   Server?                @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  messages SupportTicketMessage[]
+
+  @@index([userId, lastMessageAt])
+  @@index([status, priority, lastMessageAt])
+  @@map("support_tickets")
+}
+
+model SupportTicketMessage {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  ticketId  String   @map("ticket_id") @db.Uuid
+  authorId  String   @map("author_id") @db.Uuid
+  body      String
+  isStaff   Boolean  @default(false) @map("is_staff")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User          @relation("SupportMessageAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_messages")
 }
