@@ -64,6 +64,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
   const pathname = useLocation({ select: (l) => l.pathname });
   const onPlans = pathname.startsWith('/plans');
   const onCentral = pathname.startsWith('/central');
+  const onTerms = pathname.startsWith('/termos');
   const catalogNavTo = onPlans ? '/' : '/plans';
   const catalogNavLabel = onPlans ? 'Início' : 'Ver planos';
   // `/`'s own beforeLoad bounces a signed-in visitor straight to their
@@ -113,6 +114,18 @@ export function PublicShell({ children }: { children: ReactNode }) {
               >
                 <BookOpenCheck className="h-4 w-4 text-accent" aria-hidden="true" />
                 Como funciona
+              </Link>
+              <Link
+                to="/termos"
+                aria-current={onTerms ? 'page' : undefined}
+                className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium transition-all ${
+                  onTerms
+                    ? 'border-accent/30 bg-accent/10 text-accent'
+                    : 'border-white/10 bg-white/5 text-white/70 hover:border-accent/35 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Scale className="h-4 w-4 text-accent" aria-hidden="true" />
+                Termos de uso
               </Link>
             </nav>
           </div>
@@ -177,6 +190,17 @@ export function PublicShell({ children }: { children: ReactNode }) {
               >
                 <BookOpenCheck className="h-4 w-4 text-accent" aria-hidden="true" />
                 Como funciona
+              </Link>
+              <Link
+                to="/termos"
+                onClick={() => setMobileOpen(false)}
+                aria-current={onTerms ? 'page' : undefined}
+                className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium ${
+                  onTerms ? 'bg-accent/10 text-accent' : 'text-white/75 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <Scale className="h-4 w-4 text-accent" aria-hidden="true" />
+                Termos de uso
               </Link>
               {accessToken ? (
                 <Link
