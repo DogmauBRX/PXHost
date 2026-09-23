@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Lock, Mail, MapPin, ShieldCheck, User, Wallet } from 'lucide-react';
+import { CreditCard, Lock, Mail, MapPin, QrCode, ShieldCheck, User, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getPublicPlan } from './public.api';
 import { createCheckoutOrder, getOrder } from '@/shared/api/orders.api';
@@ -549,9 +549,9 @@ function PlanSpecCards({ plan }: { plan: PublicPlan }) {
     // spilling out of the box.
     <div className="grid grid-cols-2 gap-3">
       {specs.map((s) => (
-        <div key={s.label} className="rounded-lg bg-ok-tint px-3 py-2">
+        <div key={s.label} className="rounded-xl border border-ok/10 bg-ok/[0.07] px-3 py-2.5">
           <p className="text-xs leading-snug text-text-muted">{s.label}</p>
-          <p className="text-sm font-semibold text-text">{s.value}</p>
+          <p className="mt-0.5 text-sm font-semibold text-text">{s.value}</p>
         </div>
       ))}
     </div>
@@ -585,44 +585,47 @@ function ConfigureStep({
   onPayerEmailChange: (email: string) => void;
 }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <NumberedSection step={1}>Plano e cobrança</NumberedSection>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {familyCycles.map((p) => (
           <CycleOption key={p.id} plan={p} selected={p.id === selectedPlanId} onSelect={() => onPlanChange(p.id)} />
         ))}
       </div>
 
-      <div className="border-t border-border pt-4">
-        <p className="mb-2 text-sm font-medium text-text">Forma de pagamento</p>
+      <div className="rounded-xl border border-border bg-surface-2/45 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-text">Forma de pagamento</p>
+          <span className="text-xs text-text-faint">Escolha como prefere pagar</span>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
             onClick={() => onPaymentMethodChange('pix')}
-            className={`rounded-lg border px-4 py-3 text-sm font-medium transition-colors ${
-              paymentMethod === 'pix' ? 'border-accent-strong bg-accent-tint text-accent-strong' : 'border-border text-text-muted hover:text-text'
+            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
+              paymentMethod === 'pix' ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_8px_20px_-14px_var(--color-accent)]' : 'border-border bg-surface text-text-muted hover:border-accent/35 hover:text-text'
             }`}
           >
-            Pix
+            <QrCode className="h-4 w-4" aria-hidden="true" /> Pix
           </button>
           <button
             type="button"
             onClick={() => onPaymentMethodChange('card')}
-            className={`rounded-lg border px-4 py-3 text-sm font-medium transition-colors ${
-              paymentMethod === 'card' ? 'border-accent-strong bg-accent-tint text-accent-strong' : 'border-border text-text-muted hover:text-text'
+            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
+              paymentMethod === 'card' ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_8px_20px_-14px_var(--color-accent)]' : 'border-border bg-surface text-text-muted hover:border-accent/35 hover:text-text'
             }`}
           >
-            Cartão
+            <CreditCard className="h-4 w-4" aria-hidden="true" /> Cartão
           </button>
         </div>
-        <p className="mt-2 text-xs text-text-faint">
+        <p className="mt-3 text-xs leading-5 text-text-muted">
           {paymentMethod === 'card'
             ? 'No cartão, a renovação é automática a cada período — o Mercado Pago cobra sozinho, sem precisar fazer nada. Os dados do cartão são inseridos na página segura do Mercado Pago, nunca aqui.'
             : 'No Pix não existe cobrança automática: a cada período geramos um novo QR Code e avisamos você para pagar.'}
         </p>
       </div>
 
-      <div className="border-t border-border pt-4">
+      <div className="rounded-xl border border-sky-300/15 bg-sky-300/[0.045] p-4">
         <Field
           label="E-mail do pagador no Mercado Pago"
           htmlFor="checkout-payer-email"
@@ -680,14 +683,17 @@ function OrderSummary({
         <span className="font-semibold text-text">{formatPrice(plan.priceCents, plan.currency)}</span>
       </div>
 
-      <div className="flex items-center justify-between rounded-lg bg-ok-tint px-4 py-3">
-        <span className="text-sm font-medium text-text">Pagamento hoje</span>
-        <span className="text-xl font-bold text-ok">{formatPrice(plan.priceCents, plan.currency)}</span>
+      <div className="flex items-center justify-between rounded-xl border border-ok/15 bg-gradient-to-br from-ok/[0.16] to-ok/[0.045] px-4 py-4">
+        <div>
+          <p className="text-sm font-semibold text-text">Pagamento hoje</p>
+          <p className="mt-0.5 text-xs text-text-muted">Cobrança segura pelo Mercado Pago</p>
+        </div>
+        <span className="text-2xl font-bold tracking-tight text-ok">{formatPrice(plan.priceCents, plan.currency)}</span>
       </div>
 
       {submitError && <Alert>{submitError}</Alert>}
 
-      <Button type="button" variant="primary" disabled={submitting} onClick={onSubmit} className="w-full">
+      <Button type="button" variant="primary" disabled={submitting} onClick={onSubmit} className="h-12 w-full shadow-[0_12px_24px_-14px_var(--color-accent)]">
         {submitting ? 'Gerando cobrança…' : paymentMethod === 'pix' ? 'Gerar Pix' : 'Continuar para pagamento'}
       </Button>
     </div>
