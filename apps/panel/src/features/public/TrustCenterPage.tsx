@@ -27,7 +27,7 @@ const summaryCards = [
     icon: CreditCard,
     eyebrow: 'Cobrança transparente',
     title: 'Pagamentos',
-    description: 'Pix por ciclo ou cartão recorrente, processados com segurança pelo Mercado Pago.',
+    description: 'Pix por ciclo ou cartão recorrente, processados com segurança pelo Mercado Pago ou PagBank.',
   },
   {
     href: '#reembolsos',
@@ -114,7 +114,7 @@ export function TrustCenterPage() {
 
         <div id="transparencia" className="mt-10 grid scroll-mt-28 gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-4">
           {[
-            { icon: BadgeCheck, label: 'Provedor de pagamento', value: 'Mercado Pago' },
+            { icon: BadgeCheck, label: 'Provedores de pagamento', value: 'Mercado Pago e PagBank' },
             { icon: Clock3, label: 'Prazo de arrependimento', value: '7 dias corridos' },
             { icon: Mail, label: 'Suporte oficial', value: SUPPORT_EMAIL },
             { icon: ShieldAlert, label: 'Resposta a incidentes', value: 'Detecção e contenção' },
@@ -131,7 +131,7 @@ export function TrustCenterPage() {
             <div>
               <span className="font-mono text-[0.68rem] font-bold tracking-[0.18em] text-accent uppercase">01 · Pagamentos</span>
               <h2 className="mt-3 text-3xl font-bold tracking-tight text-text sm:text-4xl">Você escolhe como renovar.</h2>
-              <p className="mt-4 max-w-lg text-base leading-7 text-text-muted">Os valores e a periodicidade aparecem antes da confirmação. A cobrança é criada e conciliada pelo Mercado Pago; a GXhost não armazena os dados completos do seu cartão.</p>
+              <p className="mt-4 max-w-lg text-base leading-7 text-text-muted">Os valores e a periodicidade aparecem antes da confirmação. A cobrança é criada e conciliada pelo provedor escolhido; a GXhost não armazena os dados completos do seu cartão.</p>
               <div className="mt-6 space-y-3">
                 {[
                   'Ativação iniciada após a confirmação do pagamento pelo provedor.',
@@ -154,7 +154,7 @@ export function TrustCenterPage() {
               <article className="plan-command-card rounded-2xl border p-5">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-accent/20 bg-accent/10 text-accent"><CreditCard className="h-5 w-5" /></span>
                 <h3 className="mt-5 text-lg font-semibold text-text">Cartão recorrente</h3>
-                <p className="mt-2 text-sm leading-6 text-text-muted">A renovação ocorre automaticamente no período escolhido. Os dados são preenchidos no ambiente seguro do Mercado Pago.</p>
+                <p className="mt-2 text-sm leading-6 text-text-muted">A renovação ocorre automaticamente no período escolhido. Os dados são preenchidos no ambiente seguro do provedor selecionado.</p>
                 <span className="mt-5 inline-flex rounded-full border border-white/10 bg-white/[0.035] px-2.5 py-1 text-[0.62rem] font-semibold tracking-wide text-text-faint uppercase">Renovação automática</span>
               </article>
             </div>
@@ -222,7 +222,7 @@ export function TrustCenterPage() {
               </div>
               <ul className="mt-6 space-y-4 text-sm leading-6 text-text-muted">
                 <li className="flex gap-2.5"><Check className="mt-1 h-4 w-4 shrink-0 text-ok" />Dentro do prazo legal, o pedido de arrependimento não exige justificativa.</li>
-                <li className="flex gap-2.5"><Check className="mt-1 h-4 w-4 shrink-0 text-ok" />Depois que o estorno é iniciado, o crédito pode levar o prazo definido pelo Mercado Pago, bandeira ou banco.</li>
+                <li className="flex gap-2.5"><Check className="mt-1 h-4 w-4 shrink-0 text-ok" />Depois que o estorno é iniciado, o crédito pode levar o prazo definido pelo provedor, bandeira ou banco.</li>
                 <li className="flex gap-2.5"><Check className="mt-1 h-4 w-4 shrink-0 text-ok" />Faça uma cópia dos seus arquivos antes do encerramento; o acesso aos dados pode ser perdido após o cancelamento.</li>
                 <li className="flex gap-2.5"><Check className="mt-1 h-4 w-4 shrink-0 text-ok" />Falhas do serviço ou cobranças incorretas podem ser analisadas a qualquer momento, sem prejuízo dos direitos previstos em lei.</li>
               </ul>

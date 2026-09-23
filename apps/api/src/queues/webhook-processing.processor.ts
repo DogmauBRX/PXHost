@@ -4,7 +4,7 @@ import { Job, Worker } from 'bullmq';
 import type IORedis from 'ioredis';
 import { createQueueRedisConnection } from './redis-connection';
 import { PaymentsWebhookService } from '../modules/payments/payments-webhook.service';
-import type { ParsedWebhook } from '../modules/payments/payment-provider.interface';
+import type { WebhookProcessingJob } from '../modules/payments/webhook-processing-queue.service';
 
 /**
  * Consumes jobs `WebhookProcessingQueueService` (API process) adds —
@@ -35,13 +35,13 @@ export class WebhookProcessingProcessor implements OnModuleInit, OnModuleDestroy
     this.connection = createQueueRedisConnection(this.config);
     this.worker = new Worker(
       'webhook-processing',
-      async (job: Job<ParsedWebhook>) => {
-        await this.webhook.process(job.data);
+      async (job: Job<WebhookProcessingJob>) => {
+        await this.webhook.process(job.data.parsed, job.data.provider);
       },
       { connection: this.connection, concurrency: 3 },
     );
     this.worker.on('failed', (job, err) => {
-      this.logger.error(`webhook ${job?.data?.notificationId} processing failed (attempt ${job?.attemptsMade}/${job?.opts.attempts}): ${err.message}`);
+      this.logger.error(`webhook ${job?.data?.parsed.notificationId} processing failed (attempt ${job?.attemptsMade}/${job?.opts.attempts}): ${err.message}`);
     });
     this.logger.log('webhook-processing worker started');
   }

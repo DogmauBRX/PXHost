@@ -907,6 +907,7 @@ export interface Order {
   pixQrCode: string | null;
   pixQrCodeBase64: string | null;
   paymentMethod: 'pix' | 'card' | null;
+  paymentProvider: 'mercadopago' | 'pagbank';
   installments: number | null;
   paidAmountCents: number | null;
   paidAt: string | null;

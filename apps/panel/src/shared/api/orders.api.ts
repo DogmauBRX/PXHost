@@ -15,9 +15,14 @@ import type { Order } from '@/shared/api/types';
 export interface CreateCheckoutInput {
   planId: string;
   paymentMethod: 'pix' | 'card';
-  /** Used only by Mercado Pago as the payer; it never determines order ownership. */
+  provider?: PaymentProviderName;
+  /** Used only by the gateway as the payer; it never determines order ownership. */
   payerEmail?: string;
 }
+
+export type PaymentProviderName = 'mercadopago' | 'pagbank';
+
+export const getPaymentProviders = () => apiFetch<PaymentProviderName[]>('/api/public/payment-providers');
 
 export const createCheckoutOrder = (input: CreateCheckoutInput) =>
   apiFetch<Order>('/api/client/checkout', { method: 'POST', body: JSON.stringify(input) });

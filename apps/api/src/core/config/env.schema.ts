@@ -152,6 +152,16 @@ export const envSchema = z.object({
   // (a mock server in CI). Normally unset.
   MERCADOPAGO_BASE_URL: optionalUrl(),
 
+  // PagBank is an optional second gateway. It stays hidden from the
+  // public checkout until a token is configured. The environment
+  // selects PagBank's documented production/sandbox hosts; explicit
+  // URL overrides exist only for CI mocks and unusual deployments.
+  PAGBANK_TOKEN: optionalSecret(),
+  PAGBANK_ENV: z.enum(['production', 'sandbox']).default('production'),
+  PAGBANK_NOTIFICATION_URL: optionalUrl(),
+  PAGBANK_API_BASE_URL: optionalUrl(),
+  PAGBANK_SUBSCRIPTIONS_BASE_URL: optionalUrl(),
+
   // Anti-bot for login/register/forgot-password (Cloudflare Turnstile).
   // Optional, and off (verification skipped entirely) when unset — the
   // same "explicit opt-in, zero dev/test friction" posture

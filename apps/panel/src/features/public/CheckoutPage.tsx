@@ -7,7 +7,7 @@ import { Link } from '@tanstack/react-router';
 import { CreditCard, Lock, Mail, MapPin, QrCode, ShieldCheck, User, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getPublicPlan } from './public.api';
-import { createCheckoutOrder, getOrder } from '@/shared/api/orders.api';
+import { createCheckoutOrder, getOrder, getPaymentProviders, type PaymentProviderName } from '@/shared/api/orders.api';
 import { OrderStatusView } from '@/shared/orders/OrderStatusView';
 import { register as registerAccount } from '@/features/auth/auth.api';
 import { Turnstile, TURNSTILE_SITE_KEY } from '@/features/auth/Turnstile';
@@ -112,6 +112,7 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
   const [forceBillingForm, setForceBillingForm] = useState(false);
 
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card'>('pix');
+  const [paymentProvider, setPaymentProvider] = useState<PaymentProviderName>('mercadopago');
   const [payerEmail, setPayerEmail] = useState('');
   const [submittingCheckout, setSubmittingCheckout] = useState(false);
   // Checkout redesign (WHMCS-style) — which billing-cycle SIBLING of the
@@ -142,6 +143,15 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
     queryFn: getAccount,
     enabled: !!accessToken,
   });
+
+  const { data: paymentProviders = ['mercadopago'] } = useQuery({
+    queryKey: ['public-payment-providers'],
+    queryFn: getPaymentProviders,
+  });
+
+  useEffect(() => {
+    if (paymentProviders.length > 0 && !paymentProviders.includes(paymentProvider)) setPaymentProvider(paymentProviders[0]);
+  }, [paymentProvider, paymentProviders]);
 
   // Checkout redesign — every public cycle of the route's plan family
   // (itself included), backend-computed and backend-ordered
@@ -262,10 +272,10 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
       // against THAT plan, not `basico`'s own id from the URL).
       const normalizedPayerEmail = payerEmail.trim();
       if (!normalizedPayerEmail) {
-        setSubmitError('Informe o e-mail da conta que fará o pagamento no Mercado Pago.');
+        setSubmitError('Informe o e-mail de quem fará o pagamento.');
         return;
       }
-      const created = await createCheckoutOrder({ planId: (selectedPlan ?? plan).id, paymentMethod, payerEmail: normalizedPayerEmail });
+      const created = await createCheckoutOrder({ planId: (selectedPlan ?? plan).id, paymentMethod, provider: paymentProvider, payerEmail: normalizedPayerEmail });
       setOrder(created);
     } catch (err) {
       if (err instanceof ApiError && err.message.includes('BILLING_PROFILE_REQUIRED')) {
@@ -359,6 +369,7 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
                   <OrderSummary
                     plan={selectedPlan}
                     paymentMethod={paymentMethod}
+                    paymentProvider={paymentProvider}
                     submitError={submitError}
                     submitting={submittingCheckout}
                     onSubmit={() => void submitCheckout()}
@@ -438,6 +449,9 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
                       onPlanChange={setSelectedPlanId}
                       paymentMethod={paymentMethod}
                       onPaymentMethodChange={setPaymentMethod}
+                      paymentProvider={paymentProvider}
+                      paymentProviders={paymentProviders}
+                      onPaymentProviderChange={setPaymentProvider}
                       payerEmail={payerEmail}
                       onPayerEmailChange={setPayerEmail}
                     />
@@ -573,6 +587,9 @@ function ConfigureStep({
   onPlanChange,
   paymentMethod,
   onPaymentMethodChange,
+  paymentProvider,
+  paymentProviders,
+  onPaymentProviderChange,
   payerEmail,
   onPayerEmailChange,
 }: {
@@ -581,6 +598,9 @@ function ConfigureStep({
   onPlanChange: (id: string) => void;
   paymentMethod: 'pix' | 'card';
   onPaymentMethodChange: (m: 'pix' | 'card') => void;
+  paymentProvider: PaymentProviderName;
+  paymentProviders: PaymentProviderName[];
+  onPaymentProviderChange: (provider: PaymentProviderName) => void;
   payerEmail: string;
   onPayerEmailChange: (email: string) => void;
 }) {
@@ -591,6 +611,27 @@ function ConfigureStep({
         {familyCycles.map((p) => (
           <CycleOption key={p.id} plan={p} selected={p.id === selectedPlanId} onSelect={() => onPlanChange(p.id)} />
         ))}
+      </div>
+
+      <div className="rounded-xl border border-border bg-surface-2/45 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-text">Processador do pagamento</p>
+          <span className="text-xs text-text-faint">Ambiente seguro do provedor</span>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {paymentProviders.map((provider) => (
+            <button
+              key={provider}
+              type="button"
+              onClick={() => onPaymentProviderChange(provider)}
+              className={`rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
+                paymentProvider === provider ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_8px_20px_-14px_var(--color-accent)]' : 'border-border bg-surface text-text-muted hover:border-accent/35 hover:text-text'
+              }`}
+            >
+              {providerLabel(provider)}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="rounded-xl border border-border bg-surface-2/45 p-4">
@@ -620,14 +661,14 @@ function ConfigureStep({
         </div>
         <p className="mt-3 text-xs leading-5 text-text-muted">
           {paymentMethod === 'card'
-            ? 'No cartão, a renovação é automática a cada período — o Mercado Pago cobra sozinho, sem precisar fazer nada. Os dados do cartão são inseridos na página segura do Mercado Pago, nunca aqui.'
+            ? `No cartão, a renovação é automática a cada período. Os dados são inseridos na página segura do ${providerLabel(paymentProvider)}, nunca aqui.`
             : 'No Pix não existe cobrança automática: a cada período geramos um novo QR Code e avisamos você para pagar.'}
         </p>
       </div>
 
       <div className="rounded-xl border border-sky-300/15 bg-sky-300/[0.045] p-4">
         <Field
-          label="E-mail do pagador no Mercado Pago"
+          label={`E-mail do pagador no ${providerLabel(paymentProvider)}`}
           htmlFor="checkout-payer-email"
           hint="Pode ser diferente do e-mail da sua conta GXHost"
         >
@@ -656,12 +697,14 @@ function ConfigureStep({
 function OrderSummary({
   plan,
   paymentMethod,
+  paymentProvider,
   submitError,
   submitting,
   onSubmit,
 }: {
   plan: PublicPlan;
   paymentMethod: 'pix' | 'card';
+  paymentProvider: PaymentProviderName;
   submitError: string | null;
   submitting: boolean;
   onSubmit: () => void;
@@ -686,7 +729,7 @@ function OrderSummary({
       <div className="flex items-center justify-between rounded-xl border border-ok/15 bg-gradient-to-br from-ok/[0.16] to-ok/[0.045] px-4 py-4">
         <div>
           <p className="text-sm font-semibold text-text">Pagamento hoje</p>
-          <p className="mt-0.5 text-xs text-text-muted">Cobrança segura pelo Mercado Pago</p>
+          <p className="mt-0.5 text-xs text-text-muted">Cobrança segura pelo {providerLabel(paymentProvider)}</p>
         </div>
         <span className="text-2xl font-bold tracking-tight text-ok">{formatPrice(plan.priceCents, plan.currency)}</span>
       </div>
@@ -698,4 +741,8 @@ function OrderSummary({
       </Button>
     </div>
   );
+}
+
+function providerLabel(provider: PaymentProviderName): string {
+  return provider === 'pagbank' ? 'PagBank' : 'Mercado Pago';
 }

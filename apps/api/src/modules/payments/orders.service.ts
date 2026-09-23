@@ -2,7 +2,6 @@ import {
   ConflictException,
   HttpException,
   HttpStatus,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -15,7 +14,8 @@ import { RedisService } from '../../core/redis/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { type SubscriptionBillingPeriod } from '../subscriptions/subscription-status';
-import { PAYMENT_PROVIDER, type PayerInput, type PaymentProvider } from './payment-provider.interface';
+import { type PayerInput, type PaymentProviderName } from './payment-provider.interface';
+import { PaymentProviderRegistry } from './payment-provider.registry';
 import { PaymentsService } from './payments.service';
 import { ProvisioningQueueService } from './provisioning-queue.service';
 import { CreateCheckoutDto } from './dto/create-checkout.dto';
@@ -79,7 +79,7 @@ export class OrdersService {
     private readonly subscriptions: SubscriptionsService,
     private readonly payments: PaymentsService,
     private readonly provisioningQueue: ProvisioningQueueService,
-    @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
+    private readonly providers: PaymentProviderRegistry,
   ) {}
 
   /**
@@ -206,6 +206,11 @@ export class OrdersService {
    */
   async createCheckoutOrder(userId: string, dto: CreateCheckoutDto, meta: { ip: string | null }) {
     await this.checkCheckoutRateLimit(userId, meta.ip);
+    const providerName: PaymentProviderName = dto.provider ?? 'mercadopago';
+    const provider = this.providers.get(providerName);
+    if (provider.isConfigured?.() === false) {
+      throw new ConflictException(`PAYMENT_PROVIDER_UNAVAILABLE: ${providerName}`);
+    }
 
     const created = await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
       const plan = await this.subscriptions.lockAndValidatePlanForSubscription(tx, dto.planId);
@@ -229,7 +234,7 @@ export class OrdersService {
       // what was just clicked. The stale pending order/subscription is
       // cancelled here rather than left to rot — otherwise it would sit
       // there, still "pending", until its own TTL expiry.
-      if (duplicate && duplicate.paymentMethod === dto.paymentMethod) {
+      if (duplicate && duplicate.paymentMethod === dto.paymentMethod && duplicate.provider === providerName) {
         return { order: duplicate, reused: true as const };
       }
       if (duplicate) {
@@ -240,7 +245,7 @@ export class OrdersService {
       }
 
       const subscription = await this.subscriptions.createPendingSubscription(tx, userId, plan);
-      await tx.subscription.update({ where: { id: subscription.id }, data: { paymentMethod: dto.paymentMethod } });
+      await tx.subscription.update({ where: { id: subscription.id }, data: { paymentMethod: dto.paymentMethod, paymentProvider: providerName } });
 
       // No template/serverName/variables to snapshot anymore — the
       // customer hasn't chosen software yet (post-purchase setup flow,
@@ -263,6 +268,7 @@ export class OrdersService {
           amountCents: plan.priceCents,
           currency: plan.currency,
           status: 'pending',
+          provider: providerName,
           paymentMethod: dto.paymentMethod,
           provisioningStatus: 'pending',
           expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
@@ -284,7 +290,7 @@ export class OrdersService {
       actorId: userId,
       targetType: 'order',
       targetId: order.id,
-      metadata: { planId: dto.planId, subscriptionId, amountCents: order.amountCents, paymentMethod: dto.paymentMethod },
+      metadata: { planId: dto.planId, subscriptionId, amountCents: order.amountCents, paymentMethod: dto.paymentMethod, provider: providerName },
     });
 
     return this.startProviderSubscription(order.id, subscriptionId, {
@@ -299,6 +305,7 @@ export class OrdersService {
       // same-email behavior. The current checkout always supplies it and
       // lets the customer choose a different Mercado Pago account.
       payerEmail: dto.payerEmail?.trim().toLowerCase(),
+      provider: providerName,
     });
   }
 
@@ -341,15 +348,17 @@ export class OrdersService {
       billingPeriod: SubscriptionBillingPeriod;
       externalReference: string;
       payerEmail?: string;
+      provider: PaymentProviderName;
     },
   ) {
     try {
+      const provider = this.providers.get(input.provider);
       const profile = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => this.loadBillingProfile(tx, input.userId));
       const payer = this.toPayerInput(profile, input.payerEmail);
 
       if (input.paymentMethod === 'pix') {
         const ttlMinutes = this.config.get<number>('CHECKOUT_ORDER_TTL_MINUTES') ?? 1440;
-        const charge = await this.provider.createPixCharge({
+        const charge = await provider.createPixCharge({
           payer,
           amountCents: input.amountCents,
           currency: input.currency,
@@ -365,7 +374,7 @@ export class OrdersService {
           tx.order.update({ where: { id: orderId }, data: { pixQrCode: charge.qrCode, pixQrCodeBase64: charge.qrCodeBase64 } }),
         );
       } else {
-        const preapproval = await this.provider.createCardSubscription({
+        const preapproval = await provider.createCardSubscription({
           payer,
           amountCents: input.amountCents,
           currency: input.currency,
@@ -444,6 +453,7 @@ export class OrdersService {
           amountCents: subscription.priceCents,
           currency: subscription.currency,
           status: 'pending',
+          provider: subscription.paymentProvider,
           paymentMethod: 'pix',
           provisioningStatus: 'not_required', // the server already exists; a renewal only extends the period
           expiresAt,
@@ -453,14 +463,14 @@ export class OrdersService {
 
       const profile = await this.loadBillingProfile(tx, subscription.userId);
       const plan = await tx.plan.findFirst({ where: { id: subscription.planId }, select: { name: true } });
-      return { order, profile, planName: plan?.name ?? 'Assinatura', expiresAt };
+      return { order, profile, planName: plan?.name ?? 'Assinatura', expiresAt, providerName: subscription.paymentProvider };
     });
 
     if (!prepared) return null;
-    const { order, profile, planName, expiresAt } = prepared;
+    const { order, profile, planName, expiresAt, providerName } = prepared;
 
     try {
-      const charge = await this.provider.createPixCharge({
+      const charge = await this.providers.get(providerName).createPixCharge({
         payer: this.toPayerInput(profile),
         amountCents: order.amountCents,
         currency: order.currency,
@@ -514,13 +524,13 @@ export class OrdersService {
 
     if (subscription.externalSubscriptionId) {
       try {
-        await this.provider.cancelSubscription(subscription.externalSubscriptionId);
+        await this.providers.get(subscription.paymentProvider).cancelSubscription(subscription.externalSubscriptionId);
       } catch (err) {
         // Never silently swallowed — if Mercado Pago is unreachable, the
         // customer's cancel request still fails loudly rather than
         // leaving them believing they stopped a subscription that's
         // still actively billing.
-        this.logger.error(`failed to cancel subscription ${subscription.id} at Mercado Pago: ${err instanceof Error ? err.message : String(err)}`);
+        this.logger.error(`failed to cancel subscription ${subscription.id} at ${subscription.paymentProvider}: ${err instanceof Error ? err.message : String(err)}`);
         throw err;
       }
     }
@@ -634,7 +644,7 @@ export class OrdersService {
       throw new ConflictException('ORDER_NOT_REFUNDABLE: no payment on file for this order');
     }
 
-    const result = await this.provider.refund(latestPayment.id);
+    const result = await this.providers.get(order.provider).refund(latestPayment.id);
     await this.audit.record({
       action: 'admin.order.refund',
       actorId,

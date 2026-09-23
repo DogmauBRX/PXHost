@@ -121,7 +121,7 @@ export function OrderStatusView({ order, onRetry }: { order: Order; onRetry: () 
           </CardHeader>
           <CardBody className="space-y-4">
             <p className="text-sm text-text-muted">
-              Você será redirecionado para a página segura do Mercado Pago para autorizar a cobrança no cartão — os dados do cartão nunca passam pelo nosso site.
+              Você será redirecionado para a página segura do {order.provider === 'pagbank' ? 'PagBank' : 'Mercado Pago'} para autorizar a cobrança no cartão — os dados do cartão nunca passam pelo nosso site.
             </p>
             <Button
               type="button"

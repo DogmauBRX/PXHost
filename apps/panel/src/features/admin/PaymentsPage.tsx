@@ -332,7 +332,7 @@ function OrderDetailModal({ id, onClose, onChanged }: { id: string | null; onClo
     mutationFn: () => refundOrder(id!, refundReason.trim()),
     onSuccess: (result) => {
       setActionError(null);
-      setActionMessage(`Reembolso solicitado ao Mercado Pago (status: ${result.providerStatus ?? 'desconhecido'}). A confirmação chega pelo webhook.`);
+      setActionMessage(`Reembolso solicitado ao provedor (status: ${result.providerStatus ?? 'desconhecido'}). A confirmação chega pelo webhook.`);
       setRefundReason('');
       onChanged();
     },

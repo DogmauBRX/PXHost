@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
@@ -10,13 +10,13 @@ import { canTransition, type SubscriptionStatus } from '../subscriptions/subscri
 import { PaymentsService } from './payments.service';
 import { ProvisioningQueueService } from './provisioning-queue.service';
 import {
-  PAYMENT_PROVIDER,
   type GatewayPayment,
   type GatewaySubscription,
   type InternalPaymentEvent,
   type ParsedWebhook,
   type PaymentProvider,
 } from './payment-provider.interface';
+import { PaymentProviderRegistry } from './payment-provider.registry';
 
 /**
  * The actual webhook processing logic — runs inside the
@@ -66,18 +66,19 @@ export class PaymentsWebhookService {
     private readonly subscriptions: SubscriptionsService,
     private readonly payments: PaymentsService,
     private readonly provisioningQueue: ProvisioningQueueService,
-    @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
+    private readonly providers: PaymentProviderRegistry,
   ) {}
 
-  async process(parsed: ParsedWebhook): Promise<void> {
+  async process(parsed: ParsedWebhook, providerName = 'mercadopago'): Promise<void> {
+    const provider = this.providers.get(providerName);
     try {
       switch (parsed.resourceKind) {
         case 'payment':
         case 'authorized_payment':
-          await this.processPaymentEvent(parsed);
+          await this.processPaymentEvent(parsed, provider);
           break;
         case 'preapproval':
-          await this.processPreapprovalEvent(parsed);
+          await this.processPreapprovalEvent(parsed, provider);
           break;
         case null:
           // A topic this platform doesn't handle. Acknowledged, recorded,
@@ -97,7 +98,7 @@ export class PaymentsWebhookService {
    * outcome comes from the re-fetched resource's own status, never from
    * the notification (see this class's doc comment).
    */
-  private async processPaymentEvent(parsed: ParsedWebhook): Promise<void> {
+  private async processPaymentEvent(parsed: ParsedWebhook, provider: PaymentProvider): Promise<void> {
     if (!parsed.resourceId) {
       this.logger.warn(`${parsed.rawEvent} webhook ${parsed.notificationId} carries no resource id — nothing to re-fetch`);
       return;
@@ -105,13 +106,13 @@ export class PaymentsWebhookService {
 
     const payment =
       parsed.resourceKind === 'authorized_payment'
-        ? await this.provider.getAuthorizedPayment(parsed.resourceId)
-        : await this.provider.getPayment(parsed.resourceId);
+        ? await provider.getAuthorizedPayment(parsed.resourceId)
+        : await provider.getPayment(parsed.resourceId);
 
-    const event = this.provider.classifyPayment(payment);
+    const event = provider.classifyPayment(payment);
     if (event === 'Ignored') return;
 
-    const subscription = await this.findSubscriptionForPayment(payment);
+    const subscription = await this.findSubscriptionForPayment(payment, provider.name);
     if (!subscription) {
       await this.audit.record({
         action: 'payment.webhook.order_not_found',
@@ -126,7 +127,7 @@ export class PaymentsWebhookService {
       return;
     }
 
-    const shouldProvision = await this.applyPaymentOutcome(subscription.id, subscription.planId, event, payment);
+    const shouldProvision = await this.applyPaymentOutcome(subscription.id, subscription.planId, event, payment, provider.name);
     if (shouldProvision) {
       // Deliberately AFTER the transaction has committed — an outbound
       // Redis call must never happen inside a transaction that could
@@ -145,13 +146,13 @@ export class PaymentsWebhookService {
    *    it carries the `external_reference` this platform generated for
    *    the Order it was created for.
    */
-  private async findSubscriptionForPayment(payment: GatewayPayment) {
+  private async findSubscriptionForPayment(payment: GatewayPayment, providerName: string) {
     return this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
       if (payment.subscriptionExternalId) {
-        return tx.subscription.findFirst({ where: { externalSubscriptionId: payment.subscriptionExternalId } });
+        return tx.subscription.findFirst({ where: { externalSubscriptionId: payment.subscriptionExternalId, paymentProvider: providerName } });
       }
       if (payment.externalReference) {
-        const order = await tx.order.findFirst({ where: { externalReference: payment.externalReference } });
+        const order = await tx.order.findFirst({ where: { externalReference: payment.externalReference, provider: providerName } });
         if (order?.subscriptionId) {
           return tx.subscription.findFirst({ where: { id: order.subscriptionId } });
         }
@@ -167,17 +168,21 @@ export class PaymentsWebhookService {
    * subscription, and never provisions a server. Only the charge that
    * follows does.
    */
-  private async processPreapprovalEvent(parsed: ParsedWebhook): Promise<void> {
+  private async processPreapprovalEvent(parsed: ParsedWebhook, provider: PaymentProvider): Promise<void> {
     if (!parsed.resourceId) return;
-    const subscription = await this.provider.getSubscription(parsed.resourceId);
-    const event = this.provider.classifySubscription(subscription);
+    const subscription = await provider.getSubscription(parsed.resourceId);
+    const event = provider.classifySubscription(subscription);
 
     if (event === 'SubscriptionCanceled') {
-      await this.processSubscriptionCanceled(parsed.resourceId);
+      await this.processSubscriptionCanceled(parsed.resourceId, subscription, provider.name);
+      return;
+    }
+    if (event === 'SubscriptionPastDue') {
+      await this.processSubscriptionPastDue(parsed.resourceId, subscription, provider.name);
       return;
     }
     if (event === 'SubscriptionSynced') {
-      await this.processSubscriptionSynced(parsed.resourceId, subscription);
+      await this.processSubscriptionSynced(parsed.resourceId, subscription, provider.name);
     }
   }
 
@@ -192,6 +197,7 @@ export class PaymentsWebhookService {
     planId: string,
     event: InternalPaymentEvent,
     payment: GatewayPayment,
+    providerName: string,
   ): Promise<string | null> {
     return this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
       await this.capacity.lockPlan(tx, planId);
@@ -199,7 +205,7 @@ export class PaymentsWebhookService {
       const subscription = await tx.subscription.findFirst({ where: { id: subscriptionId } });
       if (!subscription) return null; // cannot happen in practice — the caller just read this row
 
-      const order = await this.findOrCreateOrderForPayment(tx, subscription, payment);
+      const order = await this.findOrCreateOrderForPayment(tx, subscription, payment, providerName);
       if (!order) return null; // an existing Payment row pointed at an order that's gone — cannot happen, defensive only
 
       // Idempotent no-op: this exact payment status was already applied
@@ -242,7 +248,7 @@ export class PaymentsWebhookService {
               paidAmountCents: payment.paidAmountCents ?? payment.amountCents,
             },
           });
-          this.logger.log(`Mercado Pago payment approved providerPaymentId=${payment.id} orderId=${order.id} userId=${order.userId}`);
+          this.logger.log(`${providerName} payment approved providerPaymentId=${payment.id} orderId=${order.id} userId=${order.userId}`);
           await this.audit.record({ action: 'payment.approved', targetType: 'order', targetId: order.id, metadata: { paymentId: payment.id } });
 
           if (order.kind === 'plan_renewal') {
@@ -250,7 +256,7 @@ export class PaymentsWebhookService {
             await this.audit.record({ action: 'subscription.renewed', targetType: 'subscription', targetId: subscriptionId, metadata: { orderId: order.id } });
           } else if (subscription.status === 'pending') {
             await this.subscriptions.applyTransition(tx, subscriptionId, 'active', { actorId: null, reason: 'payment webhook: confirmed' });
-            await tx.subscription.update({ where: { id: subscriptionId }, data: { autoRenew: true } });
+            await tx.subscription.update({ where: { id: subscriptionId }, data: { autoRenew: subscription.paymentMethod === 'card' } });
             await this.audit.record({ action: 'subscription.activated', targetType: 'subscription', targetId: subscriptionId, metadata: { orderId: order.id } });
           } else if (subscription.status === 'past_due' || subscription.status === 'suspended') {
             // Recovery — a formerly-suspended/overdue subscription pays
@@ -335,6 +341,7 @@ export class PaymentsWebhookService {
     tx: Prisma.TransactionClient,
     subscription: { id: string; userId: string; planId: string; currency: string; priceCents: number },
     payment: GatewayPayment,
+    providerName: string,
   ) {
     const existingPayment = await tx.payment.findUnique({ where: { id: payment.id } });
     if (existingPayment) {
@@ -364,20 +371,21 @@ export class PaymentsWebhookService {
         amountCents: payment.amountCents ?? subscription.priceCents,
         currency: subscription.currency,
         status: 'pending',
+        provider: providerName,
         provisioningStatus: 'not_required', // the server already exists — a renewal only extends the period
         config: {} as unknown as Prisma.InputJsonValue,
       },
     });
   }
 
-  private async processSubscriptionCanceled(externalSubscriptionId: string): Promise<void> {
+  private async processSubscriptionCanceled(externalSubscriptionId: string, gateway: GatewaySubscription, providerName: string): Promise<void> {
     await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
-      const subscription = await tx.subscription.findFirst({ where: { externalSubscriptionId } });
+      const subscription = await this.findSubscriptionForGateway(tx, externalSubscriptionId, gateway, providerName);
       if (!subscription) return;
       if (canTransition(subscription.status as SubscriptionStatus, 'cancelled')) {
         await this.subscriptions.applyTransition(tx, subscription.id, 'cancelled', {
           actorId: null,
-          reason: 'subscription webhook: cancelled at Mercado Pago',
+          reason: `subscription webhook: cancelled at ${providerName}`,
         });
       }
     });
@@ -389,14 +397,37 @@ export class PaymentsWebhookService {
    * `PaymentConfirmed`'s job (see this class's own doc comment). This is
    * the ONLY thing an `authorized` preapproval does on this platform.
    */
-  private async processSubscriptionSynced(externalSubscriptionId: string, gatewaySubscription: GatewaySubscription): Promise<void> {
-    if (!gatewaySubscription.nextDueDate) return;
-    await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
-      tx.subscription.updateMany({
-        where: { externalSubscriptionId, status: 'active' },
-        data: { currentPeriodEndsAt: gatewaySubscription.nextDueDate! },
-      }),
-    );
+  private async processSubscriptionSynced(externalSubscriptionId: string, gatewaySubscription: GatewaySubscription, providerName: string): Promise<void> {
+    await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
+      const subscription = await this.findSubscriptionForGateway(tx, externalSubscriptionId, gatewaySubscription, providerName);
+      if (!subscription || !gatewaySubscription.nextDueDate || subscription.status !== 'active') return;
+      await tx.subscription.update({ where: { id: subscription.id }, data: { currentPeriodEndsAt: gatewaySubscription.nextDueDate } });
+    });
+  }
+
+  private async processSubscriptionPastDue(externalSubscriptionId: string, gateway: GatewaySubscription, providerName: string): Promise<void> {
+    await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
+      const subscription = await this.findSubscriptionForGateway(tx, externalSubscriptionId, gateway, providerName);
+      if (!subscription || !canTransition(subscription.status as SubscriptionStatus, 'past_due')) return;
+      await this.subscriptions.applyTransition(tx, subscription.id, 'past_due', { actorId: null, reason: `subscription webhook: overdue at ${providerName}` });
+    });
+  }
+
+  private async findSubscriptionForGateway(
+    tx: Prisma.TransactionClient,
+    externalSubscriptionId: string,
+    gateway: GatewaySubscription,
+    providerName: string,
+  ) {
+    let subscription = await tx.subscription.findFirst({ where: { externalSubscriptionId, paymentProvider: providerName } });
+    if (!subscription && gateway.externalReference) {
+      const order = await tx.order.findFirst({ where: { externalReference: gateway.externalReference, provider: providerName } });
+      if (order?.subscriptionId) subscription = await tx.subscription.findFirst({ where: { id: order.subscriptionId } });
+    }
+    if (subscription && subscription.externalSubscriptionId !== externalSubscriptionId) {
+      subscription = await tx.subscription.update({ where: { id: subscription.id }, data: { externalSubscriptionId } });
+    }
+    return subscription;
   }
 
   private async markEvent(notificationId: string, status: 'processed' | 'ignored' | 'failed', error?: string): Promise<void> {

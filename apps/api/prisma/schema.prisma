@@ -1173,21 +1173,25 @@ model Subscription {
   // unchanged) and for every subscription created before this column
   // existed.
   cancelAtPeriodEnd   Boolean   @default(false) @map("cancel_at_period_end")
-  // What the customer chose at checkout — 'pix' (per-period Checkout Pro,
-  // manual/notified renewal) or 'card' (Mercado Pago PreApproval,
-  // automatic recurring charge). NULL for every subscription created
+  // What the customer chose at checkout — 'pix' (manual/notified renewal)
+  // or 'card' (provider-managed automatic recurring charge). NULL for
+  // every subscription created
   // before this column existed — treated identically to 'pix' by every
   // reader (manual-renewal is the only behavior that ever existed).
   paymentMethod            String?   @map("payment_method")
-  // The Mercado Pago preapproval id — card only. The ONLY key the
-  // subscription_preapproval/subscription_authorized_payment webhooks
-  // are allowed to look this row up by (never amount/name), same
-  // doctrine Order.externalReference already follows.
+  // Gateway chosen when the contract was created. Renewals,
+  // cancellation and reconciliation must keep using the same gateway.
+  paymentProvider          String    @default("mercadopago") @map("payment_provider")
+  // Provider-side recurring subscription id — card only (Mercado Pago
+  // preapproval or PagBank subscription; PagBank temporarily stores the
+  // hosted checkout id until subscription.initial links the real id).
+  // Webhooks may look up by this id or by the server-generated Order
+  // externalReference, never by amount/name.
   externalSubscriptionId   String?   @unique @map("external_subscription_id")
-  // TRUE only for card: a Mercado Pago preapproval is a real recurring
-  // subscription that Mercado Pago itself schedules and charges.
-  // FALSE for pix, because Mercado Pago has no recurring pix product at
-  // all — BillingCycleProcessor generates each cycle's charge instead.
+  // TRUE only for card: the selected provider schedules and charges a
+  // real recurring subscription. FALSE for pix, because neither gateway
+  // uses a recurring pix product in this integration —
+  // BillingCycleProcessor generates each cycle's charge instead.
   // Either way billing-cycle applies the SAME grace period
   // (BILLING_GRACE_DAYS) once a period lapses unpaid.
   autoRenew                Boolean   @default(false) @map("auto_renew")
@@ -1208,6 +1212,7 @@ model Subscription {
   @@index([userId, status])
   @@index([planId, status])
   @@index([status])
+  @@index([paymentProvider])
   @@map("subscriptions")
 }
 

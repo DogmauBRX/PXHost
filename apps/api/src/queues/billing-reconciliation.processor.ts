@@ -1,11 +1,11 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Queue, Worker } from 'bullmq';
 import type IORedis from 'ioredis';
 import { createQueueRedisConnection } from './redis-connection';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { AuditService } from '../modules/audit/audit.service';
-import { PAYMENT_PROVIDER, type PaymentProvider } from '../modules/payments/payment-provider.interface';
+import { PaymentProviderRegistry } from '../modules/payments/payment-provider.registry';
 
 const RUN_EVERY_MS = 24 * 60 * 60 * 1000; // daily
 
@@ -42,7 +42,7 @@ export class BillingReconciliationProcessor implements OnModuleInit, OnModuleDes
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
+    private readonly providers: PaymentProviderRegistry,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -66,26 +66,25 @@ export class BillingReconciliationProcessor implements OnModuleInit, OnModuleDes
     const subscriptions = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
       tx.subscription.findMany({
         where: { status: { in: ['active', 'past_due'] }, externalSubscriptionId: { not: null } },
-        select: { id: true, status: true, externalSubscriptionId: true },
+        select: { id: true, status: true, externalSubscriptionId: true, paymentProvider: true },
       }),
     );
 
     let divergences = 0;
     for (const sub of subscriptions) {
       try {
-        const remote = await this.provider.getSubscription(sub.externalSubscriptionId!);
-        // Mercado Pago's preapproval vocabulary: `authorized` is the one
-        // state in which it will keep charging the card.
-        const remoteSuggestsActive = remote.status === 'authorized';
+        const provider = this.providers.get(sub.paymentProvider);
+        const remote = await provider.getSubscription(sub.externalSubscriptionId!);
+        const remoteSuggestsActive = provider.classifySubscription(remote) === 'SubscriptionSynced';
         const localIsActive = sub.status === 'active';
         if (remoteSuggestsActive !== localIsActive) {
           divergences++;
-          this.logger.warn(`reconciliation divergence: subscription ${sub.id} local=${sub.status} mercadopago=${remote.status}`);
+          this.logger.warn(`reconciliation divergence: subscription ${sub.id} local=${sub.status} ${provider.name}=${remote.status}`);
           await this.audit.record({
             action: 'billing.reconciliation.divergence',
             targetType: 'subscription',
             targetId: sub.id,
-            metadata: { localStatus: sub.status, remoteStatus: remote.status },
+            metadata: { provider: provider.name, localStatus: sub.status, remoteStatus: remote.status },
           });
         }
       } catch (err) {

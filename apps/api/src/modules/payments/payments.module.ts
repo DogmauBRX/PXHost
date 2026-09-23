@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { PAYMENT_PROVIDER } from './payment-provider.interface';
 import { MercadoPagoClient } from './mercadopago.client';
 import { MercadoPagoProvider } from './mercadopago.provider';
+import { PagBankClient } from './pagbank.client';
+import { PagBankProvider } from './pagbank.provider';
+import { PaymentProviderRegistry } from './payment-provider.registry';
 import { OrdersService } from './orders.service';
 import { PaymentsService } from './payments.service';
 import { PaymentsWebhookService } from './payments-webhook.service';
@@ -11,6 +14,8 @@ import { WebhookProcessingQueueService } from './webhook-processing-queue.servic
 import { ClientOrdersController } from './client-orders.controller';
 import { AdminOrdersController } from './admin-orders.controller';
 import { PaymentsWebhookController } from './payments-webhook.controller';
+import { PagBankWebhookController } from './pagbank-webhook.controller';
+import { PaymentProvidersController } from './payment-providers.controller';
 import { AuditModule } from '../audit/audit.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { CapacityModule } from '../capacity/capacity.module';
@@ -50,6 +55,9 @@ import { ServersModule } from '../servers/servers.module';
   providers: [
     MercadoPagoClient,
     { provide: PAYMENT_PROVIDER, useClass: MercadoPagoProvider },
+    PagBankClient,
+    PagBankProvider,
+    PaymentProviderRegistry,
     OrdersService,
     PaymentsService,
     PaymentsWebhookService,
@@ -57,7 +65,7 @@ import { ServersModule } from '../servers/servers.module';
     ProvisioningQueueService,
     WebhookProcessingQueueService,
   ],
-  controllers: [ClientOrdersController, AdminOrdersController, PaymentsWebhookController],
-  exports: [PAYMENT_PROVIDER, OrdersService, PaymentsService, PaymentsWebhookService, ProvisioningService, ProvisioningQueueService, WebhookProcessingQueueService],
+  controllers: [ClientOrdersController, AdminOrdersController, PaymentsWebhookController, PagBankWebhookController, PaymentProvidersController],
+  exports: [PAYMENT_PROVIDER, PaymentProviderRegistry, OrdersService, PaymentsService, PaymentsWebhookService, ProvisioningService, ProvisioningQueueService, WebhookProcessingQueueService],
 })
 export class PaymentsModule {}

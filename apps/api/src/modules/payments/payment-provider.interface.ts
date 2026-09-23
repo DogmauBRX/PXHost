@@ -3,13 +3,11 @@
  * external provider that processes money. Every other service in this
  * module (OrdersService, the webhook handler, the billing queues)
  * depends on THIS interface and the `@Inject(PAYMENT_PROVIDER)` token —
- * never on `MercadoPagoClient` directly, never on an HTTP call to
- * Mercado Pago's API.
+ * never on a provider client directly or on a gateway HTTP shape.
  *
- * There is exactly ONE implementation (`MercadoPagoProvider`). The seam
- * is not here to keep a second provider alive — it exists because it is
- * what keeps every HTTP detail in one file and lets the e2e suite inject
- * a fake without a network.
+ * Implementations currently exist for Mercado Pago and PagBank. The
+ * registry resolves the gateway recorded on each order/subscription;
+ * the token remains the default Mercado Pago binding and the e2e seam.
  *
  * Two different vocabularies are deliberately mixed in this file, and
  * that split is intentional, not sloppy:
@@ -23,13 +21,12 @@
  *    — so provider vocabulary never leaks into the domain, and the
  *    domain's own `InternalPaymentEvent` stays a closed union.
  *
- * Every amount in this file is integer CENTS — Mercado Pago's API takes
- * a decimal `transaction_amount` (e.g. `75.56`), never cents; that
- * conversion happens exactly once, inside `MercadoPagoProvider`, via
- * `money.ts`.
+ * Every amount in this file is integer CENTS. Provider-specific decimal
+ * conversions stay inside the corresponding adapter.
  */
 
 export const PAYMENT_PROVIDER = Symbol('PAYMENT_PROVIDER');
+export type PaymentProviderName = 'mercadopago' | 'pagbank';
 
 /**
  * Thrown when the PROVIDER itself rejects a request as unprocessable in
@@ -65,6 +62,7 @@ export type InternalPaymentEvent =
   | 'PaymentRefunded'
   | 'PaymentChargeback'
   | 'SubscriptionSynced'
+  | 'SubscriptionPastDue'
   | 'SubscriptionCanceled'
   | 'Ignored';
 
@@ -218,11 +216,16 @@ export interface WebhookRequestInput {
   headers: Record<string, string | string[] | undefined>;
   query: Record<string, string | string[] | undefined>;
   body: unknown;
+  /** Original bytes required by PagBank's ECDSA webhook signature. */
+  rawBody?: Buffer;
 }
 
 export interface PaymentProvider {
-  /** Short, stable identifier — `'mercadopago'` — written to `Order.provider`/`PaymentWebhookEvent.provider`. */
+  /** Short, stable identifier written to `Order.provider`/`PaymentWebhookEvent.provider`. */
   readonly name: string;
+
+  /** Lets the public checkout expose only gateways that can actually accept money in this deployment. */
+  isConfigured?(): boolean;
 
   /** Creates the one-off Pix charge for ONE billing cycle. The QR comes back inline. */
   createPixCharge(input: CreatePixChargeInput): Promise<PixCharge>;
@@ -263,5 +266,5 @@ export interface PaymentProvider {
    * The caller's mandatory re-fetch-before-acting rule still stands on
    * top of it.
    */
-  parseWebhook(req: WebhookRequestInput): ParsedWebhook;
+  parseWebhook(req: WebhookRequestInput): ParsedWebhook | Promise<ParsedWebhook>;
 }

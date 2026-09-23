@@ -46,7 +46,7 @@ export class PaymentsWebhookController {
     // Throws (401) on an invalid/missing signature — this is the ONLY
     // authentication this route has, so it must happen before the
     // dedupe-insert (never record, let alone queue, an unverified body).
-    const parsed = this.provider.parseWebhook(input);
+    const parsed = await this.provider.parseWebhook(input);
 
     try {
       await this.prisma.paymentWebhookEvent.create({
@@ -69,7 +69,7 @@ export class PaymentsWebhookController {
       throw err;
     }
 
-    await this.queue.enqueue(parsed);
+    await this.queue.enqueue(this.provider.name, parsed);
     return { received: true };
   }
 }

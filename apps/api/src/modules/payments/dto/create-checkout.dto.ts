@@ -29,6 +29,10 @@ export class CreateCheckoutDto {
   @IsIn(['pix', 'card'])
   paymentMethod!: 'pix' | 'card';
 
+  @IsOptional()
+  @IsIn(['mercadopago', 'pagbank'])
+  provider?: 'mercadopago' | 'pagbank';
+
   // Deliberately distinct from the GXHost account e-mail. This is sent
   // only to Mercado Pago as the payer for this checkout; ownership is
   // always derived from the authenticated user on the server.

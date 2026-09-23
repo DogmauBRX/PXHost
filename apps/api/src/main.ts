@@ -19,7 +19,7 @@ async function bootstrap(): Promise<void> {
   // proxy in front, there's no X-Forwarded-* header to trust in the
   // first place, so `request.ip` falls back to the raw socket peer
   // exactly as it always has.
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter({ trustProxy: true }));
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter({ trustProxy: true }), { rawBody: true });
 
   const config = app.get(ConfigService);
 

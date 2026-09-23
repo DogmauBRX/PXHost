@@ -5,6 +5,11 @@ import type IORedis from 'ioredis';
 import { createQueueRedisConnection } from '../../queues/redis-connection';
 import type { ParsedWebhook } from './payment-provider.interface';
 
+export interface WebhookProcessingJob {
+  provider: string;
+  parsed: ParsedWebhook;
+}
+
 /**
  * The API process's producer for the `webhook-processing` queue — same
  * "thin add-a-job half" shape as `ProvisioningQueueService`.
@@ -39,14 +44,14 @@ export class WebhookProcessingQueueService implements OnModuleInit, OnModuleDest
     await this.queue?.close();
   }
 
-  async enqueue(parsed: ParsedWebhook): Promise<void> {
+  async enqueue(provider: string, parsed: ParsedWebhook): Promise<void> {
     // Hyphens only in the jobId — BullMQ 6.x hard-rejects ':' (the same
     // latent defect ProvisioningQueueService's own doc comment
     // documents). Deterministic per notification: enqueuing the same
     // webhook id twice (a redelivery that raced the dedupe-insert) adds
     // only ONE job.
-    await this.queue.add('process', parsed, {
-      jobId: `webhook-${parsed.notificationId}`,
+    await this.queue.add('process', { provider, parsed } satisfies WebhookProcessingJob, {
+      jobId: `webhook-${provider}-${parsed.notificationId}`.replace(/:/g, '-'),
       attempts: 5,
       backoff: { type: 'exponential', delay: 5_000 },
     });

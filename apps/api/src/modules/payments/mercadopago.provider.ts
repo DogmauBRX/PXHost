@@ -142,6 +142,10 @@ export class MercadoPagoProvider implements PaymentProvider {
     private readonly config: ConfigService,
   ) {}
 
+  isConfigured(): boolean {
+    return Boolean(this.config.get<string>('MERCADOPAGO_ACCESS_TOKEN'));
+  }
+
   async createPixCharge(input: CreatePixChargeInput): Promise<PixCharge> {
     const payment = await this.client.post<MpPayment>(
       '/v1/payments',
