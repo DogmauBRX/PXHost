@@ -809,7 +809,10 @@ html[data-app-ready] body {
 .plan-card-hero {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-strong) 100%);
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 12% 22%, color-mix(in srgb, var(--plan-hero-accent) 35%, transparent), transparent 44%),
+    linear-gradient(125deg, var(--plan-hero-deep) 0%, var(--plan-hero-mid) 62%, var(--plan-hero-deep) 100%);
 }
 
 .plan-card-hero__circuit {
@@ -817,7 +820,19 @@ html[data-app-ready] body {
   inset: 0;
   width: 100%;
   height: 100%;
-  opacity: 0.4;
+  z-index: 0;
+  opacity: 0.3;
+}
+
+.plan-card-hero__energy {
+  position: absolute;
+  inset: -65%;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.5;
+  background: linear-gradient(105deg, transparent 42%, color-mix(in srgb, var(--plan-hero-accent) 35%, transparent) 49%, color-mix(in srgb, var(--plan-hero-secondary) 20%, transparent) 53%, transparent 61%);
+  filter: blur(8px);
+  transform: translateX(-70%);
 }
 
 /* Plans catalog — graphite storefront aligned with the landing command UI. */
@@ -901,9 +916,11 @@ html[data-app-ready] body {
 }
 
 .plan-command-card .plan-card-hero {
-  background:
-    radial-gradient(circle at 12% 22%, color-mix(in srgb, var(--color-accent) 25%, transparent), transparent 42%),
-    linear-gradient(125deg, #292d35 0%, #181b21 68%, #202329 100%);
+  --plan-hero-accent: #f59e0b;
+  --plan-hero-secondary: #fb7185;
+  --plan-hero-deep: #2b1d1a;
+  --plan-hero-mid: #1b2027;
+  --circuit-accent: var(--plan-hero-accent);
 }
 
 .plan-command-card .plan-card-hero::after {
@@ -913,14 +930,66 @@ html[data-app-ready] body {
   left: 0;
   height: 1px;
   content: '';
-  background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+  z-index: 1;
+  background: linear-gradient(90deg, transparent, var(--plan-hero-accent), transparent);
   background-size: 180% 100%;
   animation: public-header-signal 7s linear infinite;
 }
 
 .plan-command-card .plan-card-hero__circuit {
-  opacity: 0.22;
-  filter: grayscale(0.45) brightness(1.35);
+  opacity: 0.28;
+  filter: brightness(1.25);
+}
+
+.plan-card-hero--starter .plan-card-hero__energy {
+  animation: plan-hero-sweep 6s ease-in-out infinite;
+}
+
+.plan-card-hero--intermediate {
+  --plan-hero-accent: #38bdf8 !important;
+  --plan-hero-secondary: #22d3ee !important;
+  --plan-hero-deep: #122431 !important;
+  --plan-hero-mid: #18212d !important;
+}
+
+.plan-card-hero--intermediate .plan-card-hero__energy {
+  inset: -35%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--plan-hero-accent) 45%, transparent) 0%, transparent 52%);
+  filter: blur(18px);
+  animation: plan-hero-pulse 5s ease-in-out infinite;
+}
+
+.plan-card-hero--advanced {
+  --plan-hero-accent: #a78bfa !important;
+  --plan-hero-secondary: #e879f9 !important;
+  --plan-hero-deep: #211a35 !important;
+  --plan-hero-mid: #1e1c2b !important;
+}
+
+.plan-card-hero--advanced .plan-card-hero__energy {
+  inset: -110%;
+  background: conic-gradient(from 45deg, transparent 0deg 180deg, color-mix(in srgb, var(--plan-hero-accent) 28%, transparent) 220deg, transparent 285deg 360deg);
+  filter: blur(5px);
+  animation: plan-hero-spin 11s linear infinite;
+}
+
+.plan-card-hero--ultra {
+  --plan-hero-accent: #fb923c !important;
+  --plan-hero-secondary: #f43f5e !important;
+  --plan-hero-deep: #351d1b !important;
+  --plan-hero-mid: #211b25 !important;
+}
+
+.plan-card-hero--ultra .plan-card-hero__energy {
+  inset: -80%;
+  background: linear-gradient(115deg, transparent 34%, color-mix(in srgb, var(--plan-hero-secondary) 18%, transparent) 46%, color-mix(in srgb, var(--plan-hero-accent) 60%, transparent) 51%, transparent 58%);
+  filter: blur(4px);
+  animation: plan-hero-glint 4.8s ease-in-out infinite;
+}
+
+.plan-card-hero > .relative,
+.plan-card-hero > .absolute {
+  z-index: 2;
 }
 
 .plans-comparison thead {
@@ -939,9 +1008,29 @@ html[data-app-ready] body {
 @media (prefers-reduced-motion: reduce) {
   .plans-command__glow,
   .plans-accent-text,
-  .plan-command-card .plan-card-hero::after {
+  .plan-command-card .plan-card-hero::after,
+  .plan-card-hero__energy {
     animation: none;
   }
+}
+
+@keyframes plan-hero-sweep {
+  0%, 100% { transform: translateX(-70%) rotate(-4deg); opacity: 0.2; }
+  50% { transform: translateX(70%) rotate(4deg); opacity: 0.65; }
+}
+
+@keyframes plan-hero-pulse {
+  0%, 100% { transform: scale(0.7); opacity: 0.2; }
+  50% { transform: scale(1.25); opacity: 0.65; }
+}
+
+@keyframes plan-hero-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes plan-hero-glint {
+  0%, 100% { transform: translateX(-60%) rotate(-8deg); opacity: 0.15; }
+  45%, 58% { transform: translateX(55%) rotate(8deg); opacity: 0.8; }
 }
 
 /* Landing command surface — intentionally graphite in both themes. */

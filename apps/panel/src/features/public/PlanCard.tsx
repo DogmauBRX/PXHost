@@ -30,6 +30,14 @@ function tierIcon(memoryMb: number): LucideIcon {
   return Rocket;
 }
 
+function heroVariant(plan: PublicPlan): 'starter' | 'intermediate' | 'advanced' | 'ultra' {
+  const label = `${plan.name} ${plan.slug}`.toLocaleLowerCase('pt-BR');
+  if (label.includes('ultra') || plan.memoryMb >= 12288) return 'ultra';
+  if (label.includes('avanç') || label.includes('avanc') || plan.memoryMb >= 8192) return 'advanced';
+  if (label.includes('inter') || plan.memoryMb >= 6144) return 'intermediate';
+  return 'starter';
+}
+
 /**
  * One plan card — the atom of both the public grid (`PublicPlansPage`)
  * and the landing page's plan preview strip. Availability AND the
@@ -42,6 +50,7 @@ function tierIcon(memoryMb: number): LucideIcon {
 export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPlan; highlight?: boolean }) {
   const soldOut = plan.availability.status === 'sold_out';
   const pctOff = discountPercent(plan.priceCents, plan.compareAtPriceCents);
+  const variant = heroVariant(plan);
 
   const ctaLabel = soldOut ? 'Esgotado' : 'Assinar plano';
   const cta = soldOut ? (
@@ -66,8 +75,9 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
           the one thing here that isn't purely decorative — it's a quick
           "which of these is bigger" read at a glance, before a visitor
           even reaches the specs list below. */}
-      <div className="plan-card-hero relative flex h-28 shrink-0 items-start justify-between p-4">
+      <div className={`plan-card-hero plan-card-hero--${variant} relative flex h-28 shrink-0 items-start justify-between p-4`}>
         <CircuitPattern className="plan-card-hero__circuit" />
+        <span className="plan-card-hero__energy" aria-hidden="true" />
         <div className="relative">
           {highlight && (
             <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/25 px-2.5 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
