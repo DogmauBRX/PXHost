@@ -34,7 +34,7 @@ CVV ou validade passa pela GXHost.
 
 `POST /api/webhooks/pagbank` preserva o corpo bruto e valida
 `x-payload-signature` com ECDSA/SHA-256. A chave pública é consultada em
-`GET /public-keys?type=webhook` e mantida em cache por uma hora. Uma notificação
+`GET /public-keys/webhook` e mantida em cache por uma hora. Uma notificação
 sem assinatura válida é recusada antes de qualquer escrita no banco.
 
 Depois da validação, o controller grava `PaymentWebhookEvent`, enfileira o
