@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, Check, Cpu, Rocket, Server, Sparkles } from 'lucide-react';
+import { ArrowRight, Check, Cpu, Crown, Gauge, Rocket, Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PublicPlan } from '@/shared/api/types';
 import { Badge, Button, Card, CardBody } from '@/ui/primitives';
@@ -18,25 +18,22 @@ const AVAILABILITY_TONE: Record<PublicPlan['availability']['status'], 'ok' | 'wa
   sold_out: 'fail',
 };
 
-// A quick visual "which tier is this" cue on the hero band, ranked purely
-// by RAM — there's no separate tier field on Plan, and every plan here
-// already competes on resources, so it's the one number that reliably
-// orders "entry" -> "mid" -> "top" regardless of what an admin names or
-// prices a plan. Thresholds picked against this deployment's real plans
-// (4/6/12 GB) with headroom on both sides, not tied to any specific slug.
-function tierIcon(memoryMb: number): LucideIcon {
-  if (memoryMb < 5120) return Cpu;
-  if (memoryMb < 10240) return Server;
-  return Rocket;
-}
+type HeroVariant = 'starter' | 'intermediate' | 'advanced' | 'ultra';
 
-function heroVariant(plan: PublicPlan): 'starter' | 'intermediate' | 'advanced' | 'ultra' {
+function heroVariant(plan: PublicPlan): HeroVariant {
   const label = `${plan.name} ${plan.slug}`.toLocaleLowerCase('pt-BR');
   if (label.includes('ultra') || plan.memoryMb >= 12288) return 'ultra';
   if (label.includes('avanç') || label.includes('avanc') || plan.memoryMb >= 8192) return 'advanced';
   if (label.includes('inter') || plan.memoryMb >= 6144) return 'intermediate';
   return 'starter';
 }
+
+const HERO_ICONS: Record<HeroVariant, LucideIcon> = {
+  starter: Cpu,
+  intermediate: Gauge,
+  advanced: Rocket,
+  ultra: Crown,
+};
 
 /**
  * One plan card — the atom of both the public grid (`PublicPlansPage`)
@@ -89,7 +86,7 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
         <div className="relative">
           <Badge tone={AVAILABILITY_TONE[plan.availability.status]}>{AVAILABILITY_LABEL[plan.availability.status]}</Badge>
         </div>
-        <TierGlyph memoryMb={plan.memoryMb} />
+        <TierGlyph variant={variant} />
       </div>
 
       <CardBody className="flex flex-1 flex-col gap-5 p-6">
@@ -127,11 +124,11 @@ export function PlanCard({ plan, highlight = plan.isFeatured }: { plan: PublicPl
 }
 
 /** The hero band's tier glyph — a frosted-glass circle so a light icon stays legible straight on the gradient, no drop shadow needed. Sits bottom-left, clear of the badges pinned to the two top corners. */
-function TierGlyph({ memoryMb }: { memoryMb: number }) {
-  const Icon = tierIcon(memoryMb);
+function TierGlyph({ variant }: { variant: HeroVariant }) {
+  const Icon = HERO_ICONS[variant];
   return (
-    <div className="absolute bottom-4 left-4 flex h-11 w-11 items-center justify-center rounded-xl border border-white/20 bg-black/20 text-white shadow-lg backdrop-blur-sm">
-      <Icon className="h-5 w-5 text-white" aria-hidden="true" strokeWidth={2} />
+    <div className={`plan-card-hero__glyph plan-card-hero__glyph--${variant} absolute bottom-4 left-4 flex h-11 w-11 items-center justify-center rounded-xl border bg-black/20 shadow-lg backdrop-blur-sm`}>
+      <Icon className="h-5 w-5" aria-hidden="true" strokeWidth={2.2} />
     </div>
   );
 }

@@ -992,6 +992,12 @@ html[data-app-ready] body {
   z-index: 2;
 }
 
+.plan-card-hero__glyph {
+  color: var(--plan-hero-accent);
+  border-color: color-mix(in srgb, var(--plan-hero-accent) 48%, white 12%);
+  box-shadow: 0 0 22px -8px var(--plan-hero-accent), inset 0 1px 0 rgb(255 255 255 / 0.14);
+}
+
 .plans-comparison thead {
   background: linear-gradient(90deg, rgb(255 255 255 / 0.04), rgb(255 255 255 / 0.018));
 }
