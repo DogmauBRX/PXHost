@@ -178,9 +178,9 @@ export const envSchema = z.object({
   // server actually being suspended for non-payment (payments plan's
   // inadimplência flow) — a fixed operational knob, not a secret.
   BILLING_GRACE_DAYS: z.coerce.number().int().nonnegative().default(3),
-  // How long a `pending` order (and the subscription slot it holds)
-  // survives an abandoned checkout before the billing-cycle job expires
-  // it — see Order.expiresAt's own doc comment in schema.prisma.
+  // How long a `pending` order survives an abandoned checkout before the
+  // billing-cycle job expires it — a pending order does not reserve a plan
+  // slot until its payment confirms and the subscription becomes active.
   CHECKOUT_ORDER_TTL_MINUTES: z.coerce.number().int().positive().default(1440),
 
   // Public-exposure plan (VPS gateway over WireGuard). Deliberately NO

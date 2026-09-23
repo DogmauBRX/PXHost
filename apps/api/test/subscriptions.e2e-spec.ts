@@ -11,8 +11,8 @@ import { PrismaService } from '../src/core/prisma/prisma.service';
  * plan, price/limit fields never being client-controllable, ownership
  * isolation (404 not 403 for another customer's subscription), the
  * cancel-only self-service transition, admin-only activation being the
- * sole path into `active`, and the plan's own vagas rule extending to
- * subscriptions that have not yet been provisioned a server.
+ * sole path into `active`, and the plan's own vagas rule counting only
+ * payment-confirmed subscriptions that have not yet been provisioned.
  */
 describe('Subscriptions (e2e)', () => {
   let app: NestFastifyApplication;
@@ -224,13 +224,23 @@ describe('Subscriptions (e2e)', () => {
     expect(transitions).toEqual(expect.arrayContaining(['null->pending', 'pending->active', 'active->cancelled']));
   });
 
-  it('honors maxSlots: a second subscription to a 1-slot plan is refused NO_SLOTS, even though the first has no server yet', async () => {
+  it('does not reserve maxSlots for unpaid pending subscriptions, but counts an active paid subscription', async () => {
     const first = await authed(customerToken, '/api/client/subscriptions', { method: 'POST', payload: { planId: limitedPlanId } });
     expect(first.statusCode).toBe(201);
 
     const second = await authed(intruderToken, '/api/client/subscriptions', { method: 'POST', payload: { planId: limitedPlanId } });
-    expect(second.statusCode).toBe(409);
-    expect(second.body).toContain('NO_SLOTS');
+    expect(second.statusCode).toBe(201);
+
+    const firstBody = JSON.parse(first.body);
+    const activated = await authed(adminToken, `/api/admin/subscriptions/${firstBody.id}/status`, {
+      method: 'POST',
+      payload: { status: 'active', reason: 'payment confirmed in test' },
+    });
+    expect(activated.statusCode).toBe(201);
+
+    const third = await authed(customerToken, '/api/client/subscriptions', { method: 'POST', payload: { planId: limitedPlanId } });
+    expect(third.statusCode).toBe(409);
+    expect(third.body).toContain('NO_SLOTS');
   });
 
   it('a non-existent plan 404s rather than leaking whether a private/unknown id exists', async () => {

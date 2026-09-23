@@ -88,16 +88,14 @@ export class SubscriptionsService {
   }
 
   /**
-   * The billing-profile + slots + subscription-row half of
+   * The billing-profile + paid-capacity check + subscription-row half of
    * `createForUser`, taking an already-locked-and-validated `plan` (see
    * `lockAndValidatePlanForSubscription` above) so a second caller
    * (`OrdersService`) can create an `Order` in the SAME transaction,
-   * right after this returns — see `CapacityService.occupiedSlots`'s own
-   * doc comment for why creating the Subscription and its Order in two
-   * SEPARATE transactions would momentarily double-count a slot (a
-   * subscription with `serverId: null` and no order counts once; one
-   * mid-way through being attached to an order/server must never count
-   * twice, nor zero).
+   * right after this returns. A newly-created `pending` subscription does
+   * not reserve inventory; `CapacityService.occupiedSlots` counts it only
+   * after payment confirmation moves it to `active`, and the paid
+   * provisioning path rechecks the same plan limit under lock.
    */
   async createPendingSubscription(tx: Prisma.TransactionClient, userId: string, plan: { id: string; maxSlots: number | null; priceCents: number; currency: string; billingPeriod: string }) {
     // The frontend gates the "Confirmar assinatura"/"Ir para o

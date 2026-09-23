@@ -306,13 +306,15 @@ describe('Checkout (e2e)', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('honors maxSlots at checkout: a second checkout against a 1-slot plan is refused NO_SLOTS', async () => {
+  it('does not reserve maxSlots while two checkout attempts are still unpaid', async () => {
     const first = await authed(customerToken, '/api/client/checkout', { method: 'POST', payload: { planId: limitedPlanId, paymentMethod: 'pix' } });
     expect(first.statusCode).toBe(201);
 
     const second = await authed(intruderToken, '/api/client/checkout', { method: 'POST', payload: { planId: limitedPlanId, paymentMethod: 'pix' } });
-    expect(second.statusCode).toBe(409);
-    expect(second.body).toContain('NO_SLOTS');
+    expect(second.statusCode).toBe(201);
+
+    const pending = await asAdmin((tx) => tx.subscription.count({ where: { planId: limitedPlanId, status: 'pending', serverId: null } }));
+    expect(pending).toBe(2);
   });
 
   it('a second checkout attempt for the same plan and SAME payment method while the first is still pending returns the SAME order (double-click idempotency, payments plan §24)', async () => {

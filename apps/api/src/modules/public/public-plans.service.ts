@@ -159,7 +159,7 @@ export class PublicPlansService {
   /**
    * Occupied slots for a batch of plans, in ONE transaction — the exact
    * same two-source sum `CapacityService.occupiedSlots` computes for a
-   * single plan (servers on the plan, plus commercial-site subscriptions
+   * single plan (servers on the plan, plus payment-confirmed subscriptions
    * not yet attached to a server), just batched with `groupBy` across
    * every plan the catalog is about to render, the same duplication
    * `CapacityReportService.planUsage` already makes for the identical

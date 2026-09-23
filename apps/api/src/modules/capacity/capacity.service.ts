@@ -11,17 +11,14 @@ export const UID_BASE = 100000;
 const ACTIVE_TRANSFER_STATUSES = ['pending', 'archiving', 'uploading', 'restoring'] as const;
 
 /**
- * `subscriptions.status` values that still hold a commercial slot —
- * everything short of `cancelled`/`expired`. Mirrors the
- * `subscriptions_status_check` CHECK constraint's non-terminal members,
- * the same pattern `ACTIVE_TRANSFER_STATUSES` above already establishes
- * for `server_transfers`. `suspended` counts on purpose — the commercial
- * plan's own rule (§7) is that a suspended SERVER keeps its slot/RAM/
- * disk, and a suspended SUBSCRIPTION (e.g. `past_due` too long) is the
- * exact same posture: the seat isn't released just because billing
- * lapsed, only an explicit cancel frees it.
+ * Only a payment-confirmed subscription without a server holds a
+ * commercial slot. `pending` is deliberately absent: a customer may
+ * abandon checkout without consuming inventory. `past_due` and
+ * `suspended` are absent for the same reason when no server was ever
+ * provisioned; a paid subscription that already has a server continues
+ * to count through source (1) below, until that server is deleted.
  */
-export const SLOT_HOLDING_SUBSCRIPTION_STATUSES = ['pending', 'active', 'past_due', 'suspended'] as const;
+export const SLOT_HOLDING_SUBSCRIPTION_STATUSES = ['active'] as const;
 
 /**
  * The shared building blocks every resource-allocating write path uses:
@@ -60,18 +57,20 @@ export class CapacityService {
    *     exclusion `usageForNode` applies — a slot and a unit of node
    *     capacity can never disagree about whether a mid-hard-delete
    *     server still counts.
-   *  2. Subscriptions (commercial site) on this plan that have NOT yet
-   *     been provisioned a server (`serverId IS NULL`) and are still in
-   *     a slot-holding status (see `SLOT_HOLDING_SUBSCRIPTION_STATUSES`).
+   *  2. Payment-confirmed subscriptions (commercial site) on this plan
+   *     that have NOT yet been provisioned a server (`serverId IS NULL`).
+   *     A `pending` checkout does not reserve inventory; activation at
+   *     payment confirmation is the point where this source starts counting.
    *
    * The `serverId IS NULL` filter on (2) is what keeps this from ever
    * double-counting: the instant a subscription is attached to a server
    * (future auto-provisioning, or an admin linking one by hand), it
    * drops out of (2) and its server picks up the slot in (1) instead —
    * the two sets are always disjoint by construction, never by a
-   * point-in-time coincidence. Before this method existed, a plan could
-   * be oversold by selling more `pending`/`active` subscriptions than
-   * `maxSlots` allowed, since nothing counted them at all.
+   * point-in-time coincidence. The paid activation/provisioning path calls
+   * this same method under the plan lock, so multiple abandoned checkouts
+   * can coexist while the first payment that reaches `active` still cannot
+   * oversell the plan.
    */
   async occupiedSlots(tx: Prisma.TransactionClient, planId: string): Promise<number> {
     const [servers, subscriptions] = await Promise.all([
