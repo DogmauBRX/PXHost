@@ -26,6 +26,7 @@ export function PublicPlansPage() {
   // just picks which of the catalog's own plans to show; it never fabricates a
   // quarterly price for a plan that's only sold monthly.
   const visiblePlans = useMemo(() => plans?.filter((p) => p.billingPeriod === period) ?? [], [plans, period]);
+  const planGridClass = visiblePlans.length > 3 ? 'sm:grid-cols-2 xl:grid-cols-4' : 'sm:grid-cols-2 lg:grid-cols-3';
 
   return (
     <div className="plans-command relative min-h-screen overflow-hidden">
@@ -113,7 +114,7 @@ export function PublicPlansPage() {
         />
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className={`grid grid-cols-1 gap-5 ${planGridClass}`}>
             {visiblePlans.map((p) => (
               <PlanCard key={p.id} plan={p} />
             ))}
