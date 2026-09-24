@@ -1,5 +1,5 @@
 import { UnauthorizedException } from '@nestjs/common';
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { PagBankProvider, classifyPagBankPayment, classifyPagBankSubscription } from './pagbank.provider';
 
 describe('PagBankProvider', () => {
@@ -107,5 +107,36 @@ describe('PagBankProvider', () => {
     const provider = new PagBankProvider(client as any, { get: jest.fn() } as any);
 
     await expect(provider.parseWebhook({ headers: { 'x-payload-signature': signature }, query: {}, body: {}, rawBody })).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('accepts the production authenticity token calculated from the token and original payload', async () => {
+    const token = 'production-token';
+    const rawBody = Buffer.from(JSON.stringify({ id: 'ORDE_2', charges: [{ id: 'CHAR_2', status: 'PAID' }] }));
+    const authenticity = createHash('sha256').update(`${token}-`).update(rawBody).digest('hex');
+    const client = { isConfigured: jest.fn().mockReturnValue(true) };
+    const provider = new PagBankProvider(client as any, { get: jest.fn((key: string) => key === 'PAGBANK_TOKEN' ? token : undefined) } as any);
+
+    const parsed = await provider.parseWebhook({
+      headers: { 'x-authenticity-token': authenticity },
+      query: {},
+      body: JSON.parse(rawBody.toString('utf8')),
+      rawBody,
+    });
+
+    expect(parsed.resourceId).toBe('CHAR_2');
+    expect(parsed.rawEvent).toBe('charge.paid');
+  });
+
+  it('rejects an invalid production authenticity token', async () => {
+    const rawBody = Buffer.from('{"id":"ORDE_2"}');
+    const client = { isConfigured: jest.fn().mockReturnValue(true) };
+    const provider = new PagBankProvider(client as any, { get: jest.fn().mockReturnValue('production-token') } as any);
+
+    await expect(provider.parseWebhook({
+      headers: { 'x-authenticity-token': '0'.repeat(64) },
+      query: {},
+      body: {},
+      rawBody,
+    })).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

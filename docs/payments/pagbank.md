@@ -40,8 +40,11 @@ CVV ou validade passa pela GXHost.
 
 ## Webhook e segurança
 
-`POST /api/webhooks/pagbank` preserva o corpo bruto e valida
-`x-payload-signature` com ECDSA/SHA-256. A chave pública é consultada em
+`POST /api/webhooks/pagbank` preserva o corpo bruto e aceita os dois formatos
+oficiais de autenticação usados pelo PagBank. Nas notificações de Orders, valida
+`x-authenticity-token` comparando em tempo constante o SHA-256 de
+`{PAGBANK_TOKEN}-{payload original}`. No serviço novo de notificações, valida
+`x-payload-signature` com ECDSA/SHA-256; a chave pública é consultada em
 `GET /public-keys?type=webhook` e mantida em cache por uma hora. Uma notificação
 sem assinatura válida é recusada antes de qualquer escrita no banco.
 
@@ -64,5 +67,8 @@ e dispara o mesmo provisionamento automático já usado pelo Mercado Pago.
   estado remoto sem corrigir divergências silenciosamente.
 
 O PagBank exige conta elegível e liberação do produto de recorrência em
-produção. Enquanto essas credenciais não estiverem configuradas, apenas os
-provedores efetivamente disponíveis são exibidos ao cliente.
+produção. A emissão por `POST /orders` também depende da homologação obrigatória
+da integração e pode responder `403 Access denied` mesmo com um token de
+produção válido. Enquanto as credenciais e os produtos necessários não
+estiverem liberados, apenas os provedores efetivamente disponíveis são exibidos
+ao cliente.

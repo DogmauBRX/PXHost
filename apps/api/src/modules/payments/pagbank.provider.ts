@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash, createPublicKey, verify } from 'node:crypto';
+import { createHash, createPublicKey, timingSafeEqual, verify } from 'node:crypto';
 import { PagBankClient } from './pagbank.client';
 import { PaymentProviderRequestError } from './payment-provider.interface';
 import type {
@@ -338,18 +338,7 @@ export class PagBankProvider implements PaymentProvider {
 
   async parseWebhook(req: WebhookRequestInput): Promise<ParsedWebhook> {
     if (!req.rawBody) throw new UnauthorizedException('Corpo bruto ausente no webhook do PagBank');
-    const signatures = headerValues(req.headers['x-payload-signature']);
-    if (signatures.length === 0) throw new UnauthorizedException('Assinatura ausente no webhook do PagBank');
-    const publicKey = await this.webhookPublicKey();
-    const key = createPublicKey(toPem(publicKey));
-    const authentic = signatures.some((signature) => {
-      try {
-        return verify('sha256', req.rawBody!, key, Buffer.from(signature, 'base64'));
-      } catch {
-        return false;
-      }
-    });
-    if (!authentic) throw new UnauthorizedException('Assinatura inválida no webhook do PagBank');
+    await this.verifyWebhookSignature(req);
 
     const body = (req.body ?? {}) as PagBankWebhookBody;
     const resource = body.resource;
@@ -387,6 +376,37 @@ export class PagBankProvider implements PaymentProvider {
     const base = this.config.get<string>('PUBLIC_SITE_URL') ?? this.config.get<string>('PANEL_URL');
     if (!base) throw new PaymentProviderRequestError('PAGBANK_NOTIFICATION_URL não está configurada', 503);
     return `${base.replace(/\/$/, '')}/api/webhooks/pagbank`;
+  }
+
+  private async verifyWebhookSignature(req: WebhookRequestInput): Promise<void> {
+    const payloadSignatures = headerValues(req.headers['x-payload-signature']);
+    const authenticityTokens = headerValues(req.headers['x-authenticity-token']);
+    if (payloadSignatures.length === 0 && authenticityTokens.length === 0) {
+      throw new UnauthorizedException('Assinatura ausente no webhook do PagBank');
+    }
+
+    if (payloadSignatures.length > 0) {
+      try {
+        const publicKey = await this.webhookPublicKey();
+        const key = createPublicKey(toPem(publicKey));
+        const authentic = payloadSignatures.some((signature) => {
+          try {
+            return verify('sha256', req.rawBody!, key, Buffer.from(signature, 'base64'));
+          } catch {
+            return false;
+          }
+        });
+        if (authentic) return;
+      } catch (error) {
+        if (authenticityTokens.length === 0) {
+          throw new UnauthorizedException('Não foi possível validar a assinatura do webhook do PagBank', { cause: error });
+        }
+      }
+    }
+
+    const token = this.config.get<string>('PAGBANK_TOKEN');
+    if (token && authenticityTokens.some((presented) => matchesLegacyAuthenticityToken(presented, token, req.rawBody!))) return;
+    throw new UnauthorizedException('Assinatura inválida no webhook do PagBank');
   }
 
   private async webhookPublicKey(): Promise<string> {
@@ -460,6 +480,14 @@ function formatDateOnly(value: Date): string {
 function headerValues(value: string | string[] | undefined): string[] {
   const values = Array.isArray(value) ? value : value ? [value] : [];
   return values.flatMap((item) => item.split(',')).map((item) => item.trim()).filter(Boolean);
+}
+
+function matchesLegacyAuthenticityToken(presented: string, token: string, rawBody: Buffer): boolean {
+  const normalized = presented.trim().toLowerCase();
+  const expected = createHash('sha256').update(`${token}-`).update(rawBody).digest('hex');
+  const presentedBuffer = Buffer.from(normalized, 'utf8');
+  const expectedBuffer = Buffer.from(expected, 'utf8');
+  return presentedBuffer.length === expectedBuffer.length && timingSafeEqual(presentedBuffer, expectedBuffer);
 }
 
 function toPem(base64: string): string {
