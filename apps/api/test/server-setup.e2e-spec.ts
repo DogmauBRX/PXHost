@@ -147,7 +147,9 @@ describe('Server setup (e2e)', () => {
             {
               name: 'Server Memory',
               envVariable: 'SERVER_MEMORY',
-              defaultValue: '1024',
+              // Deliberately differs from the plan's 1024 MB: the
+              // plan-owned value must win when setup is resolved.
+              defaultValue: '768',
               rules: 'required|integer|min:512',
               isUserViewable: true,
               isUserEditable: false,
@@ -469,7 +471,7 @@ describe('Server setup (e2e)', () => {
     );
     const byEnvVar = Object.fromEntries(vars.map((v: any) => [v.variable.envVariable, v.value]));
     expect(byEnvVar.MINECRAFT_VERSION).toBe('1.21.1'); // the customer's real choice
-    expect(byEnvVar.SERVER_MEMORY).toBe('1024'); // the template's own default — never the '999999' rejected two tests ago
+    expect(byEnvVar.SERVER_MEMORY).toBe('1024'); // the server's plan snapshot — neither template default 768 nor rejected client value 999999
   });
 
   it('the client can retry after install_failed — same server, same uid, same allocation, never a duplicate', async () => {

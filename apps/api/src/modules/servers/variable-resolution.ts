@@ -38,3 +38,16 @@ export function resolveDeclaredVariables(
   }
   return resolved;
 }
+
+/**
+ * Resource variables are owned by the server's snapshotted plan limits,
+ * never by a template default. Templates still declare SERVER_MEMORY so
+ * their startup command can substitute it, but the value must follow the
+ * server row that also drives Docker's cgroup limit.
+ */
+export function applyPlanManagedVariables(values: Record<string, string>, memoryMb: number): Record<string, string> {
+  if (Object.prototype.hasOwnProperty.call(values, 'SERVER_MEMORY')) {
+    values.SERVER_MEMORY = String(memoryMb);
+  }
+  return values;
+}

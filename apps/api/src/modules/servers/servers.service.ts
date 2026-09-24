@@ -14,6 +14,7 @@ import { CreateServerDto, CreateSetupPendingServerInput } from './dto/server.dto
 import { generateShortId } from './short-id';
 import { pickDockerImage } from '../templates/software-presets';
 import { validateVariableValue } from './variable-rules';
+import { applyPlanManagedVariables } from './variable-resolution';
 
 // Exported for ServerSetupService, which builds the exact same
 // CreateAgentServerRequest shape for the post-setup dispatch — the
@@ -401,6 +402,10 @@ export class ServersService {
       for (const tv of templateVars) {
         const value = requested[tv.envVariable] ?? tv.defaultValue;
         resolvedValues[tv.envVariable] = value;
+      }
+      applyPlanManagedVariables(resolvedValues, server.memoryMb);
+      for (const tv of templateVars) {
+        const value = resolvedValues[tv.envVariable];
         await tx.serverVariable.create({ data: { serverId: server.id, variableId: tv.id, value } });
       }
 

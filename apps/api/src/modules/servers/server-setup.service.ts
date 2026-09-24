@@ -6,7 +6,7 @@ import { PublicTemplatesService } from '../public/public-templates.service';
 import { AuditService } from '../audit/audit.service';
 import { DEFAULT_INSTALL_ENTRYPOINT, DEFAULT_INSTALL_IMAGE, ServersService } from './servers.service';
 import { pickDockerImage } from '../templates/software-presets';
-import { resolveDeclaredVariables } from './variable-resolution';
+import { applyPlanManagedVariables, resolveDeclaredVariables } from './variable-resolution';
 import { CompleteServerSetupDto } from './dto/server-setup.dto';
 import { ChangeServerVersionDto } from './dto/change-version.dto';
 import { SoftwareDiscoveryService } from '../templates/software-discovery.service';
@@ -218,7 +218,7 @@ export class ServerSetupService {
     // isUserEditable:false field out of the client's reach: they're
     // never in `templateVars`'s editable set, so a client "typing the
     // variable name it saw in devtools" gets a 403, not a resource bump.
-    const resolvedValues = resolveDeclaredVariables(templateVars, dto.variables ?? {});
+    const resolvedValues = applyPlanManagedVariables(resolveDeclaredVariables(templateVars, dto.variables ?? {}), server.memoryMb);
 
     // Both the CAS transition AND the ServerVariable writes happen inside
     // ONE `withRLS` transaction — `server_variables` carries the same RLS
@@ -353,7 +353,7 @@ export class ServerSetupService {
     if (!dockerImage) throw new ConflictException('Template has no docker images configured');
 
     const templateVars = await this.prisma.templateVariable.findMany({ where: { templateId: template.id } });
-    const resolvedValues = resolveDeclaredVariables(templateVars, dto.variables ?? {});
+    const resolvedValues = applyPlanManagedVariables(resolveDeclaredVariables(templateVars, dto.variables ?? {}), server.memoryMb);
 
     // Same "CAS + variable upserts in one transaction" shape as `complete`
     // above, re-checking `powerState` at UPDATE time too — the server
