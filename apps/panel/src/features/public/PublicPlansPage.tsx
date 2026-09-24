@@ -4,6 +4,7 @@ import { CalendarDays, Gauge, Layers, ShieldCheck, Sparkles, Zap } from 'lucide-
 import { listPublicPlans } from './public.api';
 import { PlanCard } from './PlanCard';
 import { ComparisonTable } from './ComparisonTable';
+import { MarketPriceComparison } from './MarketPriceComparison';
 import { Seo } from './Seo';
 import { Alert, EmptyState, Skeleton } from '@/ui/primitives';
 import { HeroCircuitBackground } from './HeroCircuitBackground';
@@ -128,6 +129,7 @@ export function PublicPlansPage() {
                 <p className="mt-2 text-sm text-text-muted">Todos os limites exibidos vêm diretamente do catálogo atual.</p>
               </div>
               <ComparisonTable plans={visiblePlans} />
+              <MarketPriceComparison plans={visiblePlans} />
             </div>
           )}
         </>
