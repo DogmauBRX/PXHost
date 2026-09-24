@@ -153,6 +153,7 @@ export class MercadoPagoProvider implements PaymentProvider {
   }
 
   async createPixCharge(input: CreatePixChargeInput): Promise<PixCharge> {
+    const payerName = mercadoPagoPayerName(input.payer.firstName, input.payer.lastName);
     const payment = await this.client.post<MpPayment>(
       '/v1/payments',
       {
@@ -164,8 +165,8 @@ export class MercadoPagoProvider implements PaymentProvider {
         date_of_expiration: input.expiresAt.toISOString(),
         payer: {
           email: input.payer.email,
-          first_name: input.payer.firstName ?? undefined,
-          last_name: input.payer.lastName ?? undefined,
+          first_name: payerName.firstName,
+          last_name: payerName.lastName,
           identification: { type: 'CPF', number: input.payer.cpf },
           address: {
             zip_code: input.payer.address.postalCode,
@@ -196,6 +197,7 @@ export class MercadoPagoProvider implements PaymentProvider {
   }
 
   async createBoletoCharge(input: CreateBoletoChargeInput): Promise<BoletoCharge> {
+    const payerName = mercadoPagoPayerName(input.payer.firstName, input.payer.lastName);
     const payment = await this.client.post<MpPayment>(
       '/v1/payments',
       {
@@ -207,8 +209,8 @@ export class MercadoPagoProvider implements PaymentProvider {
         date_of_expiration: input.expiresAt.toISOString(),
         payer: {
           email: input.payer.email,
-          first_name: input.payer.firstName ?? undefined,
-          last_name: input.payer.lastName ?? undefined,
+          first_name: payerName.firstName,
+          last_name: payerName.lastName,
           identification: { type: 'CPF', number: input.payer.cpf },
           address: {
             zip_code: input.payer.address.postalCode,
@@ -413,6 +415,27 @@ export function classifyMercadoPagoPayment(status: string): InternalPaymentEvent
 
 export function classifyMercadoPagoPreapproval(status: string): InternalPaymentEvent {
   return PREAPPROVAL_STATUS_MAP[status] ?? 'Ignored';
+}
+
+/**
+ * Older accounts stored the complete display name in `firstName` and
+ * left `lastName` empty. Mercado Pago requires both fields for a
+ * registered boleto, so recover the two parts here at the provider
+ * boundary. A one-word legal/display name is repeated because the
+ * provider has no mononym representation and rejects an empty surname.
+ */
+function mercadoPagoPayerName(firstName: string | null, lastName: string | null): { firstName: string; lastName: string } {
+  const first = firstName?.trim().replace(/\s+/g, ' ') ?? '';
+  const last = lastName?.trim().replace(/\s+/g, ' ') ?? '';
+  if (first && last) return { firstName: first, lastName: last };
+
+  const parts = (first || last).split(' ').filter(Boolean);
+  if (parts.length > 1) {
+    return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+  }
+
+  const onlyName = parts[0] || 'Cliente';
+  return { firstName: onlyName, lastName: onlyName };
 }
 
 function toGatewayPayment(payment: MpPayment): GatewayPayment {

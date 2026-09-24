@@ -220,8 +220,16 @@ export class AuthService {
     const username = await this.generateUniqueUsername(email);
     const passwordHash = await this.password.hash(dto.password);
 
+    const [firstName, ...surnameParts] = dto.name.trim().split(/\s+/);
     const user = await this.prisma.user.create({
-      data: { email, username, passwordHash, firstName: dto.name.trim(), globalRole: 'user' },
+      data: {
+        email,
+        username,
+        passwordHash,
+        firstName,
+        lastName: surnameParts.join(' ') || null,
+        globalRole: 'user',
+      },
     });
 
     const result = await this.issueSession(user.id, false, meta);

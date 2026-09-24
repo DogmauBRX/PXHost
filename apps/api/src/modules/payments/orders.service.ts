@@ -14,7 +14,7 @@ import { RedisService } from '../../core/redis/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { type SubscriptionBillingPeriod } from '../subscriptions/subscription-status';
-import { type PayerInput, type PaymentMethod, type PaymentProviderName } from './payment-provider.interface';
+import { PaymentProviderRequestError, type PayerInput, type PaymentMethod, type PaymentProviderName } from './payment-provider.interface';
 import { PaymentProviderRegistry } from './payment-provider.registry';
 import { PaymentsService } from './payments.service';
 import { ProvisioningQueueService } from './provisioning-queue.service';
@@ -425,6 +425,15 @@ export class OrdersService {
       // shape the webhook's own rejected-payment branch already uses.
       await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.order.update({ where: { id: orderId }, data: { status: 'failed' } }));
       this.logger.error(`checkout failed for order ${orderId}: ${err instanceof Error ? err.message : String(err)}`);
+      if (err instanceof PaymentProviderRequestError) {
+        const providerRejectedData = err.status >= 400 && err.status < 500;
+        throw new HttpException(
+          providerRejectedData
+            ? 'O provedor de pagamento recusou os dados da cobrança. Confira seus dados cadastrais e tente novamente.'
+            : 'O provedor de pagamento está indisponível. Tente novamente em instantes.',
+          providerRejectedData ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.BAD_GATEWAY,
+        );
+      }
       throw err;
     }
 

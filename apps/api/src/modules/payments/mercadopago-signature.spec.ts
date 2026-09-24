@@ -135,8 +135,11 @@ describe('MercadoPagoProvider boleto', () => {
       payer: {
         userId: 'user-1',
         email: 'cliente@example.com',
-        firstName: 'Cliente',
-        lastName: 'GX',
+        // Legacy registrations stored a one-word display name in
+        // firstName and left lastName empty. Boleto must still send both
+        // mandatory Mercado Pago fields.
+        firstName: 'Douglas',
+        lastName: null,
         cpf: '12345678901',
         address: { postalCode: '01001000', addressLine: 'Praça da Sé', addressNumber: '1', neighborhood: 'Sé', city: 'São Paulo', state: 'SP' },
       },
@@ -150,7 +153,11 @@ describe('MercadoPagoProvider boleto', () => {
 
     expect(post).toHaveBeenCalledWith(
       '/v1/payments',
-      expect.objectContaining({ payment_method_id: 'bolbradesco', external_reference: 'ord_test' }),
+      expect.objectContaining({
+        payment_method_id: 'bolbradesco',
+        external_reference: 'ord_test',
+        payer: expect.objectContaining({ first_name: 'Douglas', last_name: 'Douglas' }),
+      }),
       'order-1',
     );
     expect(charge.ticketUrl).toContain('/ticket');
