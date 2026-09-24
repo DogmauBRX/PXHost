@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   ArrowRight,
@@ -9,6 +10,7 @@ import {
   Gauge,
   HardDrive,
   Headphones,
+  Maximize2,
   Play,
   Server,
   Settings2,
@@ -18,6 +20,7 @@ import {
   UsersRound,
   Workflow,
 } from 'lucide-react';
+import { Modal } from '@/ui/primitives';
 import { HeroCircuitBackground } from './HeroCircuitBackground';
 import { Seo } from './Seo';
 
@@ -78,15 +81,11 @@ const screenshots = [
     title: 'Ajuda contextual dentro do painel',
     description: 'Respostas rápidas para tarefas comuns como backups, mods, plugins, arquivos, acesso e configuração.',
   },
-  {
-    src: '/images/about-gx/client-support-current.png',
-    eyebrow: 'Suporte por ticket',
-    title: 'Atendimento com histórico na sua conta',
-    description: 'Abra um novo chamado, acompanhe a conversa e consulte as orientações de segurança sem sair do painel.',
-  },
 ];
 
 export function AboutGxPage() {
+  const [selectedScreenshot, setSelectedScreenshot] = useState<(typeof screenshots)[number] | null>(null);
+
   return (
     <div className="plans-command relative min-h-screen overflow-hidden">
       <Seo
@@ -200,15 +199,15 @@ export function AboutGxPage() {
           <p className="mt-4 text-base leading-7 text-text-muted">Capturas reais do painel GXhost usando servidores de teste, sem dados de clientes.</p>
         </div>
 
-        <div className="mt-12 space-y-14">
-          {screenshots.map((shot, index) => (
-            <article key={shot.src} className={`grid items-center gap-7 lg:grid-cols-[1.45fr_0.55fr] lg:gap-10 ${index % 2 === 1 ? 'lg:[&>*:first-child]:order-2' : ''}`}>
-              <ScreenshotFrame src={shot.src} alt={`${shot.title} no painel do cliente GXhost`} />
-              <div>
+        <div className="mt-12 space-y-16">
+          {screenshots.map((shot) => (
+            <article key={shot.src}>
+              <div className="mb-5 max-w-3xl">
                 <p className="font-mono text-[0.64rem] font-bold tracking-[0.17em] text-accent uppercase">{shot.eyebrow}</p>
                 <h3 className="mt-2 text-2xl font-semibold tracking-tight text-text">{shot.title}</h3>
                 <p className="mt-3 text-sm leading-7 text-text-muted">{shot.description}</p>
               </div>
+              <ScreenshotFrame src={shot.src} alt={`${shot.title} no painel do cliente GXhost`} onOpen={() => setSelectedScreenshot(shot)} />
             </article>
           ))}
         </div>
@@ -227,11 +226,29 @@ export function AboutGxPage() {
           </Link>
         </div>
       </section>
+
+      <Modal
+        open={selectedScreenshot !== null}
+        onClose={() => setSelectedScreenshot(null)}
+        title={selectedScreenshot?.title ?? 'Captura do painel'}
+        description="Captura real do painel GXhost com dados de teste."
+        size="xl"
+      >
+        {selectedScreenshot && (
+          <img
+            src={selectedScreenshot.src}
+            alt={`${selectedScreenshot.title} ampliado`}
+            className="max-h-[68vh] w-full rounded-xl border border-white/10 bg-[#111419] object-contain"
+          />
+        )}
+      </Modal>
     </div>
   );
 }
 
-function ScreenshotFrame({ src, alt, priority = false }: { src: string; alt: string; priority?: boolean }) {
+function ScreenshotFrame({ src, alt, priority = false, onOpen }: { src: string; alt: string; priority?: boolean; onOpen?: () => void }) {
+  const screenshot = <img src={src} alt={alt} loading={priority ? 'eager' : 'lazy'} className="block aspect-[16/9] w-full object-cover object-top" />;
+
   return (
     <figure className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#111419] shadow-[0_28px_70px_-35px_rgba(0,0,0,0.95)]">
       <div className="flex h-9 items-center gap-1.5 border-b border-white/[0.07] bg-white/[0.035] px-4" aria-hidden="true">
@@ -240,7 +257,15 @@ function ScreenshotFrame({ src, alt, priority = false }: { src: string; alt: str
         <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
         <span className="ml-3 font-mono text-[0.58rem] tracking-wider text-white/25 uppercase">painel.gxhost</span>
       </div>
-      <img src={src} alt={alt} loading={priority ? 'eager' : 'lazy'} className="block aspect-[16/9] w-full object-cover object-top" />
+      {onOpen ? (
+        <button type="button" onClick={onOpen} className="group relative block w-full cursor-zoom-in text-left" aria-label={`Ampliar: ${alt}`}>
+          {screenshot}
+          <span className="absolute right-4 bottom-4 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-[#111419]/90 px-3 py-2 text-xs font-semibold text-white/80 opacity-90 shadow-lg backdrop-blur transition group-hover:border-accent/35 group-hover:text-accent sm:px-4 sm:py-2.5">
+            <Maximize2 className="h-4 w-4" aria-hidden="true" />
+            Clique para ampliar
+          </span>
+        </button>
+      ) : screenshot}
     </figure>
   );
 }
