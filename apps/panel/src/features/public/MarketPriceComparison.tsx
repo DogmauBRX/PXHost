@@ -2,14 +2,16 @@ import { BarChart3, Check, Info, TrendingDown } from 'lucide-react';
 import type { PublicPlan } from '@/shared/api/types';
 import { formatMemory, formatPrice } from '@/shared/format/plan';
 
-// Public monthly offers from five Brazilian Minecraft hosting providers,
+// Public monthly offers from eight Brazilian Minecraft hosting providers,
 // checked on 24/09/2026. The published comparison intentionally keeps the
 // providers anonymous and normalises their advertised prices by RAM so plans
-// with different memory tiers can be compared on the same basis.
+// with different memory tiers can be compared on the same basis. Offers sold
+// as "unlimited RAM" without a published numeric allowance are part of the
+// researched provider sample but cannot be included in the per-GB range.
 const MARKET_SAMPLE = {
-  providers: 5,
+  providers: 8,
   checkedAt: '24/09/2026',
-  minPricePerGbCents: 832,
+  minPricePerGbCents: 500,
   maxPricePerGbCents: 1250,
 };
 
@@ -58,6 +60,7 @@ export function MarketPriceComparison({ plans }: { plans: PublicPlan[] }) {
           const gxMonthly = monthlyEquivalent(plan);
           const [marketMin, marketMax] = marketRange(plan);
           const savings = Math.max(0, Math.round((1 - gxMonthly / marketMin) * 100));
+          const isWithinMarketRange = gxMonthly >= marketMin && gxMonthly <= marketMax;
 
           return (
             <article
@@ -94,6 +97,12 @@ export function MarketPriceComparison({ plans }: { plans: PublicPlan[] }) {
                   {savings}% abaixo do menor valor da faixa
                 </div>
               )}
+              {isWithinMarketRange && (
+                <div className="mt-4 flex items-center gap-2 border-t border-white/8 pt-4 text-sm font-semibold text-ok">
+                  <Check className="h-4 w-4" aria-hidden="true" />
+                  Dentro da faixa observada
+                </div>
+              )}
             </article>
           );
         })}
@@ -102,7 +111,7 @@ export function MarketPriceComparison({ plans }: { plans: PublicPlan[] }) {
       <div className="mt-4 flex items-start gap-3 rounded-xl border border-white/8 bg-black/15 px-4 py-3 text-xs leading-5 text-text-faint">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
         <p>
-          Levantamento de {MARKET_SAMPLE.checkedAt}, com planos de Minecraft hospedados no Brasil e preços mensais públicos. A faixa de R$ 8,32 a R$ 12,50 por GB foi aplicada à RAM de cada plano. CPU, armazenamento, promoções e suporte podem variar entre provedores.
+          Levantamento de {MARKET_SAMPLE.checkedAt}, com planos de Minecraft hospedados no Brasil e preços mensais públicos. A faixa de R$ 5,00 a R$ 12,50 por GB foi aplicada à RAM de cada plano. Ofertas com RAM ilimitada sem franquia numérica ficaram fora do cálculo. CPU, armazenamento, promoções e suporte podem variar entre provedores.
         </p>
       </div>
     </section>
