@@ -771,7 +771,7 @@ export function NodesPage() {
                       {n.maintenanceMode && <Badge tone="warn">Manutenção</Badge>}
                       {!n.isPublic && <Badge tone="neutral">Privado</Badge>}
                       {n.capacityMode === 'auto' && <Badge tone="neutral">Capacidade automática</Badge>}
-                      {Object.values(n.telemetryDivergence).includes('over') && (
+                      {n.capacityMode === 'manual' && Object.values(n.telemetryDivergence).includes('over') && (
                         <Badge tone="fail">Declarado acima do reportado</Badge>
                       )}
                       {capacityByNode.get(n.id) && !capacityByNode.get(n.id)!.acceptsNewServers && (
