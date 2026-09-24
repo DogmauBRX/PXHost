@@ -8,8 +8,6 @@ import { DNS_PROVIDER, type DnsProvider } from './dns/dns-provider.interface';
 import { deriveCustomHostname, deriveHostname } from './public-address';
 import type { CreateGatewayDto, UpdateGatewayDto } from './dto/gateway.dto';
 
-const PORT_CREATE_ATTEMPTS = 50;
-
 /**
  * Public-exposure plan — the desired-state half of the gateway feature.
  * `ensureRouteForServer`/`markRemoving` are the ONLY two entry points the
@@ -137,7 +135,7 @@ export class GatewayService {
   /**
    * Tries the server's own internal port first (keeps public == internal
    * port in the common case, which is easier for a human to read in the
-   * admin UI), then walks `PUBLIC_GATEWAY_PORT_RANGE` on collision. The
+   * admin UI), then walks the complete `PUBLIC_GATEWAY_PORT_RANGE` on collision. The
    * `@@unique([gatewayId, publicPort])` constraint is the actual race
    * backstop — this loop is just how a caller recovers from hitting it,
    * the same shape `generateUniqueShortId` already uses for shortId
@@ -147,11 +145,11 @@ export class GatewayService {
     const [rangeStart, rangeEnd] = this.portRange();
     const candidates: number[] = [];
     if (preferredPort >= rangeStart && preferredPort <= rangeEnd) candidates.push(preferredPort);
-    for (let port = rangeStart; port <= rangeEnd && candidates.length < PORT_CREATE_ATTEMPTS; port++) {
+    for (let port = rangeStart; port <= rangeEnd; port++) {
       if (port !== preferredPort) candidates.push(port);
     }
 
-    for (const publicPort of candidates.slice(0, PORT_CREATE_ATTEMPTS)) {
+    for (const publicPort of candidates) {
       try {
         return await this.asAdmin((tx) => tx.publicRoute.create({ data: { gatewayId, serverId, publicPort, protocol: 'tcp', state: 'pending' } }));
       } catch (err) {
