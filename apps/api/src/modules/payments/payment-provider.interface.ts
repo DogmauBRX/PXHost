@@ -244,6 +244,9 @@ export interface PaymentProvider {
   /** Lets the public checkout expose only gateways that can actually accept money in this deployment. */
   isConfigured?(): boolean;
 
+  /** Payment methods this provider can accept in the current account/environment. */
+  supportedPaymentMethods?(): PaymentMethod[];
+
   /** Creates the one-off Pix charge for ONE billing cycle. The QR comes back inline. */
   createPixCharge(input: CreatePixChargeInput): Promise<PixCharge>;
   /** Creates one boleto for ONE billing cycle. */

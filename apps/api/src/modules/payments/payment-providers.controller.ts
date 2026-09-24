@@ -11,4 +11,9 @@ export class PaymentProvidersController {
   list() {
     return this.providers.available();
   }
+
+  @Get('capabilities')
+  capabilities() {
+    return this.providers.availableWithCapabilities();
+  }
 }

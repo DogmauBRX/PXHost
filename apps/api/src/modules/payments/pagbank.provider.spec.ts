@@ -3,6 +3,15 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { PagBankProvider, classifyPagBankPayment, classifyPagBankSubscription } from './pagbank.provider';
 
 describe('PagBankProvider', () => {
+  it('exposes card only after recurring payments are explicitly enabled', () => {
+    const client = { isConfigured: jest.fn().mockReturnValue(true) };
+    const disabled = new PagBankProvider(client as any, { get: jest.fn().mockReturnValue(false) } as any);
+    const enabled = new PagBankProvider(client as any, { get: jest.fn().mockReturnValue(true) } as any);
+
+    expect(disabled.supportedPaymentMethods()).toEqual(['pix', 'boleto']);
+    expect(enabled.supportedPaymentMethods()).toEqual(['pix', 'boleto', 'card']);
+  });
+
   it('creates a boleto order with holder address and exposes the PDF and digitable line', async () => {
     const post = jest.fn().mockResolvedValue({
       id: 'ORDE_1',
@@ -84,6 +93,7 @@ describe('PagBankProvider', () => {
     expect(parsed.resourceKind).toBe('payment');
     expect(parsed.resourceId).toBe('CHAR_1');
     expect(parsed.rawEvent).toBe('charge.paid');
+    expect(client.get).toHaveBeenCalledWith('/public-keys?type=webhook');
   });
 
   it('rejects a signature that does not match the raw body', async () => {

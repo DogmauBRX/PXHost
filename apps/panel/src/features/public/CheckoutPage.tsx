@@ -7,7 +7,7 @@ import { Link } from '@tanstack/react-router';
 import { Barcode, CreditCard, Lock, Mail, MapPin, QrCode, ShieldCheck, User, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getPublicPlan } from './public.api';
-import { createCheckoutOrder, getOrder, getPaymentProviders, type PaymentProviderName } from '@/shared/api/orders.api';
+import { createCheckoutOrder, getOrder, getPaymentProviders, type PaymentMethodName, type PaymentProviderCapabilities, type PaymentProviderName } from '@/shared/api/orders.api';
 import { OrderStatusView } from '@/shared/orders/OrderStatusView';
 import { register as registerAccount } from '@/features/auth/auth.api';
 import { Turnstile, TURNSTILE_SITE_KEY } from '@/features/auth/Turnstile';
@@ -111,7 +111,7 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
   // (e.g. profile edited in another tab in between).
   const [forceBillingForm, setForceBillingForm] = useState(false);
 
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'boleto' | 'card'>('pix');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodName>('pix');
   const [paymentProvider, setPaymentProvider] = useState<PaymentProviderName>('mercadopago');
   const [submittingCheckout, setSubmittingCheckout] = useState(false);
   // Checkout redesign (WHMCS-style) — which billing-cycle SIBLING of the
@@ -143,14 +143,22 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
     enabled: !!accessToken,
   });
 
-  const { data: paymentProviders = ['mercadopago'] } = useQuery({
+  const { data: paymentProviders = [{ name: 'mercadopago', paymentMethods: ['pix', 'boleto', 'card'] }] as PaymentProviderCapabilities[] } = useQuery({
     queryKey: ['public-payment-providers'],
     queryFn: getPaymentProviders,
   });
 
   useEffect(() => {
-    if (paymentProviders.length > 0 && !paymentProviders.includes(paymentProvider)) setPaymentProvider(paymentProviders[0]);
+    if (paymentProviders.length > 0 && !paymentProviders.some((provider) => provider.name === paymentProvider)) {
+      setPaymentProvider(paymentProviders[0].name);
+    }
   }, [paymentProvider, paymentProviders]);
+
+  const availablePaymentMethods = paymentProviders.find((provider) => provider.name === paymentProvider)?.paymentMethods ?? ['pix'];
+
+  useEffect(() => {
+    if (!availablePaymentMethods.includes(paymentMethod)) setPaymentMethod(availablePaymentMethods[0] ?? 'pix');
+  }, [availablePaymentMethods, paymentMethod]);
 
   // Checkout redesign — every public cycle of the route's plan family
   // (itself included), backend-computed and backend-ordered
@@ -580,10 +588,10 @@ function ConfigureStep({
   familyCycles: PublicPlan[];
   selectedPlanId: string;
   onPlanChange: (id: string) => void;
-  paymentMethod: 'pix' | 'boleto' | 'card';
-  onPaymentMethodChange: (m: 'pix' | 'boleto' | 'card') => void;
+  paymentMethod: PaymentMethodName;
+  onPaymentMethodChange: (m: PaymentMethodName) => void;
   paymentProvider: PaymentProviderName;
-  paymentProviders: PaymentProviderName[];
+  paymentProviders: PaymentProviderCapabilities[];
   onPaymentProviderChange: (provider: PaymentProviderName) => void;
 }) {
   return (
@@ -607,14 +615,14 @@ function ConfigureStep({
         <div className="grid grid-cols-1 gap-3">
           {paymentProviders.map((provider) => (
             <button
-              key={provider}
+              key={provider.name}
               type="button"
-              onClick={() => onPaymentProviderChange(provider)}
+              onClick={() => onPaymentProviderChange(provider.name)}
               className={`flex min-h-14 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
-                paymentProvider === provider ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_8px_20px_-14px_var(--color-accent)]' : 'border-border bg-surface text-text-muted hover:border-accent/35 hover:text-text'
+                paymentProvider === provider.name ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_8px_20px_-14px_var(--color-accent)]' : 'border-border bg-surface text-text-muted hover:border-accent/35 hover:text-text'
               }`}
             >
-              {providerLabel(provider)}
+              {providerLabel(provider.name)}
             </button>
           ))}
         </div>
@@ -656,13 +664,20 @@ function ConfigureStep({
           <button
             type="button"
             onClick={() => onPaymentMethodChange('card')}
+            disabled={!paymentProviders.find((provider) => provider.name === paymentProvider)?.paymentMethods.includes('card')}
             className={`flex min-h-14 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
-              paymentMethod === 'card' ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_8px_20px_-14px_var(--color-accent)]' : 'border-border bg-surface text-text-muted hover:border-accent/35 hover:text-text'
+              paymentMethod === 'card' ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_8px_20px_-14px_var(--color-accent)]' : 'border-border bg-surface text-text-muted hover:border-accent/35 hover:text-text disabled:cursor-not-allowed disabled:opacity-45'
             }`}
+            title={paymentProvider === 'pagbank' ? 'Disponível após a aprovação da conta PJ para recorrência no PagBank' : undefined}
           >
             <CreditCard className="h-4 w-4" aria-hidden="true" /> Cartão
           </button>
         </div>
+        {paymentProvider === 'pagbank' && !paymentProviders.find((provider) => provider.name === 'pagbank')?.paymentMethods.includes('card') && (
+          <p className="mt-3 rounded-lg border border-accent/20 bg-accent/[0.06] px-3 py-2 text-xs leading-5 text-text-muted">
+            No PagBank, Pix e boleto estão disponíveis. Cartão recorrente será liberado após a aprovação da conta empresarial pelo PagBank.
+          </p>
+        )}
         <p className="mt-3 text-xs leading-5 text-text-muted">
           {paymentMethod === 'card'
             ? `No cartão, a renovação é automática a cada período. Os dados são inseridos na página segura do ${providerLabel(paymentProvider)}, nunca aqui.`
@@ -693,7 +708,7 @@ function OrderSummary({
   onSubmit,
 }: {
   plan: PublicPlan;
-  paymentMethod: 'pix' | 'boleto' | 'card';
+  paymentMethod: PaymentMethodName;
   paymentProvider: PaymentProviderName;
   submitError: string | null;
   submitting: boolean;

@@ -158,6 +158,10 @@ export const envSchema = z.object({
   // URL overrides exist only for CI mocks and unusual deployments.
   PAGBANK_TOKEN: optionalSecret(),
   PAGBANK_ENV: z.enum(['production', 'sandbox']).default('production'),
+  PAGBANK_RECURRING_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   PAGBANK_NOTIFICATION_URL: optionalUrl(),
   PAGBANK_API_BASE_URL: optionalUrl(),
   PAGBANK_SUBSCRIPTIONS_BASE_URL: optionalUrl(),

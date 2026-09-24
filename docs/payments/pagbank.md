@@ -9,12 +9,19 @@ e todo o ciclo posterior usa esse mesmo valor.
 ```env
 PAGBANK_TOKEN=
 PAGBANK_ENV=production # ou sandbox
+PAGBANK_RECURRING_ENABLED=false
 PAGBANK_NOTIFICATION_URL=https://api.exemplo.com/api/webhooks/pagbank
 ```
 
 `PAGBANK_API_BASE_URL` e `PAGBANK_SUBSCRIPTIONS_BASE_URL` só existem para
 mocks/CI. Sem `PAGBANK_TOKEN`, a API inicia normalmente e o PagBank não aparece
 em `GET /api/public/payment-providers` nem no checkout.
+
+`PAGBANK_RECURRING_ENABLED` só deve ser alterado para `true` depois que o
+PagBank aprovar uma conta PJ para a API de Pagamentos Recorrentes. Enquanto
+estiver `false`, o checkout oferece PagBank para Pix e boleto e mantém cartão
+recorrente indisponível. O backend aplica a mesma restrição, independentemente
+da interface usada pelo cliente.
 
 No painel PagBank, cadastre `/api/webhooks/pagbank` também nas preferências de
 notificação da API de Pagamentos Recorrentes. A criação do checkout já envia a
@@ -25,6 +32,7 @@ mesma URL em `notification_urls` e `payment_notification_urls`.
 | Método | API PagBank | Renovação |
 | --- | --- | --- |
 | Pix | `POST /orders`, com `charges.payment_method.type = PIX` | Um novo pedido e QR por ciclo, criado pelo `BillingCycleProcessor` |
+| Boleto | `POST /orders`, com `charges.payment_method.type = BOLETO` | Um novo boleto por ciclo, criado pelo `BillingCycleProcessor` |
 | Cartão | `POST /checkouts`, com `recurrence_plan` | O PagBank cria e cobra a assinatura recorrente |
 
 O cartão é sempre preenchido no checkout hospedado do PagBank. Nenhum número,
@@ -34,7 +42,7 @@ CVV ou validade passa pela GXHost.
 
 `POST /api/webhooks/pagbank` preserva o corpo bruto e valida
 `x-payload-signature` com ECDSA/SHA-256. A chave pública é consultada em
-`GET /public-keys/webhook` e mantida em cache por uma hora. Uma notificação
+`GET /public-keys?type=webhook` e mantida em cache por uma hora. Uma notificação
 sem assinatura válida é recusada antes de qualquer escrita no banco.
 
 Depois da validação, o controller grava `PaymentWebhookEvent`, enfileira o

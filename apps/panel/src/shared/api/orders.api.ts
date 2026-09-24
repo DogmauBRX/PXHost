@@ -20,7 +20,14 @@ export interface CreateCheckoutInput {
 
 export type PaymentProviderName = 'mercadopago' | 'pagbank';
 
-export const getPaymentProviders = () => apiFetch<PaymentProviderName[]>('/api/public/payment-providers');
+export type PaymentMethodName = 'pix' | 'boleto' | 'card';
+
+export interface PaymentProviderCapabilities {
+  name: PaymentProviderName;
+  paymentMethods: PaymentMethodName[];
+}
+
+export const getPaymentProviders = () => apiFetch<PaymentProviderCapabilities[]>('/api/public/payment-providers/capabilities');
 
 export const createCheckoutOrder = (input: CreateCheckoutInput) =>
   apiFetch<Order>('/api/client/checkout', { method: 'POST', body: JSON.stringify(input) });

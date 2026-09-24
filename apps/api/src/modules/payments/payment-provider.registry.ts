@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { PAYMENT_PROVIDER, type PaymentProvider, type PaymentProviderName } from './payment-provider.interface';
+import { PAYMENT_PROVIDER, type PaymentMethod, type PaymentProvider, type PaymentProviderName } from './payment-provider.interface';
 import { PagBankProvider } from './pagbank.provider';
 
 @Injectable()
@@ -21,5 +21,15 @@ export class PaymentProviderRegistry {
       ['pagbank', this.pagBank],
     ];
     return providers.filter(([, provider]) => provider.isConfigured?.() !== false).map(([name]) => name);
+  }
+
+  availableWithCapabilities(): Array<{ name: PaymentProviderName; paymentMethods: PaymentMethod[] }> {
+    return this.available().map((name) => {
+      const provider = this.get(name);
+      return {
+        name,
+        paymentMethods: provider.supportedPaymentMethods?.() ?? ['pix', 'boleto', 'card'],
+      };
+    });
   }
 }

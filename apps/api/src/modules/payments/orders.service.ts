@@ -213,6 +213,10 @@ export class OrdersService {
     if (provider.isConfigured?.() === false) {
       throw new ConflictException(`PAYMENT_PROVIDER_UNAVAILABLE: ${providerName}`);
     }
+    const supportedMethods = provider.supportedPaymentMethods?.() ?? ['pix', 'boleto', 'card'];
+    if (!supportedMethods.includes(dto.paymentMethod)) {
+      throw new ConflictException(`PAYMENT_METHOD_UNAVAILABLE: ${dto.paymentMethod} is not available with ${providerName}`);
+    }
 
     const created = await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
       const plan = await this.subscriptions.lockAndValidatePlanForSubscription(tx, dto.planId);

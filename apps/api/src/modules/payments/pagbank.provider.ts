@@ -106,6 +106,12 @@ export class PagBankProvider implements PaymentProvider {
     return this.client.isConfigured();
   }
 
+  supportedPaymentMethods(): Array<'pix' | 'boleto' | 'card'> {
+    return this.config.get<boolean>('PAGBANK_RECURRING_ENABLED') === true
+      ? ['pix', 'boleto', 'card']
+      : ['pix', 'boleto'];
+  }
+
   async createPixCharge(input: CreatePixChargeInput): Promise<PixCharge> {
     const order = await this.client.post<PagBankOrder>(
       '/orders',
@@ -385,7 +391,7 @@ export class PagBankProvider implements PaymentProvider {
 
   private async webhookPublicKey(): Promise<string> {
     if (this.publicKey && Date.now() - this.publicKey.loadedAt < 60 * 60 * 1000) return this.publicKey.value;
-    const response = await this.client.get<{ public_key?: string; public_keys?: Array<{ public_key?: string; key?: string }> }>('/public-keys/webhook');
+    const response = await this.client.get<{ public_key?: string; public_keys?: Array<{ public_key?: string; key?: string }> }>('/public-keys?type=webhook');
     const value = response.public_key ?? response.public_keys?.[0]?.public_key ?? response.public_keys?.[0]?.key;
     if (!value) throw new UnauthorizedException('PagBank não retornou uma chave pública de webhook');
     this.publicKey = { value, loadedAt: Date.now() };
