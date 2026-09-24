@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { Link, useLocation } from '@tanstack/react-router';
+import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import {
   ArrowRight,
   BadgeCheck,
@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LifeBuoy,
   LogIn,
+  LogOut,
   Menu,
   RefreshCcw,
   Scale,
@@ -21,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuthStore } from '@/shared/stores/auth.store';
+import { logout } from '@/features/auth/auth.api';
 import { Button } from '@/ui/primitives';
 import { Logo } from '@/ui/brand/Logo';
 import { Wordmark } from '@/ui/brand/Wordmark';
@@ -55,7 +57,10 @@ export function PublicShell({ children }: { children: ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const username = useAuthStore((s) => s.user?.username);
   const isAdmin = useAuthStore((s) => s.user?.isAdmin);
+  const clearSession = useAuthStore((s) => s.clear);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const navigate = useNavigate();
 
   const dashboardTo = isAdmin ? '/admin' : '/client';
   // Swaps to "Início" → "/" whenever the visitor is already somewhere under
@@ -77,6 +82,18 @@ export function PublicShell({ children }: { children: ReactNode }) {
   // search params, and the guard this opts out of only ever fires for an
   // authenticated visitor anyway).
   const homeSearch = { stay: true } as const;
+
+  async function handleLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      clearSession();
+      setMobileOpen(false);
+      void navigate({ to: '/login' });
+    }
+  }
 
   return (
     <div className="min-h-screen bg-bg">
@@ -133,10 +150,23 @@ export function PublicShell({ children }: { children: ReactNode }) {
           <div className="hidden items-center gap-3 lg:flex">
             {accessToken ? (
               <>
-                <span className="flex max-w-[15rem] items-center gap-2 rounded-full border border-white/10 bg-black/15 px-3 py-1.5 text-xs text-white/50">
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok shadow-[0_0_8px_var(--color-ok)]" aria-hidden="true" />
-                  <span className="truncate">Sessão de <strong className="font-semibold text-white/85">{username}</strong></span>
-                </span>
+                <div className="flex max-w-[19rem] items-center overflow-hidden rounded-full border border-white/10 bg-black/15 text-xs text-white/50 shadow-sm">
+                  <span className="flex min-w-0 items-center gap-2 py-1.5 pr-2.5 pl-3">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok shadow-[0_0_8px_var(--color-ok)]" aria-hidden="true" />
+                    <span className="truncate">Sessão de <strong className="font-semibold text-white/85">{username}</strong></span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleLogout()}
+                    disabled={loggingOut}
+                    className="flex h-8 shrink-0 items-center gap-1.5 border-l border-white/10 px-3 font-semibold text-white/60 transition-colors hover:bg-fail/10 hover:text-red-300 disabled:cursor-wait disabled:opacity-60"
+                    aria-label="Sair da conta"
+                    title="Sair da conta"
+                  >
+                    <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+                    {loggingOut ? 'Saindo…' : 'Sair'}
+                  </button>
+                </div>
                 <Link to={dashboardTo} className="group flex h-10 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-contrast shadow-[0_8px_24px_-12px_var(--color-accent)] transition-all hover:-translate-y-0.5 hover:bg-accent-strong">
                   <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
                   Abrir painel
@@ -203,18 +233,29 @@ export function PublicShell({ children }: { children: ReactNode }) {
                 Termos de uso
               </Link>
               {accessToken ? (
-                <Link
-                  to={dashboardTo}
-                  onClick={() => setMobileOpen(false)}
-                  className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/80 hover:bg-white/5 hover:text-white"
-                >
-                  {username && (
-                    <span className="block text-xs font-normal text-white/45">
-                      Sessão de <span className="font-medium text-white/80">{username}</span>
-                    </span>
-                  )}
-                  Abrir painel
-                </Link>
+                <>
+                  <Link
+                    to={dashboardTo}
+                    onClick={() => setMobileOpen(false)}
+                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/80 hover:bg-white/5 hover:text-white"
+                  >
+                    {username && (
+                      <span className="block text-xs font-normal text-white/45">
+                        Sessão de <span className="font-medium text-white/80">{username}</span>
+                      </span>
+                    )}
+                    Abrir painel
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => void handleLogout()}
+                    disabled={loggingOut}
+                    className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-white/65 transition-colors hover:bg-fail/10 hover:text-red-300 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    <LogOut className="h-4 w-4" aria-hidden="true" />
+                    {loggingOut ? 'Saindo…' : 'Sair da conta'}
+                  </button>
+                </>
               ) : (
                 <>
                   <Link to="/login" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-white/80 hover:bg-white/5 hover:text-white">
