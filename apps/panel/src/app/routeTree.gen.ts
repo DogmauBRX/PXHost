@@ -17,6 +17,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SobreRouteImport } from './routes/sobre'
 import { Route as TermosRouteImport } from './routes/termos'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAnnouncementRouteImport } from './routes/admin.announcement'
@@ -105,6 +106,11 @@ const RegisterRoute = RegisterRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SobreRoute = SobreRouteImport.update({
+  id: '/sobre',
+  path: '/sobre',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermosRoute = TermosRouteImport.update({
@@ -380,6 +386,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/sobre': typeof SobreRoute
   '/termos': typeof TermosRoute
   '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/gateways': typeof AdminGatewaysRoute
@@ -437,6 +444,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/sobre': typeof SobreRoute
   '/termos': typeof TermosRoute
   '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/gateways': typeof AdminGatewaysRoute
@@ -495,6 +503,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/sobre': typeof SobreRoute
   '/termos': typeof TermosRoute
   '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/gateways': typeof AdminGatewaysRoute
@@ -556,6 +565,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/sobre'
     | '/termos'
     | '/admin/announcement'
     | '/admin/gateways'
@@ -613,6 +623,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/sobre'
     | '/termos'
     | '/admin/announcement'
     | '/admin/gateways'
@@ -670,6 +681,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/sobre'
     | '/termos'
     | '/admin/announcement'
     | '/admin/gateways'
@@ -730,6 +742,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  SobreRoute: typeof SobreRoute
   TermosRoute: typeof TermosRoute
   CheckoutPlanSlugRoute: typeof CheckoutPlanSlugRoute
   PlansSlugRoute: typeof PlansSlugRoute
@@ -792,6 +805,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sobre': {
+      id: '/sobre'
+      path: '/sobre'
+      fullPath: '/sobre'
+      preLoaderRoute: typeof SobreRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/termos': {
@@ -1276,6 +1296,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  SobreRoute: SobreRoute,
   TermosRoute: TermosRoute,
   CheckoutPlanSlugRoute: CheckoutPlanSlugRoute,
   PlansSlugRoute: PlansSlugRoute,
