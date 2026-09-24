@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { CheckCircle2, Copy, ExternalLink } from 'lucide-react';
+import { Barcode, CheckCircle2, Copy, ExternalLink } from 'lucide-react';
 import type { Order } from '@/shared/api/types';
 import { Alert, Button, Card, CardBody, CardHeader, CardTitle } from '@/ui/primitives';
 
@@ -35,6 +35,17 @@ export function OrderStatusView({ order, onRetry }: { order: Order; onRetry: () 
     } catch {
       // Clipboard access can fail (permissions, insecure context) — the
       // code is still visible on screen for a manual copy either way.
+    }
+  }
+
+  async function copyBoletoCode() {
+    if (!order.boletoDigitableLine) return;
+    try {
+      await navigator.clipboard.writeText(order.boletoDigitableLine);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // The line remains visible for manual copying.
     }
   }
 
@@ -112,6 +123,35 @@ export function OrderStatusView({ order, onRetry }: { order: Order; onRetry: () 
               </Button>
             )}
             <p className="text-sm text-text-muted">Estamos aguardando a confirmação do seu banco. Esta página atualiza automaticamente.</p>
+          </CardBody>
+        </Card>
+      ) : order.paymentMethod === 'boleto' && order.boletoUrl ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Pague com boleto</CardTitle>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl border border-accent/20 bg-accent-tint">
+              <Barcode className="h-10 w-10 text-accent-strong" aria-hidden="true" />
+            </div>
+            {order.boletoDigitableLine && (
+              <>
+                <p className="break-all rounded-xl border border-border bg-surface-2 px-3 py-3 font-mono text-xs text-text">
+                  {order.boletoDigitableLine}
+                </p>
+                <Button type="button" variant="secondary" onClick={() => void copyBoletoCode()} className="w-full gap-2">
+                  <Copy className="h-4 w-4" />
+                  {copied ? 'Linha copiada!' : 'Copiar linha digitável'}
+                </Button>
+              </>
+            )}
+            <Button type="button" variant="primary" onClick={() => window.location.assign(order.boletoUrl!)} className="w-full gap-2">
+              <ExternalLink className="h-4 w-4" />
+              Abrir boleto
+            </Button>
+            <p className="text-sm text-text-muted">
+              O pagamento será confirmado após a compensação bancária. Esta página atualiza automaticamente.
+            </p>
           </CardBody>
         </Card>
       ) : order.checkoutUrl ? (

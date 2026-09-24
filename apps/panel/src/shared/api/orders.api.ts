@@ -14,7 +14,7 @@ import type { Order } from '@/shared/api/types';
 // features/servers/ServerSetupPage.tsx.
 export interface CreateCheckoutInput {
   planId: string;
-  paymentMethod: 'pix' | 'card';
+  paymentMethod: 'pix' | 'boleto' | 'card';
   provider?: PaymentProviderName;
 }
 
@@ -31,6 +31,6 @@ export const getOrder = (id: string) => apiFetch<Order>(`/api/client/orders/${id
 // There is no customer-triggered renewal endpoint. A CARD subscription
 // is charged by Mercado Pago's own preapproval scheduler; a PIX one is
 // charged by this platform's daily billing job, which creates the next
-// cycle's order and QR and surfaces it here like any other pending
-// order (BillingCycleProcessor + OrdersService.createPixRenewalCharge).
+// cycle's Pix QR or boleto and surfaces it here like any other pending
+// order (BillingCycleProcessor + OrdersService.createOfflineRenewalCharge).
 // Either way the customer never asks for a charge — they just pay one.

@@ -89,7 +89,7 @@ export function PaymentsPage() {
   const params = {
     q: query || undefined,
     status: (status || undefined) as OrderStatus | undefined,
-    paymentMethod: (paymentMethod || undefined) as 'pix' | 'card' | undefined,
+    paymentMethod: (paymentMethod || undefined) as 'pix' | 'boleto' | 'card' | undefined,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   };
@@ -185,6 +185,7 @@ export function PaymentsPage() {
           >
             <option value="">Todos</option>
             <option value="pix">Pix</option>
+            <option value="boleto">Boleto</option>
             <option value="card">Cartão</option>
           </Select>
         </Field>

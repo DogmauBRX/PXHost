@@ -891,9 +891,8 @@ export interface PublicTemplate {
 }
 
 // GET/POST /api/client/orders, /api/client/checkout — Checkout Bricks:
-// no `checkoutUrl` is ever returned for pix/card (no redirect exists in
-// this flow at all); `pixQrCode`/`pixQrCodeBase64` are populated only
-// for `paymentMethod: 'pix'`, both `null` for `'card'`.
+// Pix returns its QR inline, boleto returns its hosted ticket/line and
+// card returns the provider's hosted authorization URL.
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded' | 'expired';
 export type OrderProvisioningStatus = 'not_required' | 'pending' | 'running' | 'done' | 'failed';
 
@@ -911,7 +910,9 @@ export interface Order {
   checkoutUrl: string | null;
   pixQrCode: string | null;
   pixQrCodeBase64: string | null;
-  paymentMethod: 'pix' | 'card' | null;
+  boletoDigitableLine: string | null;
+  boletoUrl: string | null;
+  paymentMethod: 'pix' | 'boleto' | 'card' | null;
   paymentProvider: 'mercadopago' | 'pagbank';
   installments: number | null;
   paidAmountCents: number | null;
@@ -1008,7 +1009,7 @@ export interface Subscription {
   // Checkout Bricks pivot: 'card' auto-renews via Mercado Pago's own
   // preapproval (autoRenew true, externalSubscriptionId set); 'pix'
   // renews only when the customer pays a new order (renewForUser).
-  paymentMethod: 'pix' | 'card' | null;
+  paymentMethod: 'pix' | 'boleto' | 'card' | null;
   externalSubscriptionId: string | null;
   autoRenew: boolean;
   firstChargePending: boolean;

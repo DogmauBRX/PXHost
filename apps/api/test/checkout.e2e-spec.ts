@@ -232,6 +232,27 @@ describe('Checkout (e2e)', () => {
     expect(payment.paymentMethodId).toBe('pix');
   });
 
+  it('creates a boleto with a hosted ticket and stores its digitable line', async () => {
+    const res = await authed(cardCustomerToken, '/api/client/checkout', {
+      method: 'POST',
+      payload: { planId, paymentMethod: 'boleto' },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.paymentMethod).toBe('boleto');
+    expect(body.boletoUrl).toContain('/boleto/');
+    expect(body.boletoDigitableLine).toMatch(/^2379/);
+    expect(body.pixQrCode).toBeNull();
+    expect(new Date(body.expiresAt).getTime()).toBeGreaterThan(Date.now() + 2 * 24 * 60 * 60 * 1000);
+
+    const payment: any = await asAdmin((tx) => tx.payment.findFirst({ where: { orderId: body.id } }));
+    expect(payment.paymentTypeId).toBe('ticket');
+
+    await asAdmin((tx) => tx.subscriptionEvent.deleteMany({ where: { subscriptionId: body.subscriptionId } }));
+    await asAdmin((tx) => tx.order.update({ where: { id: body.id }, data: { subscriptionId: null, status: 'cancelled' } }));
+    await asAdmin((tx) => tx.subscription.delete({ where: { id: body.subscriptionId } }));
+  });
+
   it("card checkout returns Mercado Pago's own hosted authorization URL — no card data ever reaches this platform, and activation is exclusively the webhook's job", async () => {
     const res = await authed(cardCustomerToken, '/api/client/checkout', {
       method: 'POST',

@@ -2,7 +2,7 @@ import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min } from 'class-validator';
 
 const ORDER_STATUSES = ['pending', 'paid', 'failed', 'cancelled', 'refunded', 'expired'] as const;
-const PAYMENT_METHODS = ['pix', 'card'] as const;
+const PAYMENT_METHODS = ['pix', 'boleto', 'card'] as const;
 
 /** Admin listing filters — same shape `ListSubscriptionsDto` already established: free-text `q`, closed-set filters, offset/limit pagination. */
 export class ListOrdersDto {

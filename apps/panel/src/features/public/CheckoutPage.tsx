@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { CreditCard, Lock, Mail, MapPin, QrCode, ShieldCheck, User, Wallet } from 'lucide-react';
+import { Barcode, CreditCard, Lock, Mail, MapPin, QrCode, ShieldCheck, User, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getPublicPlan } from './public.api';
 import { createCheckoutOrder, getOrder, getPaymentProviders, type PaymentProviderName } from '@/shared/api/orders.api';
@@ -111,7 +111,7 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
   // (e.g. profile edited in another tab in between).
   const [forceBillingForm, setForceBillingForm] = useState(false);
 
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card'>('pix');
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'boleto' | 'card'>('pix');
   const [paymentProvider, setPaymentProvider] = useState<PaymentProviderName>('mercadopago');
   const [submittingCheckout, setSubmittingCheckout] = useState(false);
   // Checkout redesign (WHMCS-style) — which billing-cycle SIBLING of the
@@ -580,8 +580,8 @@ function ConfigureStep({
   familyCycles: PublicPlan[];
   selectedPlanId: string;
   onPlanChange: (id: string) => void;
-  paymentMethod: 'pix' | 'card';
-  onPaymentMethodChange: (m: 'pix' | 'card') => void;
+  paymentMethod: 'pix' | 'boleto' | 'card';
+  onPaymentMethodChange: (m: 'pix' | 'boleto' | 'card') => void;
   paymentProvider: PaymentProviderName;
   paymentProviders: PaymentProviderName[];
   onPaymentProviderChange: (provider: PaymentProviderName) => void;
@@ -626,9 +626,15 @@ function ConfigureStep({
             <p className="text-sm font-semibold text-text">Forma de pagamento</p>
             <p className="mt-0.5 text-xs text-text-faint">Escolha como prefere pagar</p>
           </div>
-          {paymentMethod === 'pix' ? <QrCode className="h-4 w-4 text-accent-strong" aria-hidden="true" /> : <CreditCard className="h-4 w-4 text-accent-strong" aria-hidden="true" />}
+          {paymentMethod === 'pix' ? (
+            <QrCode className="h-4 w-4 text-accent-strong" aria-hidden="true" />
+          ) : paymentMethod === 'boleto' ? (
+            <Barcode className="h-4 w-4 text-accent-strong" aria-hidden="true" />
+          ) : (
+            <CreditCard className="h-4 w-4 text-accent-strong" aria-hidden="true" />
+          )}
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <button
             type="button"
             onClick={() => onPaymentMethodChange('pix')}
@@ -637,6 +643,15 @@ function ConfigureStep({
             }`}
           >
             <QrCode className="h-4 w-4" aria-hidden="true" /> Pix
+          </button>
+          <button
+            type="button"
+            onClick={() => onPaymentMethodChange('boleto')}
+            className={`flex min-h-14 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
+              paymentMethod === 'boleto' ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_8px_20px_-14px_var(--color-accent)]' : 'border-border bg-surface text-text-muted hover:border-accent/35 hover:text-text'
+            }`}
+          >
+            <Barcode className="h-4 w-4" aria-hidden="true" /> Boleto
           </button>
           <button
             type="button"
@@ -651,7 +666,9 @@ function ConfigureStep({
         <p className="mt-3 text-xs leading-5 text-text-muted">
           {paymentMethod === 'card'
             ? `No cartão, a renovação é automática a cada período. Os dados são inseridos na página segura do ${providerLabel(paymentProvider)}, nunca aqui.`
-            : 'No Pix não existe cobrança automática: a cada período geramos um novo QR Code e avisamos você para pagar.'}
+            : paymentMethod === 'boleto'
+              ? 'A cada período geramos um novo boleto. A renovação é confirmada após a compensação bancária.'
+              : 'No Pix não existe cobrança automática: a cada período geramos um novo QR Code e avisamos você para pagar.'}
         </p>
       </div>
       </div>
@@ -676,7 +693,7 @@ function OrderSummary({
   onSubmit,
 }: {
   plan: PublicPlan;
-  paymentMethod: 'pix' | 'card';
+  paymentMethod: 'pix' | 'boleto' | 'card';
   paymentProvider: PaymentProviderName;
   submitError: string | null;
   submitting: boolean;
@@ -710,7 +727,13 @@ function OrderSummary({
       {submitError && <Alert>{submitError}</Alert>}
 
       <Button type="button" variant="primary" disabled={submitting} onClick={onSubmit} className="h-12 w-full shadow-[0_12px_24px_-14px_var(--color-accent)]">
-        {submitting ? 'Gerando cobrança…' : paymentMethod === 'pix' ? 'Gerar Pix' : 'Continuar para pagamento'}
+        {submitting
+          ? 'Gerando cobrança…'
+          : paymentMethod === 'pix'
+            ? 'Gerar Pix'
+            : paymentMethod === 'boleto'
+              ? 'Gerar boleto'
+              : 'Continuar para pagamento'}
       </Button>
     </div>
   );

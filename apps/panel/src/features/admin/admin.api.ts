@@ -387,7 +387,7 @@ export const updateSubscriptionStatus = (id: string, status: SubscriptionStatus,
 
 export interface ListOrdersParams {
   status?: OrderStatus;
-  paymentMethod?: 'pix' | 'card';
+  paymentMethod?: 'pix' | 'boleto' | 'card';
   planId?: string;
   q?: string;
   limit?: number;

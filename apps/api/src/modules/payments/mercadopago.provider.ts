@@ -5,6 +5,8 @@ import { MercadoPagoClient } from './mercadopago.client';
 import { amountToCents, centsToAmount } from './money';
 import { PaymentProviderRequestError } from './payment-provider.interface';
 import type {
+  BoletoCharge,
+  CreateBoletoChargeInput,
   CreateCardSubscriptionInput,
   CreatePixChargeInput,
   GatewayPayment,
@@ -71,7 +73,10 @@ interface MpPayment {
   status_detail: string | null;
   external_reference: string | null;
   transaction_amount: number | null;
-  transaction_details?: { total_paid_amount?: number | null } | null;
+  transaction_details?: {
+    total_paid_amount?: number | null;
+    external_resource_url?: string | null;
+  } | null;
   currency_id: string | null;
   payment_method_id: string | null;
   payment_type_id: string | null;
@@ -81,6 +86,7 @@ interface MpPayment {
   point_of_interaction?: {
     transaction_data?: { qr_code?: string; qr_code_base64?: string; ticket_url?: string } | null;
   } | null;
+  barcode?: { content?: string | null } | null;
   date_of_expiration?: string | null;
 }
 
@@ -186,6 +192,50 @@ export class MercadoPagoProvider implements PaymentProvider {
       qrCode: qr.qr_code,
       qrCodeBase64: qr.qr_code_base64,
       expiresAt: payment.date_of_expiration ? new Date(payment.date_of_expiration) : null,
+    };
+  }
+
+  async createBoletoCharge(input: CreateBoletoChargeInput): Promise<BoletoCharge> {
+    const payment = await this.client.post<MpPayment>(
+      '/v1/payments',
+      {
+        transaction_amount: centsToAmount(input.amountCents),
+        description: input.description,
+        payment_method_id: 'bolbradesco',
+        external_reference: input.externalReference,
+        notification_url: this.notificationUrl(),
+        date_of_expiration: input.expiresAt.toISOString(),
+        payer: {
+          email: input.payer.email,
+          first_name: input.payer.firstName ?? undefined,
+          last_name: input.payer.lastName ?? undefined,
+          identification: { type: 'CPF', number: input.payer.cpf },
+          address: {
+            zip_code: input.payer.address.postalCode,
+            street_name: input.payer.address.addressLine,
+            street_number: input.payer.address.addressNumber,
+            neighborhood: input.payer.address.neighborhood,
+            city: input.payer.address.city,
+            federal_unit: input.payer.address.state,
+          },
+        },
+      },
+      input.idempotencyKey,
+    );
+
+    const ticketUrl =
+      payment.transaction_details?.external_resource_url ??
+      payment.point_of_interaction?.transaction_data?.ticket_url ??
+      null;
+    if (!ticketUrl) {
+      throw new PaymentProviderRequestError('Mercado Pago retornou um boleto sem link de pagamento', 502);
+    }
+
+    return {
+      ...toGatewayPayment(payment),
+      ticketUrl,
+      digitableLine: payment.barcode?.content ?? null,
+      expiresAt: payment.date_of_expiration ? new Date(payment.date_of_expiration) : input.expiresAt,
     };
   }
 

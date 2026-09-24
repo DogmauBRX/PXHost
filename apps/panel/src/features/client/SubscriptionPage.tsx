@@ -54,8 +54,8 @@ export function SubscriptionPage() {
   const { data: subscriptions, isLoading, isError, refetch } = useQuery({ queryKey: ['my-subscriptions'], queryFn: listMySubscriptions });
   const current = useMemo(() => (subscriptions ?? []).filter((sub) => !TERMINAL_STATUSES.includes(sub.status)), [subscriptions]);
   // Only fetched to find, for a `pending` subscription, the order the
-  // customer would need to get back to (the Pix QR code, or a card
-  // still authorizing) — `CheckoutPage` never persists that outside its
+  // customer would need to get back to (Pix QR, boleto, or a card still
+  // authorizing) — `CheckoutPage` never persists that outside its
   // own component state, so once the customer navigates away there is
   // no other way back to it than looking the order back up here.
   const { data: orders } = useQuery({ queryKey: ['my-orders'], queryFn: listMyOrders });

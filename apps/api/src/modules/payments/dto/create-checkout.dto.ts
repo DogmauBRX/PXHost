@@ -26,8 +26,8 @@ export class CreateCheckoutDto {
   @IsUUID()
   planId!: string;
 
-  @IsIn(['pix', 'card'])
-  paymentMethod!: 'pix' | 'card';
+  @IsIn(['pix', 'boleto', 'card'])
+  paymentMethod!: 'pix' | 'boleto' | 'card';
 
   @IsOptional()
   @IsIn(['mercadopago', 'pagbank'])

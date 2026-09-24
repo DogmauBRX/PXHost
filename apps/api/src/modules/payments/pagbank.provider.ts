@@ -4,6 +4,8 @@ import { createHash, createPublicKey, verify } from 'node:crypto';
 import { PagBankClient } from './pagbank.client';
 import { PaymentProviderRequestError } from './payment-provider.interface';
 import type {
+  BoletoCharge,
+  CreateBoletoChargeInput,
   CreateCardSubscriptionInput,
   CreatePixChargeInput,
   GatewayPayment,
@@ -36,9 +38,18 @@ interface PagBankCharge {
   paid_at?: string | null;
   amount?: PagBankAmount;
   payment_response?: { code?: string; message?: string };
-  payment_method?: { type?: string; installments?: number; pix?: { expiration_date?: string } };
+  payment_method?: {
+    type?: string;
+    installments?: number;
+    pix?: { expiration_date?: string };
+    boleto?: {
+      due_date?: string;
+      barcode?: string;
+      formatted_barcode?: string;
+    };
+  };
   qr_code?: { id?: string; text?: string };
-  links?: Array<{ rel?: string; href?: string }>;
+  links?: Array<{ rel?: string; href?: string; media?: string }>;
 }
 
 interface PagBankOrder {
@@ -130,6 +141,72 @@ export class PagBankProvider implements PaymentProvider {
       qrCode: charge.qr_code.text,
       qrCodeBase64,
       expiresAt: charge.payment_method?.pix?.expiration_date ? new Date(charge.payment_method.pix.expiration_date) : input.expiresAt,
+    };
+  }
+
+  async createBoletoCharge(input: CreateBoletoChargeInput): Promise<BoletoCharge> {
+    const order = await this.client.post<PagBankOrder>(
+      '/orders',
+      {
+        reference_id: input.externalReference,
+        customer: {
+          name: payerName(input.payer.firstName, input.payer.lastName),
+          email: input.payer.email,
+          tax_id: input.payer.cpf,
+        },
+        items: [{ reference_id: input.externalReference, name: input.description.slice(0, 100), quantity: 1, unit_amount: input.amountCents }],
+        charges: [
+          {
+            reference_id: input.externalReference,
+            description: input.description.slice(0, 64),
+            amount: { value: input.amountCents, currency: input.currency },
+            payment_method: {
+              type: 'BOLETO',
+              boleto: {
+                due_date: formatDateOnly(input.expiresAt),
+                instruction_lines: {
+                  line_1: 'Pagamento referente à assinatura GXHost.',
+                  line_2: 'O serviço é liberado após a compensação.',
+                },
+                holder: {
+                  name: payerName(input.payer.firstName, input.payer.lastName),
+                  tax_id: input.payer.cpf,
+                  email: input.payer.email,
+                  address: {
+                    country: 'Brasil',
+                    region: input.payer.address.state,
+                    region_code: input.payer.address.state,
+                    city: input.payer.address.city,
+                    postal_code: input.payer.address.postalCode,
+                    street: input.payer.address.addressLine,
+                    number: input.payer.address.addressNumber,
+                    locality: input.payer.address.neighborhood,
+                  },
+                },
+              },
+            },
+          },
+        ],
+        notification_urls: [this.notificationUrl()],
+      },
+      input.idempotencyKey,
+    );
+
+    const charge = order.charges?.[0];
+    const boleto = charge?.payment_method?.boleto;
+    const ticketUrl =
+      charge?.links?.find((link) => link.rel === 'SELF' && link.media === 'application/pdf')?.href ??
+      charge?.links?.find((link) => link.rel === 'PAY')?.href ??
+      null;
+    if (!charge?.id || !ticketUrl) {
+      throw new PaymentProviderRequestError('PagBank retornou um boleto sem link de pagamento', 502);
+    }
+
+    return {
+      ...toGatewayPayment(charge),
+      ticketUrl,
+      digitableLine: boleto?.formatted_barcode ?? boleto?.barcode ?? null,
+      expiresAt: boleto?.due_date ? new Date(`${boleto.due_date}T23:59:59-03:00`) : input.expiresAt,
     };
   }
 
@@ -368,6 +445,10 @@ function toGatewaySubscription(subscription: PagBankSubscription): GatewaySubscr
 
 function payerName(first: string | null, last: string | null): string {
   return [first, last].filter(Boolean).join(' ').trim() || 'Cliente GXHost';
+}
+
+function formatDateOnly(value: Date): string {
+  return value.toISOString().slice(0, 10);
 }
 
 function headerValues(value: string | string[] | undefined): string[] {

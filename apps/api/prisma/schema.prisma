@@ -1177,8 +1177,9 @@ model Subscription {
   // unchanged) and for every subscription created before this column
   // existed.
   cancelAtPeriodEnd   Boolean   @default(false) @map("cancel_at_period_end")
-  // What the customer chose at checkout — 'pix' (manual/notified renewal)
-  // or 'card' (provider-managed automatic recurring charge). NULL for
+  // What the customer chose at checkout — 'pix'/'boleto' (a fresh
+  // notified charge every cycle) or 'card' (provider-managed automatic
+  // recurring charge). NULL for
   // every subscription created
   // before this column existed — treated identically to 'pix' by every
   // reader (manual-renewal is the only behavior that ever existed).
@@ -1324,6 +1325,8 @@ model Order {
   // shown until it's paid or expires.
   pixQrCode            String?   @map("pix_qr_code")
   pixQrCodeBase64      String?   @map("pix_qr_code_base64")
+  boletoDigitableLine  String?   @map("boleto_digitable_line")
+  boletoUrl            String?   @map("boleto_url")
   paymentMethod        String?   @map("payment_method")
   installments         Int?
   paidAmountCents      Int?      @map("paid_amount_cents")

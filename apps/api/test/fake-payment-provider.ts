@@ -1,6 +1,8 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { classifyMercadoPagoPayment, classifyMercadoPagoPreapproval } from '../src/modules/payments/mercadopago.provider';
 import type {
+  BoletoCharge,
+  CreateBoletoChargeInput,
   CreateCardSubscriptionInput,
   CreatePixChargeInput,
   GatewayPayment,
@@ -67,6 +69,33 @@ export class FakePaymentProvider implements PaymentProvider {
       raw: { payerEmail: input.payer.email },
       qrCode: `fake-qr-copy-paste-${id}`,
       qrCodeBase64: 'ZmFrZS1xci1wbmc=',
+      expiresAt: input.expiresAt,
+    };
+    this.payments.set(id, charge);
+    return charge;
+  }
+
+  async createBoletoCharge(input: CreateBoletoChargeInput): Promise<BoletoCharge> {
+    if (this.forceCreateChargeFailure) {
+      throw new Error('simulated Mercado Pago failure');
+    }
+    const id = `fake-boleto-${input.externalReference}`;
+    const charge: BoletoCharge = {
+      id,
+      status: 'pending',
+      statusDetail: 'pending_waiting_payment',
+      subscriptionExternalId: null,
+      externalReference: input.externalReference,
+      amountCents: input.amountCents,
+      paidAmountCents: null,
+      currency: input.currency,
+      paymentMethodId: 'bolbradesco',
+      paymentTypeId: 'ticket',
+      installments: null,
+      approvedAt: null,
+      raw: { payerEmail: input.payer.email },
+      ticketUrl: `https://fake.mercadopago.test/boleto/${id}`,
+      digitableLine: '23793380296060054351030006333303799140000020000',
       expiresAt: input.expiresAt,
     };
     this.payments.set(id, charge);

@@ -11,18 +11,17 @@ import { canTransition, type SubscriptionStatus } from '../modules/subscriptions
 import { OrdersService } from '../modules/payments/orders.service';
 
 const RUN_EVERY_MS = 24 * 60 * 60 * 1000; // daily — order TTL and the grace period are both day-granularity concerns, same cadence partition-maintenance already uses for a comparably slow-moving job
-/** How far ahead a pix subscription's next charge is generated. Wide enough that a missed daily run still leaves the customer time to pay before the period lapses. */
-const PIX_RENEWAL_LOOKAHEAD_DAYS = 3;
+/** How far ahead a Pix/boleto subscription's next charge is generated. */
+const OFFLINE_RENEWAL_LOOKAHEAD_DAYS = 3;
 
 /**
  * The daily billing job. Same `upsertJobScheduler` repeatable-job
  * pattern `PartitionMaintenanceProcessor` already established.
  *
- * 1. **Pix renewal**: Mercado Pago has no recurring Pix product at all
- *    (`/preapproval` is card-only), so for pix THIS platform is the
- *    scheduler — every subscription whose period is about to end gets
- *    the next cycle's charge generated here
- *    (`OrdersService.createPixRenewalCharge`, idempotent). Card
+ * 1. **Offline renewal**: Pix and boleto do not debit automatically,
+ *    so THIS platform schedules a fresh charge for every subscription
+ *    whose period is about to end
+ *    (`OrdersService.createOfflineRenewalCharge`, idempotent). Card
  *    subscriptions are skipped entirely: Mercado Pago charges those
  *    itself and simply notifies us.
  * 2. **Abandoned checkout / unpaid renewal**: a `pending` Order past
@@ -80,16 +79,16 @@ export class BillingCycleProcessor implements OnModuleInit, OnModuleDestroy {
   private async runOnce(): Promise<void> {
     // Renewals FIRST: a subscription whose period is ending gets its
     // next charge before anything downstream considers it late.
-    const renewedCount = await this.generatePixRenewalCharges();
+    const renewedCount = await this.generateOfflineRenewalCharges();
     const expiredCount = await this.expireStaleOrders();
     const suspendedCount = await this.suspendOverdueSubscriptions();
     this.logger.log(
-      `billing-cycle run complete: ${renewedCount} pix renewal charge(s) created, ${expiredCount} order(s) expired, ${suspendedCount} subscription(s) suspended`,
+      `billing-cycle run complete: ${renewedCount} offline renewal charge(s) created, ${expiredCount} order(s) expired, ${suspendedCount} subscription(s) suspended`,
     );
   }
 
   /**
-   * One Pix charge per subscription whose period ends inside the
+   * One Pix/boleto charge per subscription whose period ends inside the
    * lookahead window. Card subscriptions are excluded by
    * `paymentMethod` — Mercado Pago charges those on its own schedule.
    *
@@ -97,13 +96,13 @@ export class BillingCycleProcessor implements OnModuleInit, OnModuleDestroy {
    * pass retries it, and the customer isn't late until their period
    * actually lapses unpaid.
    */
-  private async generatePixRenewalCharges(): Promise<number> {
-    const horizon = new Date(Date.now() + PIX_RENEWAL_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000);
+  private async generateOfflineRenewalCharges(): Promise<number> {
+    const horizon = new Date(Date.now() + OFFLINE_RENEWAL_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000);
 
     const due = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
       tx.subscription.findMany({
         where: {
-          paymentMethod: 'pix',
+          paymentMethod: { in: ['pix', 'boleto'] },
           status: { in: ['active', 'past_due'] },
           // A subscription already on its way out never gets charged
           // again — the customer asked to stop.
@@ -117,10 +116,10 @@ export class BillingCycleProcessor implements OnModuleInit, OnModuleDestroy {
     let created = 0;
     for (const sub of due) {
       try {
-        const orderId = await this.orders.createPixRenewalCharge(sub.id);
+        const orderId = await this.orders.createOfflineRenewalCharge(sub.id);
         if (orderId) created++;
       } catch (err) {
-        this.logger.error(`pix renewal failed for subscription ${sub.id}: ${err instanceof Error ? err.message : String(err)}`);
+        this.logger.error(`offline renewal failed for subscription ${sub.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     return created;
@@ -153,7 +152,8 @@ export class BillingCycleProcessor implements OnModuleInit, OnModuleDestroy {
         }
 
         // A renewal charge that expired unpaid IS the delinquency
-        // signal for pix — Mercado Pago has no "overdue" event to send
+        // signal for an offline charge — the provider has no "overdue"
+        // event to send
         // for a charge it never scheduled. From here the existing grace
         // period and suspension logic take over unchanged.
         if (canTransition(subscription.status as SubscriptionStatus, 'past_due')) {

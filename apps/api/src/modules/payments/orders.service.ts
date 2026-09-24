@@ -14,7 +14,7 @@ import { RedisService } from '../../core/redis/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { type SubscriptionBillingPeriod } from '../subscriptions/subscription-status';
-import { type PayerInput, type PaymentProviderName } from './payment-provider.interface';
+import { type PayerInput, type PaymentMethod, type PaymentProviderName } from './payment-provider.interface';
 import { PaymentProviderRegistry } from './payment-provider.registry';
 import { PaymentsService } from './payments.service';
 import { ProvisioningQueueService } from './provisioning-queue.service';
@@ -40,6 +40,8 @@ const ORDER_SELECT = {
   checkoutUrl: true,
   pixQrCode: true,
   pixQrCodeBase64: true,
+  boletoDigitableLine: true,
+  boletoUrl: true,
   paymentMethod: true,
   installments: true,
   paidAmountCents: true,
@@ -257,7 +259,12 @@ export class OrdersService {
         plan: { id: plan.id, name: plan.name, memoryMb: plan.memoryMb, diskMb: plan.diskMb, cpuLimitPercent: plan.cpuLimitPercent },
       };
 
-      const ttlMinutes = this.config.get<number>('CHECKOUT_ORDER_TTL_MINUTES') ?? 1440;
+      const configuredTtlMinutes = this.config.get<number>('CHECKOUT_ORDER_TTL_MINUTES') ?? 1440;
+      // Boleto needs enough time for payment and bank compensation.
+      // Three days is also Mercado Pago's recommended minimum.
+      const ttlMinutes = dto.paymentMethod === 'boleto'
+        ? Math.max(configuredTtlMinutes, 3 * 24 * 60)
+        : configuredTtlMinutes;
       const order = await tx.order.create({
         data: {
           externalReference: this.generateExternalReference(),
@@ -300,6 +307,7 @@ export class OrdersService {
       currency: order.currency,
       paymentMethod: dto.paymentMethod,
       billingPeriod,
+      expiresAt: order.expiresAt!,
       externalReference: order.externalReference,
       // Old clients may omit it during rollout: retain their established
       // same-email behavior. The current checkout always supplies it and
@@ -344,8 +352,9 @@ export class OrdersService {
       description: string;
       amountCents: number;
       currency: string;
-      paymentMethod: 'pix' | 'card';
+      paymentMethod: PaymentMethod;
       billingPeriod: SubscriptionBillingPeriod;
+      expiresAt: Date;
       externalReference: string;
       payerEmail?: string;
       provider: PaymentProviderName;
@@ -357,7 +366,6 @@ export class OrdersService {
       const payer = this.toPayerInput(profile, input.payerEmail);
 
       if (input.paymentMethod === 'pix') {
-        const ttlMinutes = this.config.get<number>('CHECKOUT_ORDER_TTL_MINUTES') ?? 1440;
         const charge = await provider.createPixCharge({
           payer,
           amountCents: input.amountCents,
@@ -367,11 +375,32 @@ export class OrdersService {
           // Derived from the order, so a retried checkout request can
           // never produce a second charge at Mercado Pago.
           idempotencyKey: `order-${orderId}`,
-          expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
+          expiresAt: input.expiresAt,
         });
         await this.payments.recordFromGateway(orderId, charge);
         await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
           tx.order.update({ where: { id: orderId }, data: { pixQrCode: charge.qrCode, pixQrCodeBase64: charge.qrCodeBase64 } }),
+        );
+      } else if (input.paymentMethod === 'boleto') {
+        const charge = await provider.createBoletoCharge({
+          payer,
+          amountCents: input.amountCents,
+          currency: input.currency,
+          description: input.description,
+          externalReference: input.externalReference,
+          idempotencyKey: `order-${orderId}`,
+          expiresAt: input.expiresAt,
+        });
+        await this.payments.recordFromGateway(orderId, charge);
+        await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+          tx.order.update({
+            where: { id: orderId },
+            data: {
+              boletoDigitableLine: charge.digitableLine,
+              boletoUrl: charge.ticketUrl,
+              expiresAt: charge.expiresAt ?? input.expiresAt,
+            },
+          }),
         );
       } else {
         const preapproval = await provider.createCardSubscription({
@@ -423,10 +452,10 @@ export class OrdersService {
    * Returns the created order's id, or `null` when there was already a
    * live renewal order (the common case on the second run of a day).
    */
-  async createPixRenewalCharge(subscriptionId: string): Promise<string | null> {
+  async createOfflineRenewalCharge(subscriptionId: string): Promise<string | null> {
     const prepared = await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
       const subscription = await tx.subscription.findFirst({ where: { id: subscriptionId } });
-      if (!subscription || subscription.paymentMethod !== 'pix') return null;
+      if (!subscription || (subscription.paymentMethod !== 'pix' && subscription.paymentMethod !== 'boleto')) return null;
 
       const existing = await tx.order.findFirst({
         where: { subscriptionId, kind: 'plan_renewal', status: 'pending', expiresAt: { gt: new Date() } },
@@ -438,7 +467,11 @@ export class OrdersService {
       // the customer is even late.
       const graceDays = this.config.get<number>('BILLING_GRACE_DAYS') ?? 3;
       const periodEnd = subscription.currentPeriodEndsAt ?? new Date();
-      const expiresAt = clampToMercadoPagoMaxExpiry(new Date(periodEnd.getTime() + graceDays * 24 * 60 * 60 * 1000));
+      const paymentMethod = subscription.paymentMethod as 'pix' | 'boleto';
+      const expiresAt = clampOfflineExpiry(
+        paymentMethod,
+        new Date(periodEnd.getTime() + graceDays * 24 * 60 * 60 * 1000),
+      );
 
       const order = await tx.order.create({
         data: {
@@ -454,7 +487,7 @@ export class OrdersService {
           currency: subscription.currency,
           status: 'pending',
           provider: subscription.paymentProvider,
-          paymentMethod: 'pix',
+          paymentMethod,
           provisioningStatus: 'not_required', // the server already exists; a renewal only extends the period
           expiresAt,
           config: {} as unknown as Prisma.InputJsonValue,
@@ -463,14 +496,15 @@ export class OrdersService {
 
       const profile = await this.loadBillingProfile(tx, subscription.userId);
       const plan = await tx.plan.findFirst({ where: { id: subscription.planId }, select: { name: true } });
-      return { order, profile, planName: plan?.name ?? 'Assinatura', expiresAt, providerName: subscription.paymentProvider };
+      return { order, profile, planName: plan?.name ?? 'Assinatura', expiresAt, providerName: subscription.paymentProvider, paymentMethod };
     });
 
     if (!prepared) return null;
-    const { order, profile, planName, expiresAt, providerName } = prepared;
+    const { order, profile, planName, expiresAt, providerName, paymentMethod } = prepared;
 
     try {
-      const charge = await this.providers.get(providerName).createPixCharge({
+      const provider = this.providers.get(providerName);
+      const chargeInput = {
         payer: this.toPayerInput(profile),
         amountCents: order.amountCents,
         currency: order.currency,
@@ -478,16 +512,38 @@ export class OrdersService {
         externalReference: order.externalReference,
         idempotencyKey: `order-${order.id}`,
         expiresAt,
-      });
-      await this.payments.recordFromGateway(order.id, charge);
-      await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
-        tx.order.update({ where: { id: order.id }, data: { pixQrCode: charge.qrCode, pixQrCodeBase64: charge.qrCodeBase64 } }),
-      );
+      };
+      let paymentId: string;
+      if (paymentMethod === 'pix') {
+        const charge = await provider.createPixCharge(chargeInput);
+        paymentId = charge.id;
+        await this.payments.recordFromGateway(order.id, charge);
+        await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+          tx.order.update({
+            where: { id: order.id },
+            data: { pixQrCode: charge.qrCode, pixQrCodeBase64: charge.qrCodeBase64 },
+          }),
+        );
+      } else {
+        const charge = await provider.createBoletoCharge(chargeInput);
+        paymentId = charge.id;
+        await this.payments.recordFromGateway(order.id, charge);
+        await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+          tx.order.update({
+            where: { id: order.id },
+            data: {
+              boletoDigitableLine: charge.digitableLine,
+              boletoUrl: charge.ticketUrl,
+              expiresAt: charge.expiresAt ?? expiresAt,
+            },
+          }),
+        );
+      }
       await this.audit.record({
         action: 'payment.renewal.created',
         targetType: 'order',
         targetId: order.id,
-        metadata: { subscriptionId, amountCents: order.amountCents, paymentId: charge.id },
+        metadata: { subscriptionId, amountCents: order.amountCents, paymentId, paymentMethod },
       });
       return order.id;
     } catch (err) {
@@ -496,9 +552,14 @@ export class OrdersService {
       // order. Leaving it `pending` instead would block that retry via
       // the duplicate guard above.
       await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.order.update({ where: { id: order.id }, data: { status: 'failed' } }));
-      this.logger.error(`pix renewal charge failed for subscription ${subscriptionId}: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.error(`${paymentMethod} renewal charge failed for subscription ${subscriptionId}: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
     }
+  }
+
+  /** Compatibility seam for callers/tests written before boleto support. */
+  async createPixRenewalCharge(subscriptionId: string): Promise<string | null> {
+    return this.createOfflineRenewalCharge(subscriptionId);
   }
 
   /**
@@ -710,4 +771,11 @@ export class OrdersService {
 function clampToMercadoPagoMaxExpiry(requested: Date): Date {
   const max = new Date(Date.now() + 29 * 24 * 60 * 60 * 1000);
   return requested > max ? max : requested;
+}
+
+function clampOfflineExpiry(paymentMethod: 'pix' | 'boleto', requested: Date): Date {
+  const minimum = paymentMethod === 'boleto'
+    ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+    : requested;
+  return clampToMercadoPagoMaxExpiry(requested < minimum ? minimum : requested);
 }

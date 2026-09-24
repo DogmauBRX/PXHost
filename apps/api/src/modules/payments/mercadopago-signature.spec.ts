@@ -107,3 +107,53 @@ describe('MercadoPagoProvider.parseWebhook signature verification', () => {
     expect(signedFor('subscription_preapproval_plan').resourceKind).toBeNull();
   });
 });
+
+describe('MercadoPagoProvider boleto', () => {
+  it('creates bolbradesco through the payment endpoint and returns its hosted ticket', async () => {
+    const post = jest.fn().mockResolvedValue({
+      id: 123,
+      status: 'pending',
+      status_detail: 'pending_waiting_payment',
+      external_reference: 'ord_test',
+      transaction_amount: 51.9,
+      transaction_details: {
+        total_paid_amount: 0,
+        external_resource_url: 'https://www.mercadopago.com.br/payments/123/ticket',
+      },
+      barcode: { content: '23793380296060054351030006333303799140000020000' },
+      currency_id: 'BRL',
+      payment_method_id: 'bolbradesco',
+      payment_type_id: 'ticket',
+      installments: 1,
+      date_approved: null,
+      date_of_expiration: '2026-09-28T23:59:59.000-03:00',
+    });
+    const config = { get: jest.fn((key: string) => key === 'PUBLIC_SITE_URL' ? 'https://gxhost.example' : undefined) };
+    const provider = new MercadoPagoProvider({ post } as unknown as MercadoPagoClient, config as unknown as ConfigService);
+
+    const charge = await provider.createBoletoCharge({
+      payer: {
+        userId: 'user-1',
+        email: 'cliente@example.com',
+        firstName: 'Cliente',
+        lastName: 'GX',
+        cpf: '12345678901',
+        address: { postalCode: '01001000', addressLine: 'Praça da Sé', addressNumber: '1', neighborhood: 'Sé', city: 'São Paulo', state: 'SP' },
+      },
+      amountCents: 5190,
+      currency: 'BRL',
+      description: 'Plano Avançado',
+      externalReference: 'ord_test',
+      idempotencyKey: 'order-1',
+      expiresAt: new Date('2026-09-28T23:59:59.000-03:00'),
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      '/v1/payments',
+      expect.objectContaining({ payment_method_id: 'bolbradesco', external_reference: 'ord_test' }),
+      'order-1',
+    );
+    expect(charge.ticketUrl).toContain('/ticket');
+    expect(charge.digitableLine).toBe('23793380296060054351030006333303799140000020000');
+  });
+});

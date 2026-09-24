@@ -27,6 +27,7 @@
 
 export const PAYMENT_PROVIDER = Symbol('PAYMENT_PROVIDER');
 export type PaymentProviderName = 'mercadopago' | 'pagbank';
+export type PaymentMethod = 'pix' | 'boleto' | 'card';
 
 /**
  * Thrown when the PROVIDER itself rejects a request as unprocessable in
@@ -126,6 +127,14 @@ export interface CreatePixChargeInput extends ChargeInputBase {
   expiresAt: Date;
 }
 
+/**
+ * A boleto for ONE billing cycle. Like Pix, boleto is not an automatic
+ * debit: BillingCycleProcessor creates a fresh charge for every renewal.
+ */
+export interface CreateBoletoChargeInput extends ChargeInputBase {
+  expiresAt: Date;
+}
+
 /** A recurring card subscription (`POST /preapproval`) — Mercado Pago itself schedules and charges every cycle from here on. */
 export interface CreateCardSubscriptionInput extends ChargeInputBase {
   billingPeriod: 'monthly' | 'quarterly' | 'semiannual' | 'annual';
@@ -163,6 +172,14 @@ export interface PixCharge extends GatewayPayment {
   qrCode: string;
   /** `point_of_interaction.transaction_data.qr_code_base64` — a PNG, base64, rendered inline by the client. */
   qrCodeBase64: string;
+  expiresAt: Date | null;
+}
+
+/** A freshly created boleto. Providers may expose only a hosted ticket
+ * URL (Mercado Pago) or also return a digitable line (PagBank). */
+export interface BoletoCharge extends GatewayPayment {
+  ticketUrl: string;
+  digitableLine: string | null;
   expiresAt: Date | null;
 }
 
@@ -229,6 +246,8 @@ export interface PaymentProvider {
 
   /** Creates the one-off Pix charge for ONE billing cycle. The QR comes back inline. */
   createPixCharge(input: CreatePixChargeInput): Promise<PixCharge>;
+  /** Creates one boleto for ONE billing cycle. */
+  createBoletoCharge(input: CreateBoletoChargeInput): Promise<BoletoCharge>;
   /** Creates the recurring card subscription. The returned `initPoint` is where the customer authorizes it; nothing is charged until they do. */
   createCardSubscription(input: CreateCardSubscriptionInput): Promise<GatewaySubscription>;
 
