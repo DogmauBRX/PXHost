@@ -14,7 +14,9 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
 ARG VITE_API_URL
+ARG VITE_TURNSTILE_SITE_KEY
 ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_TURNSTILE_SITE_KEY=${VITE_TURNSTILE_SITE_KEY}
 RUN pnpm run build
 
 FROM caddy:2-alpine AS runtime

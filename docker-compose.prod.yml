@@ -86,6 +86,10 @@ services:
       context: ./apps/panel
       args:
         VITE_API_URL: https://api.gxhost.com.br
+        # Turnstile's site key is deliberately public and must be available
+        # while Vite builds the browser bundle. Its matching secret remains
+        # API-only in TURNSTILE_SECRET_KEY through api/worker `env_file`.
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
     restart: unless-stopped
 
   # Public-exposure plan (docs/PUBLIC-EXPOSURE.md) — the VPS-side gateway
