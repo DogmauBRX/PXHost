@@ -16,8 +16,6 @@ export interface CreateCheckoutInput {
   planId: string;
   paymentMethod: 'pix' | 'card';
   provider?: PaymentProviderName;
-  /** Used only by the gateway as the payer; it never determines order ownership. */
-  payerEmail?: string;
 }
 
 export type PaymentProviderName = 'mercadopago' | 'pagbank';

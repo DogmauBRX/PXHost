@@ -113,7 +113,6 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
 
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card'>('pix');
   const [paymentProvider, setPaymentProvider] = useState<PaymentProviderName>('mercadopago');
-  const [payerEmail, setPayerEmail] = useState('');
   const [submittingCheckout, setSubmittingCheckout] = useState(false);
   // Checkout redesign (WHMCS-style) — which billing-cycle SIBLING of the
   // route's plan is actually selected. Switching cycles never navigates
@@ -196,13 +195,6 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
   const notFound = error instanceof ApiError && error.status === 404;
   const billingComplete = accountData ? isBillingProfileComplete(accountData) : false;
 
-  // The Mercado Pago payer is a checkout-specific identity. Prefill it
-  // from the GXHost login only as a convenience; the customer may replace
-  // it with the account that will actually authorize/pay the charge.
-  useEffect(() => {
-    if (accountData?.email) setPayerEmail((current) => current || accountData.email);
-  }, [accountData?.email]);
-
   const {
     register: registerBillingField,
     handleSubmit: handleBillingSubmit,
@@ -270,12 +262,7 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
       // place a bug here would turn into wrong billing (a customer
       // switches to Trimestral in section ①, the order must be created
       // against THAT plan, not `basico`'s own id from the URL).
-      const normalizedPayerEmail = payerEmail.trim();
-      if (!normalizedPayerEmail) {
-        setSubmitError('Informe o e-mail de quem fará o pagamento.');
-        return;
-      }
-      const created = await createCheckoutOrder({ planId: (selectedPlan ?? plan).id, paymentMethod, provider: paymentProvider, payerEmail: normalizedPayerEmail });
+      const created = await createCheckoutOrder({ planId: (selectedPlan ?? plan).id, paymentMethod, provider: paymentProvider });
       setOrder(created);
     } catch (err) {
       if (err instanceof ApiError && err.message.includes('BILLING_PROFILE_REQUIRED')) {
@@ -452,8 +439,6 @@ export function CheckoutPage({ planSlug }: { planSlug: string }) {
                       paymentProvider={paymentProvider}
                       paymentProviders={paymentProviders}
                       onPaymentProviderChange={setPaymentProvider}
-                      payerEmail={payerEmail}
-                      onPayerEmailChange={setPayerEmail}
                     />
                   )}
                 </CardBody>
@@ -591,8 +576,6 @@ function ConfigureStep({
   paymentProvider,
   paymentProviders,
   onPaymentProviderChange,
-  payerEmail,
-  onPayerEmailChange,
 }: {
   familyCycles: PublicPlan[];
   selectedPlanId: string;
@@ -602,8 +585,6 @@ function ConfigureStep({
   paymentProvider: PaymentProviderName;
   paymentProviders: PaymentProviderName[];
   onPaymentProviderChange: (provider: PaymentProviderName) => void;
-  payerEmail: string;
-  onPayerEmailChange: (email: string) => void;
 }) {
   return (
     <div className="space-y-5">
@@ -667,23 +648,6 @@ function ConfigureStep({
         </p>
       </div>
 
-      <div className="rounded-xl border border-sky-300/15 bg-sky-300/[0.045] p-4">
-        <Field
-          label={`E-mail do pagador no ${providerLabel(paymentProvider)}`}
-          htmlFor="checkout-payer-email"
-          hint="Pode ser diferente do e-mail da sua conta GXHost"
-        >
-          <Input
-            id="checkout-payer-email"
-            type="email"
-            autoComplete="email"
-            value={payerEmail}
-            onChange={(event) => onPayerEmailChange(event.target.value)}
-            icon={Mail}
-            placeholder="pagador@exemplo.com"
-          />
-        </Field>
-      </div>
     </div>
   );
 }
