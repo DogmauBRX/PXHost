@@ -143,6 +143,20 @@ Forçar uma reconciliação manual: botão "Reconciliar agora" em
    sudo sysctl -w net.ipv4.ip_forward=1
    echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
    ```
+   Instale também a regra DNAT como serviço persistente. Ela usa uma
+   tabela nftables própria e não apaga nem substitui as regras criadas
+   pelo Docker:
+   ```bash
+   sudo install -m 0755 deploy/node/gxhost-game-dnat.sh /usr/local/sbin/
+   sudo install -m 0644 deploy/node/gxhost-game-dnat.service /etc/systemd/system/
+   sudo install -m 0644 deploy/node/game-dnat.env.example /etc/gxhost-agent/game-dnat.env
+   sudo nano /etc/gxhost-agent/game-dnat.env
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now gxhost-game-dnat.service
+   ```
+   Sem esse serviço, a regra aplicada manualmente desaparece no próximo
+   reboot e o gateway continua aceitando a porta pública, mas recebe
+   `connection refused` ao tentar chegar ao servidor no node.
 3. No admin do GXhost, **Admin > Nodes > (o node) > Editar**, preencha
    "IP no túnel WireGuard" com o `Address` desse node no `wg0.conf`
    (ex. `10.10.0.2`, sem a máscara `/24`).
