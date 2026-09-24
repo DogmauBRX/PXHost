@@ -511,8 +511,8 @@ function CycleOption({ plan, selected, onSelect }: { plan: PublicPlan; selected:
       type="button"
       onClick={onSelect}
       disabled={soldOut}
-      className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-        selected ? 'border-accent-strong bg-accent-tint text-accent-strong' : 'border-border text-text-muted hover:text-text'
+      className={`flex min-h-[74px] flex-col justify-center rounded-xl border px-4 py-3 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
+        selected ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_10px_24px_-18px_var(--color-accent)]' : 'border-border bg-surface-2/30 text-text-muted hover:border-accent/40 hover:bg-surface-2/60 hover:text-text'
       }`}
     >
       <div className="flex items-center justify-between gap-2">
@@ -587,7 +587,7 @@ function ConfigureStep({
   onPaymentProviderChange: (provider: PaymentProviderName) => void;
 }) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <NumberedSection step={1}>Plano e cobrança</NumberedSection>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {familyCycles.map((p) => (
@@ -595,18 +595,22 @@ function ConfigureStep({
         ))}
       </div>
 
-      <div className="rounded-xl border border-border bg-surface-2/45 p-4">
+      <div className="grid gap-4 md:grid-cols-2">
+      <div className="rounded-2xl border border-border bg-surface-2/45 p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-text">Processador do pagamento</p>
-          <span className="text-xs text-text-faint">Ambiente seguro do provedor</span>
+          <div>
+            <p className="text-sm font-semibold text-text">Processador</p>
+            <p className="mt-0.5 text-xs text-text-faint">Ambiente seguro</p>
+          </div>
+          <ShieldCheck className="h-4 w-4 text-ok" aria-hidden="true" />
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3">
           {paymentProviders.map((provider) => (
             <button
               key={provider}
               type="button"
               onClick={() => onPaymentProviderChange(provider)}
-              className={`rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
+              className={`flex min-h-14 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
                 paymentProvider === provider ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_8px_20px_-14px_var(--color-accent)]' : 'border-border bg-surface text-text-muted hover:border-accent/35 hover:text-text'
               }`}
             >
@@ -616,16 +620,19 @@ function ConfigureStep({
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-surface-2/45 p-4">
+      <div className="rounded-2xl border border-border bg-surface-2/45 p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-text">Forma de pagamento</p>
-          <span className="text-xs text-text-faint">Escolha como prefere pagar</span>
+          <div>
+            <p className="text-sm font-semibold text-text">Forma de pagamento</p>
+            <p className="mt-0.5 text-xs text-text-faint">Escolha como prefere pagar</p>
+          </div>
+          {paymentMethod === 'pix' ? <QrCode className="h-4 w-4 text-accent-strong" aria-hidden="true" /> : <CreditCard className="h-4 w-4 text-accent-strong" aria-hidden="true" />}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
             onClick={() => onPaymentMethodChange('pix')}
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
+            className={`flex min-h-14 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
               paymentMethod === 'pix' ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_8px_20px_-14px_var(--color-accent)]' : 'border-border bg-surface text-text-muted hover:border-accent/35 hover:text-text'
             }`}
           >
@@ -634,7 +641,7 @@ function ConfigureStep({
           <button
             type="button"
             onClick={() => onPaymentMethodChange('card')}
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
+            className={`flex min-h-14 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
               paymentMethod === 'card' ? 'border-accent-strong bg-accent-tint text-accent-strong shadow-[0_8px_20px_-14px_var(--color-accent)]' : 'border-border bg-surface text-text-muted hover:border-accent/35 hover:text-text'
             }`}
           >
@@ -646,6 +653,7 @@ function ConfigureStep({
             ? `No cartão, a renovação é automática a cada período. Os dados são inseridos na página segura do ${providerLabel(paymentProvider)}, nunca aqui.`
             : 'No Pix não existe cobrança automática: a cada período geramos um novo QR Code e avisamos você para pagar.'}
         </p>
+      </div>
       </div>
 
     </div>
