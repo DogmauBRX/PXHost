@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Barcode, CheckCircle2, Copy, ExternalLink } from 'lucide-react';
+import { Barcode, CheckCircle2, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
 import type { Order } from '@/shared/api/types';
 import { Alert, Button, Card, CardBody, CardHeader, CardTitle } from '@/ui/primitives';
 
@@ -104,7 +104,7 @@ export function OrderStatusView({ order, onRetry }: { order: Order; onRetry: () 
   // 'pending' — the only branch where a customer still has something to
   // DO (pay the Pix) or wait for (the card's authorization webhook).
   return (
-    <div className="mx-auto max-w-md px-4 py-14 sm:px-6 text-center">
+    <div className="mx-auto max-w-xl px-4 py-14 text-center sm:px-6">
       {order.paymentMethod === 'pix' && order.pixQrCodeBase64 ? (
         <Card>
           <CardHeader>
@@ -155,24 +155,41 @@ export function OrderStatusView({ order, onRetry }: { order: Order; onRetry: () 
           </CardBody>
         </Card>
       ) : order.checkoutUrl ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Finalize seu pagamento</CardTitle>
+        <Card className="overflow-hidden border-accent/35 bg-gradient-to-b from-surface to-surface-2/45 text-left shadow-[0_24px_70px_-38px_var(--color-accent)]">
+          <div className="h-1 bg-gradient-to-r from-accent/35 via-accent to-accent/35" />
+          <CardHeader className="justify-start gap-4 bg-accent/[0.055] px-6 py-5 sm:px-7">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-accent/25 bg-accent-tint text-accent-strong shadow-sm">
+              <ShieldCheck className="h-6 w-6" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold tracking-[0.14em] text-accent-strong uppercase">Ambiente seguro</p>
+              <CardTitle className="mt-1 text-xl sm:text-2xl">Finalize seu pagamento</CardTitle>
+            </div>
           </CardHeader>
-          <CardBody className="space-y-4">
-            <p className="text-sm text-text-muted">
-              Você será redirecionado para a página segura do {order.provider === 'pagbank' ? 'PagBank' : 'Mercado Pago'} para autorizar a cobrança no cartão — os dados do cartão nunca passam pelo nosso site.
+          <CardBody className="space-y-5 px-6 py-6 sm:px-7 sm:py-7">
+            <p className="text-base leading-7 text-text sm:text-lg sm:leading-8">
+              Você será redirecionado para a página segura do{' '}
+              <strong className="font-semibold text-accent-strong">{order.provider === 'pagbank' ? 'PagBank' : 'Mercado Pago'}</strong>{' '}
+              para autorizar a cobrança no cartão.
             </p>
+            <div className="flex items-start gap-3 rounded-xl border border-ok/20 bg-ok/[0.075] px-4 py-3.5">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-ok" aria-hidden="true" />
+              <p className="text-sm leading-6 text-text-muted">
+                Seus dados do cartão são preenchidos diretamente no provedor e nunca passam pelo site da GXHost.
+              </p>
+            </div>
             <Button
               type="button"
               variant="primary"
               onClick={() => window.location.assign(order.checkoutUrl!)}
-              className="w-full gap-2"
+              className="h-12 w-full rounded-xl text-base shadow-[0_14px_28px_-16px_var(--color-accent)]"
             >
               <ExternalLink className="h-4 w-4" />
               Ir para o pagamento
             </Button>
-            <p className="text-sm text-text-muted">Depois de pagar, você pode voltar para esta página — ela atualiza sozinha assim que a confirmação chegar.</p>
+            <p className="rounded-xl border border-border bg-surface-2/70 px-4 py-3 text-center text-sm leading-6 text-text-muted">
+              Depois de pagar, volte para esta página. A confirmação aparecerá automaticamente assim que o provedor processar o pagamento.
+            </p>
           </CardBody>
         </Card>
       ) : (
