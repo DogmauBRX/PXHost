@@ -10,7 +10,6 @@ import type {
 export interface CreateSupportTicketInput {
   subject: string;
   category: SupportTicketCategory;
-  priority: SupportTicketPriority;
   serverId?: string;
   message: string;
 }

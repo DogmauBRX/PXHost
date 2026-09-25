@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { TICKET_CATEGORY_PRIORITY } from './dto/support.dto';
 import type {
   AddSupportMessageDto,
   CreateSupportTicketDto,
@@ -50,7 +51,7 @@ export class SupportService {
           serverId: dto.serverId,
           subject: dto.subject.trim(),
           category: dto.category,
-          priority: dto.priority,
+          priority: TICKET_CATEGORY_PRIORITY[dto.category],
           messages: {
             create: { authorId: userId, body: dto.message.trim(), isStaff: false },
           },

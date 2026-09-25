@@ -3,9 +3,19 @@ import { Transform } from 'class-transformer';
 
 const trimString = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
-export const TICKET_CATEGORIES = ['technical', 'billing', 'account', 'other'] as const;
+export const TICKET_CATEGORIES = ['server_offline', 'server_error', 'performance_mods', 'billing', 'account_access', 'general_question'] as const;
 export const TICKET_PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const;
 export const TICKET_STATUSES = ['open', 'in_progress', 'waiting_customer', 'closed'] as const;
+
+/** Priority is assigned from the issue category; it is never client-controlled. */
+export const TICKET_CATEGORY_PRIORITY: Record<(typeof TICKET_CATEGORIES)[number], (typeof TICKET_PRIORITIES)[number]> = {
+  server_offline: 'urgent',
+  server_error: 'high',
+  performance_mods: 'normal',
+  billing: 'normal',
+  account_access: 'high',
+  general_question: 'low',
+};
 
 export class CreateSupportTicketDto {
   @Transform(trimString)

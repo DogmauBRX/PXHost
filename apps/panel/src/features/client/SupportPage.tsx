@@ -6,8 +6,8 @@ import { listServers } from '@/features/servers/servers.api';
 import { createClientTicket, getClientTicket, listClientTickets, replyClientTicket } from '@/features/support/tickets.api';
 import { TicketConversation } from '@/features/support/TicketConversation';
 import { CopySupportEmail } from '@/features/support/CopySupportEmail';
-import { TICKET_PRIORITY_LABEL, TICKET_STATUS_LABEL, TICKET_STATUS_TONE } from '@/features/support/ticket-labels';
-import type { SupportTicketCategory, SupportTicketPriority } from '@/shared/api/types';
+import { CLIENT_TICKET_CATEGORY_OPTIONS, TICKET_PRIORITY_LABEL, TICKET_STATUS_LABEL, TICKET_STATUS_TONE } from '@/features/support/ticket-labels';
+import type { SupportTicketCategory } from '@/shared/api/types';
 import { ApiError } from '@/shared/api/client';
 import { formatDateTimeShort } from '@/shared/format/datetime';
 import { Alert, Badge, Button, EmptyState, Field, Input, LoadingRow, Modal, PageHeader, Select, Textarea } from '@/ui/primitives';
@@ -18,8 +18,7 @@ export function SupportPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [reply, setReply] = useState('');
   const [subject, setSubject] = useState('');
-  const [category, setCategory] = useState<SupportTicketCategory>('technical');
-  const [priority, setPriority] = useState<SupportTicketPriority>('normal');
+  const [category, setCategory] = useState<SupportTicketCategory>('server_error');
   const [serverId, setServerId] = useState('');
   const [message, setMessage] = useState('');
 
@@ -42,11 +41,11 @@ export function SupportPage() {
   };
 
   const createMutation = useMutation({
-    mutationFn: () => createClientTicket({ subject, category, priority, serverId: serverId || undefined, message }),
+    mutationFn: () => createClientTicket({ subject, category, serverId: serverId || undefined, message }),
     onSuccess: (ticket) => {
       setCreateOpen(false);
       setSelectedId(ticket.id);
-      setSubject(''); setCategory('technical'); setPriority('normal'); setServerId(''); setMessage('');
+      setSubject(''); setCategory('server_error'); setServerId(''); setMessage('');
       refresh(ticket.id);
     },
   });
@@ -127,10 +126,15 @@ export function SupportPage() {
       >
         <div className="space-y-4">
           <Field label="Assunto" htmlFor="ticket-subject" required><Input id="ticket-subject" maxLength={120} value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Ex.: servidor não inicia" /></Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Categoria" htmlFor="ticket-category"><Select id="ticket-category" value={category} onChange={(event) => setCategory(event.target.value as SupportTicketCategory)}><option value="technical">Problema técnico</option><option value="billing">Pagamento ou assinatura</option><option value="account">Conta e acesso</option><option value="other">Outro assunto</option></Select></Field>
-            <Field label="Prioridade" htmlFor="ticket-priority"><Select id="ticket-priority" value={priority} onChange={(event) => setPriority(event.target.value as SupportTicketPriority)}>{Object.entries(TICKET_PRIORITY_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select></Field>
-          </div>
+          <Field
+            label="Categoria do problema"
+            htmlFor="ticket-category"
+            hint={`Prioridade definida automaticamente: ${TICKET_PRIORITY_LABEL[CLIENT_TICKET_CATEGORY_OPTIONS.find((option) => option.value === category)!.priority]}`}
+          >
+            <Select id="ticket-category" value={category} onChange={(event) => setCategory(event.target.value as SupportTicketCategory)}>
+              {CLIENT_TICKET_CATEGORY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </Select>
+          </Field>
           <Field label="Servidor relacionado" htmlFor="ticket-server" hint="Opcional"><Select id="ticket-server" value={serverId} onChange={(event) => setServerId(event.target.value)}><option value="">Nenhum</option>{servers?.map((server) => <option key={server.id} value={server.id}>{server.name} ({server.shortId})</option>)}</Select></Field>
           <Field label="Mensagem" htmlFor="ticket-message" required><Textarea id="ticket-message" rows={7} maxLength={5000} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Descreva o problema, quando começou e o que você já tentou." /></Field>
         </div>

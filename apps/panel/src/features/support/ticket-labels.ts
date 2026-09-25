@@ -29,8 +29,19 @@ export const TICKET_PRIORITY_TONE: Record<SupportTicketPriority, 'ok' | 'warn' |
 };
 
 export const TICKET_CATEGORY_LABEL: Record<SupportTicketCategory, string> = {
-  technical: 'Problema técnico',
-  billing: 'Pagamento ou assinatura',
-  account: 'Conta e acesso',
-  other: 'Outro assunto',
+  server_offline: 'Servidor desligado ou indisponível',
+  server_error: 'Erro para iniciar ou usar o servidor',
+  performance_mods: 'Lentidão, desempenho ou mods',
+  billing: 'Pagamento, cobrança ou assinatura',
+  account_access: 'Conta, acesso ou segurança',
+  general_question: 'Dúvida ou outro assunto',
 };
+
+export const CLIENT_TICKET_CATEGORY_OPTIONS: { value: SupportTicketCategory; label: string; priority: SupportTicketPriority }[] = [
+  { value: 'server_offline', label: 'Servidor desligado ou indisponível', priority: 'urgent' },
+  { value: 'server_error', label: 'Erro para iniciar ou usar o servidor', priority: 'high' },
+  { value: 'performance_mods', label: 'Lentidão, desempenho ou mods', priority: 'normal' },
+  { value: 'billing', label: 'Pagamento, cobrança ou assinatura', priority: 'normal' },
+  { value: 'account_access', label: 'Conta, acesso ou segurança', priority: 'high' },
+  { value: 'general_question', label: 'Dúvida ou outro assunto', priority: 'low' },
+];

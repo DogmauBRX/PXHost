@@ -704,7 +704,7 @@ export interface AdminServerDetail {
 
 export type SupportTicketStatus = 'open' | 'in_progress' | 'waiting_customer' | 'closed';
 export type SupportTicketPriority = 'low' | 'normal' | 'high' | 'urgent';
-export type SupportTicketCategory = 'technical' | 'billing' | 'account' | 'other';
+export type SupportTicketCategory = 'server_offline' | 'server_error' | 'performance_mods' | 'billing' | 'account_access' | 'general_question';
 
 export interface SupportTicketSummary {
   id: string;
