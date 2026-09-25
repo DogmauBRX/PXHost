@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { CalendarClock, Layers, Settings2 } from 'lucide-react';
+import { CalendarClock, Settings2 } from 'lucide-react';
 import { listMySubscriptions, cancelSubscription } from './subscriptions.api';
 import { listMyOrders } from '@/shared/api/orders.api';
 import { getServer } from '@/features/servers/servers.api';
@@ -124,13 +124,6 @@ export function SubscriptionPage() {
           ))}
         </div>
       )}
-
-      <div className="mt-8">
-        <Link to="/plans" className="inline-flex items-center gap-1.5 text-sm font-medium text-text-muted transition-colors hover:text-text">
-          <Layers className="h-4 w-4" />
-          Ver outros planos
-        </Link>
-      </div>
 
       <ConfirmDialog
         open={!!cancelTarget}
