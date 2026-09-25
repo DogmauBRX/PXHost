@@ -14,6 +14,19 @@
 # through this API") and Cloudflare's free-plan 100MB request-body cap
 # would break large uploads/backup downloads if they were routed through
 # here too.
+#
+# Explicit production ACME CA — found live during the 2026-09-25 VPS
+# migration: a brand-new Caddy instance (fresh gxhost_caddy_data volume,
+# nothing in this file requesting it) obtained its very first account
+# against Let's Encrypt's STAGING directory instead of production, which
+# issues certificates no real browser trusts (Cloudflare's own edge saw
+# exactly that and answered every visitor with its own error 525,
+# "SSL handshake failed with origin"). Root cause not pinned down before
+# the fix; forcing this explicitly is the standard, documented way to
+# make the choice unambiguous regardless of whatever picked staging.
+{
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
+}
 
 gxhost.com.br {
 	reverse_proxy panel:80
