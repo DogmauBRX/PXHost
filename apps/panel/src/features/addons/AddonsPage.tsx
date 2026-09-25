@@ -26,7 +26,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
     staleTime: 60 * 60 * 1000,
   });
   const [sourceId, setSourceId] = useState(ADDON_SOURCES[0].id);
-  const [contentType, setContentType] = useState<'mods' | 'modpacks'>('mods');
+  const [contentType, setContentType] = useState<'mods' | 'modpacks'>('modpacks');
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const uninstall = useMutation({
     mutationFn: () => uninstallLatestModpack(serverId),
@@ -68,6 +68,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
   const isModsServer = software.addonNoun === 'mod';
   const canViewModpacks = server.role !== 'subuser' || permissions.includes('addons.catalog.read');
   const canUninstallModpack = server.role !== 'subuser' || permissions.includes('addons.install');
+  const selectedContentType = isModsServer && canViewModpacks ? contentType : 'mods';
 
   return (
     <>
@@ -87,7 +88,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
               disabled={type === 'modpacks' && !canViewModpacks}
               title={type === 'modpacks' && !canViewModpacks ? 'Você não possui permissão para visualizar o catálogo.' : undefined}
               onClick={() => setContentType(type)}
-              className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${contentType === type ? 'border-accent text-accent-strong' : 'border-transparent text-text-muted hover:text-text'}`}
+              className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${selectedContentType === type ? 'border-accent text-accent-strong' : 'border-transparent text-text-muted hover:text-text'}`}
             >
               {type === 'mods' ? 'Mods' : 'Modpacks'}
             </button>
@@ -95,7 +96,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
         </div>
       )}
 
-      {contentType === 'mods' && installedModpack && (
+      {selectedContentType === 'mods' && installedModpack && (
         <section className="mb-5 overflow-hidden rounded-card border border-accent/35 bg-accent/5 shadow-xs" aria-label="Modpack instalado">
           <div className="flex items-center gap-3 p-4 sm:p-5">
             {installedProject.data?.icon ? (
@@ -122,7 +123,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
         </section>
       )}
 
-      {contentType === 'mods' && available.length > 1 && (
+      {selectedContentType === 'mods' && available.length > 1 && (
         <div className="-mt-2 mb-4 flex items-center gap-1 border-b border-border">
           {available.map((s) => (
             <button
@@ -141,7 +142,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
         </div>
       )}
 
-      {contentType === 'modpacks' && isModsServer && canViewModpacks ? <ModpacksPanel serverId={serverId} ctx={ctx} /> : active && <active.Panel serverId={serverId} ctx={ctx} />}
+      {selectedContentType === 'modpacks' ? <ModpacksPanel serverId={serverId} ctx={ctx} /> : active && <active.Panel serverId={serverId} ctx={ctx} />}
 
       <ConfirmDialog
         open={confirmUninstall}
