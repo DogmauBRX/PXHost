@@ -39,7 +39,7 @@ func writeFsxError(w http.ResponseWriter, err error) {
 		writeErrorResp(w, http.StatusConflict, "QUOTA_EXCEEDED", err.Error())
 	case errors.Is(err, fsx.ErrArchiveBomb):
 		writeErrorResp(w, http.StatusBadRequest, "ARCHIVE_REJECTED", err.Error())
-	case os.IsNotExist(err):
+	case errors.Is(err, os.ErrNotExist):
 		writeErrorResp(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 	default:
 		writeErrorResp(w, http.StatusInternalServerError, "FILE_OP_FAILED", err.Error())

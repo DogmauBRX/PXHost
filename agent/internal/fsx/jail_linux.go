@@ -71,7 +71,7 @@ func translateFlags(flags openFlag) (int, uint64) {
 // resolve a customer-influenced path. RESOLVE_BENEATH makes escape
 // impossible by construction: if resolving relPath would step outside
 // the directory j.fd refers to — including via a symlink swapped in by a
-// concurrent request (TOCTOU) — the syscall itself returns ENOENT/EXDEV,
+// concurrent request (TOCTOU) — the syscall itself returns EXDEV/ELOOP,
 // never a valid fd outside the root. That is what closes the classic
 // check-then-use race a lexical sanitizer alone cannot close.
 func (j *Jail) openRelative(relPath string, flags openFlag, mode uint32) (*os.File, error) {
@@ -83,7 +83,13 @@ func (j *Jail) openRelative(relPath string, flags openFlag, mode uint32) (*os.Fi
 	}
 	fd, err := unix.Openat2(j.fd, relPath, &how)
 	if err != nil {
-		if err == unix.ENOENT || err == unix.EXDEV || err == unix.ELOOP {
+		// ENOENT is the ordinary result for a path that does not exist
+		// beneath the jail. Preserve it so callers can distinguish an empty
+		// not-yet-created directory from an attempted jail escape.
+		if err == unix.ENOENT {
+			return nil, fmt.Errorf("fsx: open %q: %w", relPath, err)
+		}
+		if err == unix.EXDEV || err == unix.ELOOP {
 			return nil, fmt.Errorf("%w: %s: %v", ErrEscapesJail, relPath, err)
 		}
 		return nil, fmt.Errorf("fsx: open %q: %w", relPath, err)

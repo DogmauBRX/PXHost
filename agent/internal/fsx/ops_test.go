@@ -2,6 +2,7 @@ package fsx
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,6 +133,17 @@ func TestJail_ListSortsDirsFirstThenAlphabetical(t *testing.T) {
 	}
 	if entries[1].Name != "alpha.txt" || entries[2].Name != "zeta.txt" {
 		t.Fatalf("expected alphabetical file order, got %q then %q", entries[1].Name, entries[2].Name)
+	}
+}
+
+func TestJail_ListMissingDirectoryReturnsNotExist(t *testing.T) {
+	j := newTestJail(t)
+	_, err := j.List("mods")
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("List(missing) error = %v, want os.ErrNotExist", err)
+	}
+	if errors.Is(err, ErrEscapesJail) {
+		t.Fatalf("List(missing) error = %v, must not be classified as a jail escape", err)
 	}
 }
 

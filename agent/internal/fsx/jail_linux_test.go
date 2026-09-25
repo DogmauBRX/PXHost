@@ -3,6 +3,7 @@
 package fsx
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +12,24 @@ import (
 	"sync/atomic"
 	"testing"
 )
+
+func TestJail_SymlinkOutsideRootReturnsEscape(t *testing.T) {
+	jailRoot := t.TempDir()
+	outsideRoot := t.TempDir()
+	if err := os.Symlink(outsideRoot, filepath.Join(jailRoot, "outside")); err != nil {
+		t.Fatalf("create outside symlink: %v", err)
+	}
+
+	j, err := Open(jailRoot)
+	if err != nil {
+		t.Fatalf("Open jail: %v", err)
+	}
+	defer j.Close()
+
+	if _, err := j.List("outside"); !errors.Is(err, ErrEscapesJail) {
+		t.Fatalf("List(outside symlink) error = %v, want ErrEscapesJail", err)
+	}
+}
 
 // TestJail_SymlinkSwapRaceNeverEscapes is architecture doc 4.4's
 // "1000-iteration parallel symlink-swap race test": one goroutine
