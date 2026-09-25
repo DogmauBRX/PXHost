@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { AdminPermissionGuard } from '../admin/guards/admin-permission.guard';
 import { RequireAdminPermission } from '../admin/decorators/require-admin-permission.decorator';
@@ -34,5 +34,11 @@ export class AdminSupportController {
   @RequireAdminPermission('support.manage')
   update(@Param('id') id: string, @Body() dto: UpdateSupportTicketDto) {
     return this.support.updateAsAdmin(id, dto);
+  }
+
+  @Delete(':id')
+  @RequireAdminPermission('support.manage')
+  remove(@Param('id') id: string) {
+    return this.support.removeAsAdmin(id);
   }
 }

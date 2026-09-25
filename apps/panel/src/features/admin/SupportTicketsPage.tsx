@@ -6,6 +6,7 @@ import type { SupportTicketPriority, SupportTicketStatus } from '@/shared/api/ty
 import { formatDateTimeShort } from '@/shared/format/datetime';
 import {
   getAdminTicket,
+  deleteAdminTicket,
   listAdminTickets,
   replyAdminTicket,
   updateAdminTicket,
@@ -17,7 +18,7 @@ import {
   TICKET_STATUS_LABEL,
   TICKET_STATUS_TONE,
 } from '@/features/support/ticket-labels';
-import { Alert, Badge, Button, EmptyState, Input, LoadingRow, PageHeader, Select, Textarea } from '@/ui/primitives';
+import { Alert, Badge, Button, ConfirmDialog, EmptyState, Input, LoadingRow, PageHeader, Select, Textarea } from '@/ui/primitives';
 
 export function SupportTicketsPage() {
   const queryClient = useQueryClient();
@@ -26,6 +27,7 @@ export function SupportTicketsPage() {
   const [status, setStatus] = useState<SupportTicketStatus | ''>('');
   const [priority, setPriority] = useState<SupportTicketPriority | ''>('');
   const [reply, setReply] = useState('');
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const filters = { q: query.trim() || undefined, status: status || undefined, priority: priority || undefined };
   const { data: tickets, isPending, error } = useQuery({
@@ -58,7 +60,15 @@ export function SupportTicketsPage() {
     mutationFn: (input: { status?: SupportTicketStatus; priority?: SupportTicketPriority }) => updateAdminTicket(selectedId!, input),
     onSuccess: () => refresh(selectedId!),
   });
-  const mutationError = replyMutation.error ?? updateMutation.error;
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteAdminTicket(selectedId!),
+    onSuccess: () => {
+      setDeleteOpen(false);
+      setSelectedId(null);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'support', 'tickets'] });
+    },
+  });
+  const mutationError = replyMutation.error ?? updateMutation.error ?? deleteMutation.error;
 
   return (
     <>
@@ -127,6 +137,7 @@ export function SupportTicketsPage() {
                   >
                     {Object.entries(TICKET_STATUS_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </Select>
+                  <Button variant="danger" size="sm" disabled={deleteMutation.isPending} onClick={() => setDeleteOpen(true)}>Excluir ticket</Button>
                 </div>
               )}
               composer={selected.status === 'closed' ? (
@@ -146,6 +157,16 @@ export function SupportTicketsPage() {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Excluir ticket"
+        message={`Excluir permanentemente o ticket${selected ? ` “${selected.subject}”` : ''} e todas as mensagens? Esta ação não pode ser desfeita.`}
+        confirmLabel="Excluir permanentemente"
+        tone="danger"
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate()}
+        onCancel={() => setDeleteOpen(false)}
+      />
     </>
   );
 }

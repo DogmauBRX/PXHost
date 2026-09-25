@@ -155,4 +155,15 @@ export class SupportService {
       });
     });
   }
+
+  async removeAsAdmin(id: string) {
+    return this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
+      const ticket = await tx.supportTicket.findUnique({ where: { id }, select: { id: true } });
+      if (!ticket) throw new NotFoundException('Ticket não encontrado');
+
+      // `support_ticket_messages.ticket_id` has ON DELETE CASCADE, so the
+      // ticket conversation is permanently removed with its parent record.
+      await tx.supportTicket.delete({ where: { id } });
+    });
+  }
 }

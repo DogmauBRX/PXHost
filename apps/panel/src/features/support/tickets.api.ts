@@ -44,3 +44,4 @@ export const replyAdminTicket = (id: string, message: string) =>
   apiFetch<SupportTicketDetail>(`/api/admin/support/tickets/${id}/messages`, { method: 'POST', body: JSON.stringify({ message }) });
 export const updateAdminTicket = (id: string, input: { status?: SupportTicketStatus; priority?: SupportTicketPriority }) =>
   apiFetch<SupportTicketDetail>(`/api/admin/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
+export const deleteAdminTicket = (id: string) => apiFetch<void>(`/api/admin/support/tickets/${id}`, { method: 'DELETE' });
