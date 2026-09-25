@@ -19,36 +19,32 @@ export function Topbar({ area }: { area: 'admin' | 'client' }) {
           <Menu className="h-5 w-5" />
         </button>
 
-        {/* 'stay: true' opts out of '/''s own beforeLoad, which otherwise
-            bounces an authenticated visitor straight back to their dashboard
-            — without it this would just redirect back to the panel it's
-            supposed to leave (same reasoning Sidebar's old home link and
-            PublicShell's own homeSearch already document). Moved here from
-            Sidebar's brand box (icon-only, awkwardly overlapping the logo)
-            to a real labeled button. */}
-        <div className="flex items-center gap-2">
-          <Link
-            to="/"
-            search={{ stay: true }}
-            className="group relative flex items-center gap-2 rounded-xl border border-border bg-surface-2/55 px-3 py-2 text-sm font-medium text-text-muted shadow-xs transition-all hover:-translate-y-px hover:border-accent/35 hover:bg-accent/10 hover:text-accent-strong"
-          >
-            <Home className="h-4 w-4 transition-transform group-hover:-translate-y-px" aria-hidden="true" />
-            <span className="hidden sm:inline">Página principal</span>
-          </Link>
-        </div>
       </div>
-      {area === 'client' && (
-        <div className="flex items-center gap-2">
-          <Link
-            to="/client/community"
-            className="group relative flex items-center gap-2 rounded-xl border border-emerald-300/45 bg-surface-2 px-3 py-2 text-sm font-medium text-emerald-300 shadow-xs transition-all hover:-translate-y-px hover:border-emerald-200 hover:bg-surface-3 hover:text-emerald-200"
-          >
-            <Gamepad2 className="h-4 w-4" aria-hidden="true" />
-            <span className="hidden sm:inline">Comunidade</span>
-          </Link>
-          <FriendsDrawer />
-        </div>
-      )}
+      <div className="flex items-center gap-2">
+        {/* 'stay: true' opts out of '/''s own beforeLoad, which otherwise
+            redirects an authenticated visitor back to the current panel. */}
+        <Link
+          to="/"
+          search={{ stay: true }}
+          aria-label="Página principal"
+          title="Página principal"
+          className="group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-2/55 text-text-muted shadow-xs transition-all hover:-translate-y-px hover:border-accent/35 hover:bg-accent/10 hover:text-accent-strong"
+        >
+          <Home className="h-4 w-4 transition-transform group-hover:-translate-y-px" aria-hidden="true" />
+        </Link>
+        {area === 'client' && (
+          <>
+            <Link
+              to="/client/community"
+              className="group relative flex items-center gap-2 rounded-xl border border-emerald-300/45 bg-surface-2 px-3 py-2 text-sm font-medium text-emerald-300 shadow-xs transition-all hover:-translate-y-px hover:border-emerald-200 hover:bg-surface-3 hover:text-emerald-200"
+            >
+              <Gamepad2 className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Comunidade</span>
+            </Link>
+            <FriendsDrawer />
+          </>
+        )}
+      </div>
     </header>
   );
 }
