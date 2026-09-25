@@ -95,14 +95,6 @@ export class SupportService {
     });
   }
 
-  async closeForUser(userId: string, id: string) {
-    return this.prisma.withRLS({ userId, isAdmin: false }, async (tx) => {
-      const ticket = await tx.supportTicket.findFirst({ where: { id, userId }, select: { id: true } });
-      if (!ticket) throw new NotFoundException('Ticket não encontrado');
-      return tx.supportTicket.update({ where: { id }, data: { status: 'closed', closedAt: new Date() }, include: TICKET_DETAIL_INCLUDE });
-    });
-  }
-
   listForAdmin(dto: ListAdminSupportTicketsDto) {
     const q = dto.q?.trim();
     return this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>

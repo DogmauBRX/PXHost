@@ -28,8 +28,4 @@ export class ClientSupportController {
     return this.support.replyAsUser(user.id, id, dto);
   }
 
-  @Post(':id/close')
-  close(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.support.closeForUser(user.id, id);
-  }
 }

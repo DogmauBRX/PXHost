@@ -21,8 +21,6 @@ export const createClientTicket = (input: CreateSupportTicketInput) =>
   apiFetch<SupportTicketDetail>('/api/client/support/tickets', { method: 'POST', body: JSON.stringify(input) });
 export const replyClientTicket = (id: string, message: string) =>
   apiFetch<SupportTicketDetail>(`/api/client/support/tickets/${id}/messages`, { method: 'POST', body: JSON.stringify({ message }) });
-export const closeClientTicket = (id: string) =>
-  apiFetch<SupportTicketDetail>(`/api/client/support/tickets/${id}/close`, { method: 'POST' });
 
 export interface AdminTicketFilters {
   status?: SupportTicketStatus;

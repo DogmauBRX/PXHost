@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LifeBuoy, MessageSquarePlus, ShieldCheck } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { listServers } from '@/features/servers/servers.api';
-import { closeClientTicket, createClientTicket, getClientTicket, listClientTickets, replyClientTicket } from '@/features/support/tickets.api';
+import { createClientTicket, getClientTicket, listClientTickets, replyClientTicket } from '@/features/support/tickets.api';
 import { TicketConversation } from '@/features/support/TicketConversation';
 import { CopySupportEmail } from '@/features/support/CopySupportEmail';
 import { TICKET_PRIORITY_LABEL, TICKET_STATUS_LABEL, TICKET_STATUS_TONE } from '@/features/support/ticket-labels';
@@ -54,11 +54,7 @@ export function SupportPage() {
     mutationFn: () => replyClientTicket(selectedId!, reply),
     onSuccess: () => { setReply(''); refresh(selectedId!); },
   });
-  const closeMutation = useMutation({
-    mutationFn: () => closeClientTicket(selectedId!),
-    onSuccess: () => refresh(selectedId!),
-  });
-  const mutationError = createMutation.error ?? replyMutation.error ?? closeMutation.error;
+  const mutationError = createMutation.error ?? replyMutation.error;
 
   return (
     <>
@@ -99,13 +95,13 @@ export function SupportPage() {
           {selectedId && detailPending ? <LoadingRow /> : selected ? (
             <TicketConversation
               ticket={selected}
-              actions={<div className="flex items-center gap-2"><Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}><MessageSquarePlus className="h-4 w-4" />Novo ticket</Button>{selected.status !== 'closed' && <Button variant="ghost" size="sm" disabled={closeMutation.isPending} onClick={() => closeMutation.mutate()}>Fechar ticket</Button>}</div>}
+              actions={<div className="flex items-center gap-2"><Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}><MessageSquarePlus className="h-4 w-4" />Novo ticket</Button></div>}
               composer={selected.status !== 'closed' ? (
                 <div className="space-y-3">
                   <Textarea rows={3} maxLength={5000} value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Escreva sua resposta…" />
                   <div className="flex justify-end"><Button variant="primary" disabled={!reply.trim() || replyMutation.isPending} onClick={() => replyMutation.mutate()}>{replyMutation.isPending ? 'Enviando…' : 'Enviar resposta'}</Button></div>
                 </div>
-              ) : <p className="text-center text-sm text-text-muted">Este ticket foi fechado.</p>}
+              ) : <p className="text-center text-sm text-text-muted">Este ticket foi encerrado pela equipe de suporte.</p>}
             />
           ) : (
             <div className="rounded-card border border-border bg-surface p-8 text-center">
