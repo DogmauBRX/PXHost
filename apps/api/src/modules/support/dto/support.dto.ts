@@ -27,9 +27,6 @@ export class CreateSupportTicketDto {
   @IsIn(TICKET_CATEGORIES)
   category!: (typeof TICKET_CATEGORIES)[number];
 
-  @IsIn(TICKET_PRIORITIES)
-  priority!: (typeof TICKET_PRIORITIES)[number];
-
   @IsOptional()
   @IsUUID()
   serverId?: string;
