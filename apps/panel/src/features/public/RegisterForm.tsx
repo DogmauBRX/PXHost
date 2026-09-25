@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate } from '@tanstack/react-router';
 import { register } from '@/features/auth/auth.api';
+import { GoogleAuthButton } from '@/features/auth/GoogleAuthButton';
 import { Turnstile, TURNSTILE_SITE_KEY } from '@/features/auth/Turnstile';
 import { useAuthStore } from '@/shared/stores/auth.store';
 import { ApiError } from '@/shared/api/client';
@@ -93,6 +94,8 @@ export function RegisterForm({ redirectTo }: { redirectTo?: string } = {}) {
       >
         {isSubmitting ? 'Criando conta…' : 'Criar conta'}
       </Button>
+
+      <GoogleAuthButton label="Criar conta com Google" redirectTo={redirectTo} />
     </form>
   );
 }
