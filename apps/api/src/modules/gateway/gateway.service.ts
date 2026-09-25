@@ -338,8 +338,6 @@ export class GatewayService {
     }
 
 
-    if (includedIds.length === 0 && removingIds.length === 0 && skippedIds.length === 0) return;
-
     try {
       await this.driver.apply(gateway, desired);
     } catch (err) {
