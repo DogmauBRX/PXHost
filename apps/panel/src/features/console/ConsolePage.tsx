@@ -112,6 +112,7 @@ export function ConsolePage({ serverId }: { serverId: string }) {
 
   const displayState = powerState ?? server?.powerState ?? 'offline';
   const serverIsActive = displayState === 'running';
+  const serverIsStarting = displayState === 'starting';
   const serverStateDetail = serverIsActive
     ? 'Servidor online e recebendo conexões.'
     : displayState === 'starting'
@@ -319,14 +320,14 @@ export function ConsolePage({ serverId }: { serverId: string }) {
       </Card>
 
       <section
-        className={`flex flex-col overflow-hidden rounded-card border shadow-xs sm:flex-row ${serverIsActive ? 'border-ok/30 bg-ok/10' : displayState === 'crashed' ? 'border-fail/30 bg-fail/10' : 'border-border bg-surface'}`}
+        className={`flex flex-col overflow-hidden rounded-card border shadow-xs sm:flex-row ${serverIsActive ? 'border-ok/30 bg-ok/10' : serverIsStarting ? 'border-warn/30 bg-warn/10' : displayState === 'crashed' ? 'border-fail/30 bg-fail/10' : 'border-border bg-surface'}`}
         aria-live="polite"
       >
         <div className="flex flex-1 items-center gap-4 px-5 py-4">
-          <span className={`h-4 w-4 shrink-0 rounded-full ${serverIsActive ? 'bg-ok shadow-[0_0_18px_rgb(52_211_153/0.8)]' : displayState === 'crashed' ? 'bg-fail shadow-[0_0_18px_rgb(251_113_133/0.75)]' : 'bg-text-faint shadow-[0_0_14px_rgb(148_163_184/0.4)]'}`} aria-hidden="true" />
+          <span className={`h-4 w-4 shrink-0 rounded-full ${serverIsActive ? 'bg-ok shadow-[0_0_18px_rgb(52_211_153/0.8)]' : serverIsStarting ? 'bg-warn shadow-[0_0_18px_rgb(221_177_87/0.75)] animate-pulse' : displayState === 'crashed' ? 'bg-fail shadow-[0_0_18px_rgb(251_113_133/0.75)]' : 'bg-text-faint shadow-[0_0_14px_rgb(148_163_184/0.4)]'}`} aria-hidden="true" />
           <div>
             <p className="text-xs font-bold tracking-[0.16em] text-text-faint uppercase">Status do servidor</p>
-            <p className={`mt-0.5 text-2xl font-bold tracking-tight ${serverIsActive ? 'text-ok' : displayState === 'crashed' ? 'text-fail' : 'text-text'}`}>{powerStateLabel(displayState)}</p>
+            <p className={`mt-0.5 text-2xl font-bold tracking-tight ${serverIsActive ? 'text-ok' : serverIsStarting ? 'text-warn' : displayState === 'crashed' ? 'text-fail' : 'text-text'}`}>{powerStateLabel(displayState)}</p>
             <p className="mt-1 text-sm text-text-muted">{serverStateDetail}</p>
           </div>
         </div>
