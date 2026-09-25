@@ -17,7 +17,9 @@ WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh && touch /etc/nginx/gxhost-routes.conf
+RUN sed -i 's/\r$//' /docker-entrypoint.sh \
+    && chmod +x /docker-entrypoint.sh \
+    && touch /etc/nginx/gxhost-routes.conf
 
 # The control API's own port (GATEWAY_LISTEN_PORT, default 9443) is
 # reached only over the WireGuard tunnel from the panel/API — never
