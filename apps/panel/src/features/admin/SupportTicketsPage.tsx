@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LifeBuoy, Search } from 'lucide-react';
 import { ApiError } from '@/shared/api/client';
-import type { SupportTicketPriority, SupportTicketStatus } from '@/shared/api/types';
+import type { SupportTicketDetail, SupportTicketPriority, SupportTicketStatus } from '@/shared/api/types';
 import { formatDateTimeShort } from '@/shared/format/datetime';
 import {
   getAdminTicket,
@@ -27,7 +27,7 @@ export function SupportTicketsPage() {
   const [status, setStatus] = useState<SupportTicketStatus | ''>('');
   const [priority, setPriority] = useState<SupportTicketPriority | ''>('');
   const [reply, setReply] = useState('');
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Pick<SupportTicketDetail, 'id' | 'subject'> | null>(null);
 
   const filters = { q: query.trim() || undefined, status: status || undefined, priority: priority || undefined };
   const { data: tickets, isPending, error } = useQuery({
@@ -38,7 +38,7 @@ export function SupportTicketsPage() {
   const { data: selected, isPending: detailPending } = useQuery({
     queryKey: ['admin', 'support', 'tickets', selectedId],
     queryFn: () => getAdminTicket(selectedId!),
-    enabled: selectedId !== null,
+    enabled: selectedId !== null && deleteTarget === null,
     refetchInterval: 10_000,
   });
 
@@ -61,10 +61,12 @@ export function SupportTicketsPage() {
     onSuccess: () => refresh(selectedId!),
   });
   const deleteMutation = useMutation({
-    mutationFn: () => deleteAdminTicket(selectedId!),
+    mutationFn: (id: string) => deleteAdminTicket(id),
     onSuccess: () => {
-      setDeleteOpen(false);
+      const deletedId = deleteTarget?.id;
+      setDeleteTarget(null);
       setSelectedId(null);
+      if (deletedId) queryClient.removeQueries({ queryKey: ['admin', 'support', 'tickets', deletedId] });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'support', 'tickets'] });
     },
   });
@@ -137,7 +139,7 @@ export function SupportTicketsPage() {
                   >
                     {Object.entries(TICKET_STATUS_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </Select>
-                  <Button variant="danger" size="sm" disabled={deleteMutation.isPending} onClick={() => setDeleteOpen(true)}>Excluir ticket</Button>
+                  <Button variant="danger" size="sm" disabled={deleteMutation.isPending} onClick={() => { deleteMutation.reset(); setDeleteTarget({ id: selected.id, subject: selected.subject }); }}>Excluir ticket</Button>
                 </div>
               )}
               composer={selected.status === 'closed' ? (
@@ -158,14 +160,14 @@ export function SupportTicketsPage() {
         </div>
       </div>
       <ConfirmDialog
-        open={deleteOpen}
+        open={deleteTarget !== null}
         title="Excluir ticket"
-        message={`Excluir permanentemente o ticket${selected ? ` “${selected.subject}”` : ''} e todas as mensagens? Esta ação não pode ser desfeita.`}
+        message={`Excluir permanentemente o ticket${deleteTarget ? ` “${deleteTarget.subject}”` : ''} e todas as mensagens? Esta ação não pode ser desfeita.`}
         confirmLabel="Excluir permanentemente"
         tone="danger"
         loading={deleteMutation.isPending}
-        onConfirm={() => deleteMutation.mutate()}
-        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+        onCancel={() => { deleteMutation.reset(); setDeleteTarget(null); }}
       />
     </>
   );
