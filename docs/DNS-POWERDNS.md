@@ -398,19 +398,19 @@ subir, e aí cai o DNS de todos os servidores de jogo junto.
     pdns_control retrieve mc.gxhost.com.br
   ```
 
-### 8.1. O que está montado hoje (2026-09-20)
+### 8.1. O que está montado hoje (2026-09-25, migrado de 143.95.164.255/143.95.213.60)
 
 O resto desta seção descreve o procedimento; isto aqui registra onde ele
 foi parar, que é o que falta quando alguém precisa mexer meses depois.
 
 | | ns1 | ns2 |
 |---|---|---|
-| Host | `143.95.164.255` (`ssh vps`) | `143.95.213.60` (`ssh vps2`) |
+| Host | `129.121.47.141` (`ssh vps`) | `129.121.46.131` (`ssh vps2`) |
 | Diretório | `/opt/gxhost` (checkout git) | `/opt/gxhost-ns2` (**não** é git) |
 | Compose | `docker-compose.prod.yml` | `docker-compose.dns.yml` |
 | Postgres | compartilhado com a stack, banco `pdns` | dedicado, só do nameserver |
 | REST API | sim, é quem o painel escreve | não, deliberadamente |
-| Kind da zona | `MASTER` | `SLAVE`, primário `143.95.164.255` |
+| Kind da zona | `MASTER` | `SLAVE`, primário `129.121.47.141` |
 
 O ns2 não é um checkout git de propósito: ele precisa de exatamente um
 arquivo de compose e um `.env` com a senha do Postgres dele, e clonar o

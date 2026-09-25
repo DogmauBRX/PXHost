@@ -197,7 +197,9 @@ services:
       # Checked live, after this setting was already deployed:
       # mc.gxhost.com.br still answered with MNAME "mc.gxhost.com.br".
       - --default-soa-content=ns1.gxhost.com.br hostmaster.gxhost.com.br 0 10800 3600 604800 3600
-      # ns2 (143.95.213.60) serves these zones as a SECONDARY. That needs
+      # ns2 (129.121.46.131 — migrated 2026-09-25 from 143.95.213.60,
+      # see docs/DEPLOY.md's own migration note) serves these zones as a
+      # SECONDARY. That needs
       # two separate things, and neither one is a default:
       #   - it must be allowed to pull the zones by AXFR. allow-axfr-ips
       #     defaults to 127.0.0.0/8,::1 and setting it REPLACES that
@@ -218,8 +220,8 @@ services:
       # pdns_server refuse to boot, which takes every game server's DNS
       # down with it, not just replication.
       - --primary=yes
-      - --allow-axfr-ips=127.0.0.0/8,::1,143.95.213.60
-      - --also-notify=143.95.213.60
+      - --allow-axfr-ips=127.0.0.0/8,::1,129.121.46.131
+      - --also-notify=129.121.46.131
     # `pdnsutil` does NOT read the `command:` above — it is a separate
     # binary that only reads a config FILE, and the image's own says
     # `launch=gsqlite3`, pointing at a throwaway SQLite file inside the
