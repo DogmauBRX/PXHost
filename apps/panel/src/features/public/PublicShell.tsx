@@ -104,8 +104,8 @@ export function PublicShell({ children }: { children: ReactNode }) {
         <div className="relative mx-auto flex h-[4.75rem] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-4">
             <Link to="/" search={homeSearch} className="group flex items-center gap-3" aria-label="GXhost — página inicial">
-              <span className="public-header__logo-shell flex h-11 w-11 items-center justify-center rounded-xl border border-white/15 bg-white/5 shadow-lg backdrop-blur-sm transition-transform duration-300 group-hover:-translate-y-0.5">
-                <Logo size={36} />
+              <span className="public-header__logo-shell flex h-[3.25rem] w-[3.25rem] shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/5 shadow-lg backdrop-blur-sm transition-transform duration-300 group-hover:-translate-y-0.5">
+                <Logo size={46} />
               </span>
               <span className="flex flex-col">
                 <Wordmark className="text-2xl leading-none" />
@@ -181,10 +181,10 @@ export function PublicShell({ children }: { children: ReactNode }) {
                     {loggingOut ? 'Saindo…' : 'Sair'}
                   </button>
                 </div>
-                <Link to={dashboardTo} className="group flex h-10 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-contrast shadow-[0_8px_24px_-12px_var(--color-accent)] transition-all hover:-translate-y-0.5 hover:bg-accent-strong">
-                  <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+                <Link to={dashboardTo} className="group flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-accent px-3 text-[0.8125rem] font-semibold text-accent-contrast shadow-[0_8px_24px_-12px_var(--color-accent)] transition-all hover:-translate-y-0.5 hover:bg-accent-strong">
+                  <LayoutDashboard className="h-3.5 w-3.5" aria-hidden="true" />
                   Abrir painel
-                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                  <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
                 </Link>
               </>
             ) : (
