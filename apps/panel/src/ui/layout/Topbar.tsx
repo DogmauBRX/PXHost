@@ -28,7 +28,7 @@ export function Topbar({ area }: { area: 'admin' | 'client' }) {
           search={{ stay: true }}
           aria-label="Página principal"
           title="Página principal"
-          className="group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-2/55 text-text-muted shadow-xs transition-all hover:-translate-y-px hover:border-accent/35 hover:bg-accent/10 hover:text-accent-strong"
+          className="group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-2/55 text-accent shadow-xs transition-all hover:-translate-y-px hover:border-accent/35 hover:bg-accent/10 hover:text-accent-strong"
         >
           <Home className="h-4 w-4 transition-transform group-hover:-translate-y-px" aria-hidden="true" />
         </Link>
