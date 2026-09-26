@@ -36,7 +36,7 @@ const footerTopics = [
   { label: 'Resposta a ataques', icon: ShieldAlert, to: '/central', hash: 'seguranca' },
   { label: 'Política de reembolso', icon: RefreshCcw, to: '/central', hash: 'reembolsos' },
   { label: 'Suporte', icon: LifeBuoy, to: '/central', hash: 'suporte' },
-  { label: 'Comunidade e redes', icon: Share2 },
+  { label: 'Comunidade e redes', icon: Share2, href: 'https://www.tiktok.com/@gxhostbr.oficial' },
   { label: 'Termos de uso', icon: Scale, to: '/termos' },
 ] as const;
 
@@ -382,10 +382,18 @@ export function PublicShell({ children }: { children: ReactNode }) {
                     <span className="text-xs font-medium text-white/45 transition-colors group-hover:text-white/75">{topic.label}</span>
                   </Link>
                 ) : (
-                  <div key={topic.label} className="public-footer__topic flex items-center justify-between gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5" title="Conteúdo em desenvolvimento">
-                    <span className="flex items-center gap-2.5"><topic.icon className="h-3.5 w-3.5 shrink-0 text-accent/45" aria-hidden="true" /><span className="text-xs font-medium text-white/35">{topic.label}</span></span>
-                    <span className="text-[0.48rem] font-bold tracking-wider text-white/20 uppercase">Em breve</span>
-                  </div>
+                  <a
+                    key={topic.label}
+                    href={topic.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="public-footer__topic group flex items-center justify-between gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5"
+                    title="@gxhostbr.oficial no TikTok"
+                    aria-label="Abrir o perfil @gxhostbr.oficial no TikTok"
+                  >
+                    <span className="flex items-center gap-2.5"><topic.icon className="h-3.5 w-3.5 shrink-0 text-accent/65 transition-colors group-hover:text-accent" aria-hidden="true" /><span className="text-xs font-medium text-white/45 transition-colors group-hover:text-white/75">{topic.label}</span></span>
+                    <span className="flex items-center gap-1 text-[0.48rem] font-bold tracking-wider text-accent/65 uppercase">TikTok <ExternalLink className="h-2.5 w-2.5" aria-hidden="true" /></span>
+                  </a>
                 ))}
               </div>
             </div>
