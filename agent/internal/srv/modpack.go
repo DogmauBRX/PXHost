@@ -40,15 +40,24 @@ type ModpackInstallSpec struct {
 }
 
 type mrpackIndex struct {
-	FormatVersion int `json:"formatVersion"`
-	Files         []struct {
-		Path      string            `json:"path"`
-		Hashes    map[string]string `json:"hashes"`
-		Downloads []string          `json:"downloads"`
-		FileSize  int64             `json:"fileSize"`
-		Env       map[string]string `json:"env"`
-	} `json:"files"`
+	FormatVersion int          `json:"formatVersion"`
+	Files         []mrpackFile `json:"files"`
 }
+
+type mrpackFile struct {
+	Path      string            `json:"path"`
+	Hashes    map[string]string `json:"hashes"`
+	Downloads []string          `json:"downloads"`
+	FileSize  int64             `json:"fileSize"`
+	Env       map[string]string `json:"env"`
+}
+
+type modrinthProjectEnvironment struct {
+	ID         string `json:"id"`
+	ServerSide string `json:"server_side"`
+}
+
+const modrinthAPIBaseURL = "https://api.modrinth.com/v2"
 
 // InstallModpack builds the new tree beside the live directory and swaps it
 // atomically only after every archive entry and referenced file is verified.
@@ -107,6 +116,16 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 	if err := validateMrpackEntries(zr.File); err != nil {
 		return err
 	}
+	unsupportedProjects, err := fetchUnsupportedModrinthProjects(ctx, index.Files, modrinthAPIBaseURL, &http.Client{Timeout: 30 * time.Second})
+	if err != nil {
+		// The mrpack environment field remains the format's primary source of
+		// truth. Project metadata is a safety net for broken publisher indexes,
+		// so a temporary Modrinth API outage must not make every valid pack
+		// uninstallable.
+		progress(24, "Não foi possível verificar mods exclusivos de cliente; usando os metadados do pacote")
+		unsupportedProjects = nil
+	}
+	serverFiles := filesForDedicatedServer(index.Files, unsupportedProjects)
 
 	progress(25, "Pacote validado; preparando staging")
 	if err := copyTree(dataDir, stageDir, s.spec.UID); err != nil {
@@ -119,7 +138,7 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 	defer stageJail.Close()
 
 	var incoming int64
-	for _, f := range index.Files {
+	for _, f := range serverFiles {
 		if f.FileSize <= 0 || f.FileSize > maxExpandedBytes || incoming > maxExpandedBytes-f.FileSize {
 			return fmt.Errorf("modpack: invalid or excessive declared file size for %q", f.Path)
 		}
@@ -134,10 +153,7 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 		return err
 	}
 
-	for i, f := range index.Files {
-		if f.Env["server"] == "unsupported" {
-			continue
-		}
+	for i, f := range serverFiles {
 		if err := safeRelative(f.Path); err != nil {
 			return fmt.Errorf("modpack: invalid file path %q: %w", f.Path, err)
 		}
@@ -166,11 +182,11 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 			if err := os.Remove(dest); err != nil {
 				return fmt.Errorf("modpack: remove client-only mod %q: %w", f.Path, err)
 			}
-			progress(30+(i+1)*50/max(1, len(index.Files)), fmt.Sprintf("Ignorando mod exclusivo de cliente (%d/%d)", i+1, len(index.Files)))
+			progress(30+(i+1)*50/max(1, len(serverFiles)), fmt.Sprintf("Ignorando mod exclusivo de cliente (%d/%d)", i+1, len(serverFiles)))
 			continue
 		}
 		_ = os.Chown(dest, s.spec.UID, s.spec.UID)
-		progress(30+(i+1)*50/max(1, len(index.Files)), fmt.Sprintf("Baixando arquivos do modpack (%d/%d)", i+1, len(index.Files)))
+		progress(30+(i+1)*50/max(1, len(serverFiles)), fmt.Sprintf("Baixando arquivos do modpack (%d/%d)", i+1, len(serverFiles)))
 	}
 	if err := extractOverrides(zr.File, stageDir, s.spec.UID); err != nil {
 		return err
@@ -197,6 +213,96 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 	go func() { time.Sleep(time.Hour); _ = os.RemoveAll(oldDir) }()
 	progress(98, "Arquivos ativados")
 	return nil
+}
+
+func filesForDedicatedServer(files []mrpackFile, unsupportedProjects map[string]bool) []mrpackFile {
+	serverFiles := make([]mrpackFile, 0, len(files))
+	for _, file := range files {
+		if strings.EqualFold(file.Env["server"], "unsupported") {
+			continue
+		}
+		if len(file.Downloads) > 0 {
+			if projectID, ok := modrinthProjectID(file.Downloads[0]); ok && unsupportedProjects[projectID] {
+				continue
+			}
+		}
+		serverFiles = append(serverFiles, file)
+	}
+	return serverFiles
+}
+
+func fetchUnsupportedModrinthProjects(ctx context.Context, files []mrpackFile, apiBaseURL string, client *http.Client) (map[string]bool, error) {
+	ids := make([]string, 0, len(files))
+	seen := make(map[string]bool, len(files))
+	for _, file := range files {
+		if len(file.Downloads) == 0 {
+			continue
+		}
+		projectID, ok := modrinthProjectID(file.Downloads[0])
+		if ok && !seen[projectID] {
+			seen[projectID] = true
+			ids = append(ids, projectID)
+		}
+	}
+	unsupported := make(map[string]bool)
+	for start := 0; start < len(ids); start += 100 {
+		end := min(start+100, len(ids))
+		encodedIDs, err := json.Marshal(ids[start:end])
+		if err != nil {
+			return nil, err
+		}
+		endpoint, err := url.Parse(strings.TrimRight(apiBaseURL, "/") + "/projects")
+		if err != nil {
+			return nil, err
+		}
+		query := endpoint.Query()
+		query.Set("ids", string(encodedIDs))
+		endpoint.RawQuery = query.Encode()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", "GXhost-Agent/1.0 (https://gxhost.com.br)")
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("Modrinth project metadata returned HTTP %d", resp.StatusCode)
+		}
+		var projects []modrinthProjectEnvironment
+		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&projects)
+		closeErr := resp.Body.Close()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		for _, project := range projects {
+			if strings.EqualFold(project.ServerSide, "unsupported") {
+				unsupported[project.ID] = true
+			}
+		}
+	}
+	return unsupported, nil
+}
+
+func modrinthProjectID(raw string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Hostname() != "cdn.modrinth.com" {
+		return "", false
+	}
+	parts := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
+	if len(parts) < 4 || parts[0] != "data" || parts[1] == "" || parts[2] != "versions" {
+		return "", false
+	}
+	projectID, err := url.PathUnescape(parts[1])
+	if err != nil || projectID == "" || strings.ContainsAny(projectID, "/\\") {
+		return "", false
+	}
+	return projectID, true
 }
 
 func validateMrpackEntries(files []*zip.File) error {

@@ -3,7 +3,11 @@ package srv
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/binary"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +27,63 @@ func TestAllowedModrinthURL(t *testing.T) {
 	}
 	if err := allowedModrinthURL("https://cdn.modrinth.com/data/a/versions/b/file.jar"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestFilesForDedicatedServerUsesProjectMetadataWhenIndexIsWrong(t *testing.T) {
+	files := []mrpackFile{
+		{
+			Path:      "mods/oculus.jar",
+			Downloads: []string{"https://cdn.modrinth.com/data/oculusID/versions/v1/oculus.jar"},
+			Env:       map[string]string{"server": "required"},
+		},
+		{
+			Path:      "mods/server.jar",
+			Downloads: []string{"https://cdn.modrinth.com/data/serverID/versions/v1/server.jar"},
+			Env:       map[string]string{"server": "required"},
+		},
+		{
+			Path:      "mods/client.jar",
+			Downloads: []string{"https://cdn.modrinth.com/data/clientID/versions/v1/client.jar"},
+			Env:       map[string]string{"server": "unsupported"},
+		},
+	}
+
+	got := filesForDedicatedServer(files, map[string]bool{"oculusID": true})
+	if len(got) != 1 || got[0].Path != "mods/server.jar" {
+		t.Fatalf("expected only the dedicated-server mod, got %#v", got)
+	}
+}
+
+func TestFetchUnsupportedModrinthProjects(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/projects" {
+			http.NotFound(w, r)
+			return
+		}
+		var ids []string
+		if err := json.Unmarshal([]byte(r.URL.Query().Get("ids")), &ids); err != nil {
+			t.Fatalf("invalid ids query: %v", err)
+		}
+		if len(ids) != 2 {
+			t.Fatalf("expected deduplicated project IDs, got %v", ids)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":"clientID","server_side":"unsupported"},{"id":"serverID","server_side":"required"}]`))
+	}))
+	defer server.Close()
+
+	files := []mrpackFile{
+		{Downloads: []string{"https://cdn.modrinth.com/data/clientID/versions/v1/a.jar"}},
+		{Downloads: []string{"https://cdn.modrinth.com/data/serverID/versions/v1/b.jar"}},
+		{Downloads: []string{"https://cdn.modrinth.com/data/clientID/versions/v2/c.jar"}},
+	}
+	got, err := fetchUnsupportedModrinthProjects(context.Background(), files, server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got["clientID"] || got["serverID"] {
+		t.Fatalf("unexpected unsupported project set: %#v", got)
 	}
 }
 
