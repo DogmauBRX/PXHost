@@ -552,7 +552,7 @@ if [ "$MINECRAFT_VERSION" == "latest" ]; then
 fi
 
 if [ "$FORGE_VERSION" == "latest" ]; then
-  FORGE_VERSION=$(echo "$PROMOTIONS" | jq -r --arg v "$MINECRAFT_VERSION" '.promos[($v + "-recommended")] // .promos[($v + "-latest")]')
+  FORGE_VERSION=$(echo "$PROMOTIONS" | jq -r --arg v "$MINECRAFT_VERSION" '.promos[($v + "-latest")] // .promos[($v + "-recommended")]')
 fi
 
 FULL_VERSION="\${MINECRAFT_VERSION}-\${FORGE_VERSION}"
@@ -775,7 +775,7 @@ export const SOFTWARE_PRESETS: Record<PresetKind, TemplatePreset> = {
       minecraftVersionVariable('The version of Minecraft to install. Use "latest" for the newest release Forge publishes a recommended build for.'),
       {
         name: 'Forge Version',
-        description: 'The Forge version to install. Use "latest" for the recommended build matching the Minecraft version above.',
+        description: 'The Forge version to install. Use "latest" for the newest build matching the Minecraft version above.',
         envVariable: 'FORGE_VERSION',
         defaultValue: 'latest',
         rules: 'required|string|max:32',
