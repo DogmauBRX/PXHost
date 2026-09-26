@@ -5,6 +5,7 @@ import { chmod, compress, decompress, deleteFile, listFiles, mintDownloadLink, m
 import { listBackups, restoreBackup } from '@/features/backups/backups.api';
 import { formatBytes, formatDateTimeShort as formatDate } from '@/shared/format/datetime';
 import { getServer } from '@/features/servers/servers.api';
+import { ReinstallCurrentVersionButton } from '@/features/servers/ReinstallCurrentVersionButton';
 import { FileEditor } from './FileEditor';
 import { ApiError } from '@/shared/api/client';
 import {
@@ -91,6 +92,8 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
   const canWrite = permissions.includes('file.write');
   const canDelete = permissions.includes('file.delete');
   const canRestore = permissions.includes('backup.restore');
+  const canReinstall = permissions.includes('startup.update');
+  const serverRunning = server?.powerState !== 'offline';
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: ['files', serverId, path] });
@@ -286,8 +289,22 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
       <PageHeader
         title="Arquivos"
         actions={
-          canWrite || canRestore ? (
-            <div className="flex items-center gap-2">
+          canWrite || canRestore || canReinstall ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {canReinstall && (
+                <ReinstallCurrentVersionButton
+                  serverId={serverId}
+                  disabled={serverRunning}
+                  onStarted={() => {
+                    setActionError(null);
+                    setActionNotice('Reinstalação iniciada — a versão atual está sendo instalada novamente.');
+                  }}
+                  onError={(message) => {
+                    setActionNotice(null);
+                    setActionError(message);
+                  }}
+                />
+              )}
               {canRestore && (
                 <Button variant="secondary" onClick={() => setRestorePickerOpen(true)}>
                   <RotateCcw className="h-4 w-4" aria-hidden="true" />

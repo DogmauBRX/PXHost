@@ -53,6 +53,12 @@ export class ClientServersController {
     return this.setup.changeVersion(user, id, dto);
   }
 
+  /** Re-runs the current template/version with every current startup value preserved. */
+  @Post(':id/reinstall')
+  reinstallCurrent(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.setup.reinstallCurrent(user, id);
+  }
+
   /** Cheap, 10s-cached usage snapshot — powers the resource advisory without opening a WebSocket. See ClientServersService.stats's doc comment for the offline/suspended semantics. */
   @Get(':id/stats')
   stats(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

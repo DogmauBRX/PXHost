@@ -41,6 +41,10 @@ export function changeServerVersion(id: string, input: ChangeServerVersionInput)
   return apiFetch<{ id: string; status: string }>(`/api/client/servers/${id}/change-version`, { method: 'POST', body: JSON.stringify(input) });
 }
 
+export function reinstallCurrentServerVersion(id: string) {
+  return apiFetch<{ id: string; status: string }>(`/api/client/servers/${id}/reinstall`, { method: 'POST' });
+}
+
 export function sendPowerAction(id: string, action: PowerAction) {
   return apiFetch<{ state: string; previous: string }>(`/api/client/servers/${id}/power`, {
     method: 'POST',

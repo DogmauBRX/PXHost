@@ -335,7 +335,12 @@ export class ServerSetupService {
    * against an existing volume is exactly as safe as the first install
    * `complete` already trusts it to be.
    */
-  async changeVersion(actor: AccessActor, serverId: string, dto: ChangeServerVersionDto) {
+  async changeVersion(
+    actor: AccessActor,
+    serverId: string,
+    dto: ChangeServerVersionDto,
+    auditAction: 'server.version.changed' | 'server.version.reinstalled' = 'server.version.changed',
+  ) {
     const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('startup.update')) throw new ForbiddenException('Missing permission: startup.update');
     if (server.status !== 'ready') throw new ConflictException('INVALID_TRANSITION: server is not ready for a version change');
@@ -379,7 +384,7 @@ export class ServerSetupService {
     if (count === 0) throw new ConflictException('SERVER_MUST_BE_OFFLINE: pare o servidor antes de trocar a versão');
 
     await this.audit.record({
-      action: 'server.version.changed',
+      action: auditAction,
       actorId: actor.id,
       targetType: 'server',
       targetId: serverId,
@@ -411,5 +416,27 @@ export class ServerSetupService {
     );
 
     return { id: serverId, status: 'installing' as const };
+  }
+
+  /**
+   * Reinstalls the server's current software without making the browser
+   * reconstruct its startup configuration. Server variables are the
+   * authoritative current values, including loader/build selections that
+   * are intentionally hidden from the normal settings form. Passing all of
+   * them back through changeVersion keeps those values while reusing its
+   * offline check, CAS, image selection, audit and Agent dispatch.
+   */
+  async reinstallCurrent(actor: AccessActor, serverId: string) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    if (!can('startup.update')) throw new ForbiddenException('Missing permission: startup.update');
+    if (!server.templateId) throw new ConflictException('O servidor ainda não possui uma versão instalada.');
+
+    const currentVariables = await this.prisma.serverVariable.findMany({
+      where: { serverId, variable: { templateId: server.templateId } },
+      select: { value: true, variable: { select: { envVariable: true } } },
+    });
+    const variables = Object.fromEntries(currentVariables.map((row) => [row.variable.envVariable, row.value]));
+
+    return this.changeVersion(actor, serverId, { templateId: server.templateId, variables }, 'server.version.reinstalled');
   }
 }

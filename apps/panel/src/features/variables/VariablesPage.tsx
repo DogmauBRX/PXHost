@@ -5,6 +5,7 @@ import { listServerVariables, updateServerVariables } from './variables.api';
 import { updateServerHostname } from './hostname.api';
 import { getServer, getServerStats } from '@/features/servers/servers.api';
 import { VersionPickerModal } from '@/features/servers/VersionPickerModal';
+import { ReinstallCurrentVersionButton } from '@/features/servers/ReinstallCurrentVersionButton';
 import { MinecraftAccessSettings } from './MinecraftAccessSettings';
 import { ApiError } from '@/shared/api/client';
 import { Alert, Button, Field, Input, LoadingRow, PageHeader, Select } from '@/ui/primitives';
@@ -183,10 +184,24 @@ export function VariablesPage({ serverId }: { serverId: string }) {
             <p className="mt-1 text-sm text-text-muted">Troque o software (Vanilla, Paper, Forge, Fabric…) ou a versão instalada — o mundo e os plugins são preservados.</p>
           </div>
           {running && <Alert tone="warn">Pare o servidor para trocar a versão.</Alert>}
-          <Button variant="secondary" disabled={running} onClick={() => setVersionPickerOpen(true)} className="self-start">
-            <RefreshCw className="h-4 w-4" aria-hidden="true" />
-            Trocar versão do Minecraft
-          </Button>
+          <div className="flex flex-wrap gap-2 self-start">
+            <Button variant="secondary" disabled={running} onClick={() => setVersionPickerOpen(true)}>
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              Trocar versão do Minecraft
+            </Button>
+            <ReinstallCurrentVersionButton
+              serverId={serverId}
+              disabled={running}
+              onStarted={() => {
+                setError(null);
+                setNotice('Reinstalação iniciada — a versão atual está sendo instalada novamente.');
+              }}
+              onError={(message) => {
+                setNotice(null);
+                setError(message);
+              }}
+            />
+          </div>
         </div>
       )}
       {server && (
