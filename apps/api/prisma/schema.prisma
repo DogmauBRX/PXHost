@@ -919,6 +919,8 @@ model ModpackInstallation {
   message          String?
   backupId         String?   @map("backup_id")
   errorMessage     String?   @map("error_message")
+  /// [{ name, filename, pageUrl }] — restricted CurseForge files the client must add manually.
+  manualFiles      Json?     @map("manual_files")
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   completedAt      DateTime? @map("completed_at") @db.Timestamptz

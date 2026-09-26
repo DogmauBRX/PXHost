@@ -66,6 +66,8 @@ export interface ModpackInstallation {
   message: string | null;
   backupId: string | null;
   errorMessage: string | null;
+  /** CurseForge mods the author restricts to manual download; installed without them. */
+  manualFiles: Array<{ name: string; filename: string; pageUrl: string }> | null;
   createdAt: string;
   completedAt: string | null;
 }

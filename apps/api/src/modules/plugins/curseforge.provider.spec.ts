@@ -42,10 +42,12 @@ describe('CurseForgeProvider', () => {
     expect(fetchMock.mock.calls.every(([url]) => String(url).startsWith('https://api.curseforge.com/'))).toBe(true);
   });
 
-  it('refuses mods whose authors disallow third-party distribution instead of guessing a CDN path', async () => {
-    mockCurseForge([file({ downloadUrl: null })], [{ id: 10, name: 'Restricted Mod', classId: 6 }]);
+  it('skips restricted mods for manual install instead of guessing a CDN path', async () => {
+    mockCurseForge([file({ downloadUrl: null })], [{ id: 10, name: 'Restricted Mod', classId: 6, links: { websiteUrl: 'https://www.curseforge.com/minecraft/mc-mods/restricted/' } }]);
 
-    await expect(provider.resolveFiles([{ projectId: 10, fileId: 5001 }])).rejects.toThrow(/Restricted Mod/);
+    const [resolved] = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }]);
+
+    expect(resolved).toMatchObject({ skip: true, url: '', manual: { name: 'Restricted Mod', pageUrl: 'https://www.curseforge.com/minecraft/mc-mods/restricted/files/5001' } });
   });
 
   it('marks resource packs and shaders as skipped without requiring a download URL', async () => {
@@ -55,6 +57,17 @@ describe('CurseForgeProvider', () => {
 
     expect(resolved.skip).toBe(true);
     expect(resolved.url).toBe('');
+  });
+
+  it('skips files tagged Client-only, even when their download is restricted, but keeps Client+Server files', async () => {
+    mockCurseForge([
+      file({ id: 5001, modId: 10, downloadUrl: null, gameVersions: ['Client', '1.20.1', 'Forge'] }),
+      file({ id: 5002, modId: 11, fileName: 'both.jar', gameVersions: ['Client', 'Server', '1.20.1', 'Forge'] }),
+    ], [{ id: 10, name: 'Client Mod', classId: 6 }, { id: 11, name: 'Both Mod', classId: 6 }]);
+
+    const resolved = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }, { projectId: 11, fileId: 5002 }]);
+
+    expect(resolved.map((item) => [item.fileId, item.skip])).toEqual([[5001, true], [5002, false]]);
   });
 
   it('rejects a file that belongs to a different project than the manifest declared', async () => {

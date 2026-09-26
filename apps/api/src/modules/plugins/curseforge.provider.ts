@@ -79,8 +79,10 @@ export interface CurseForgeResolvedFile extends CurseForgeFileRequest {
   size: number;
   url: string;
   sha1: string;
-  /** Client-only content (resource packs, shaders) the Agent must not install. */
+  /** Not installed by the Agent: client-only content, or a restricted file (see manual). */
   skip: boolean;
+  /** Set when the author disallows third-party downloads; the client adds it by hand. */
+  manual?: { name: string; pageUrl: string };
 }
 
 interface CurseForgeSearchResponse {
@@ -182,28 +184,27 @@ export class CurseForgeProvider implements ModpackProvider {
     const files = new Map(fileResponse.data.map((file) => [file.id, file]));
     const mods = new Map(modResponse.data.map((mod) => [mod.id, mod]));
 
-    const blocked: string[] = [];
     const resolved: CurseForgeResolvedFile[] = [];
     for (const requested of distinct) {
       const file = files.get(requested.fileId);
       if (!file || file.modId !== requested.projectId) throw new ModpackProviderError(this.source, 'invalid_response', 'Um arquivo declarado pelo modpack não pôde ser validado no CurseForge.', HttpStatus.UNPROCESSABLE_ENTITY);
       const mod = mods.get(file.modId);
-      const skip = mod?.classId != null && CLIENT_ONLY_CLASS_IDS.has(mod.classId);
+      const skip = (mod?.classId != null && CLIENT_ONLY_CLASS_IDS.has(mod.classId)) || isClientOnlyFile(file);
       if (skip) {
         resolved.push({ ...requested, filename: file.fileName, size: file.fileLength, url: '', sha1: '', skip: true });
         continue;
       }
       if (!file.downloadUrl) {
-        blocked.push(mod?.name ?? file.displayName ?? file.fileName);
+        const projectPage = mod?.links?.websiteUrl ?? `https://www.curseforge.com/minecraft/mc-mods/${mod?.slug ?? file.modId}`;
+        resolved.push({
+          ...requested, filename: file.fileName, size: file.fileLength, url: '', sha1: '', skip: true,
+          manual: { name: mod?.name ?? file.displayName ?? file.fileName, pageUrl: `${projectPage.replace(/\/$/, '')}/files/${file.id}` },
+        });
         continue;
       }
       const sha1 = file.hashes?.find((hash) => hash.algo === 1)?.value;
       if (!sha1 || !file.fileName || file.fileLength <= 0) throw new ModpackProviderError(this.source, 'invalid_response', `O arquivo ${file.fileName || file.id} não possui os dados necessários para uma instalação segura.`, HttpStatus.UNPROCESSABLE_ENTITY);
       resolved.push({ ...requested, filename: file.fileName, size: file.fileLength, url: assertAllowedCdnUrl(file.downloadUrl), sha1, skip: false });
-    }
-    if (blocked.length > 0) {
-      const names = blocked.slice(0, 5).join(', ') + (blocked.length > 5 ? ` e mais ${blocked.length - 5}` : '');
-      throw new ModpackProviderError(this.source, 'invalid_response', `Os autores de alguns mods deste modpack não permitem download por aplicativos de terceiros (${names}). Instale esses mods manualmente ou escolha outro modpack.`, HttpStatus.UNPROCESSABLE_ENTITY);
     }
     return resolved;
   }
@@ -280,6 +281,13 @@ export class CurseForgeProvider implements ModpackProvider {
     }
     throw new ModpackProviderError('curseforge', 'unavailable', 'Não foi possível consultar o CurseForge agora.');
   }
+}
+
+// CurseForge tags a file's environment inside gameVersions; "Client" without
+// "Server" means the author declares it client-only. Untagged files are kept.
+function isClientOnlyFile(file: CurseForgeFile): boolean {
+  const tags = new Set((file.gameVersions ?? []).map((value) => value.toLowerCase()));
+  return tags.has('client') && !tags.has('server');
 }
 
 function allowedCdnUrlOrEmpty(raw: string | null | undefined): string {

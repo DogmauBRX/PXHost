@@ -4,6 +4,7 @@ import { CalendarDays, Download, ExternalLink, HardDrive, PackageOpen } from 'lu
 import { formatBytes, formatDateOnly } from '@/shared/format/datetime';
 import { Alert, Badge, Button, LoadingRow, Modal, Select } from '@/ui/primitives';
 import type { SoftwareKind } from '@/shared/api/types';
+import { ManualModsAlert } from './ManualModsAlert';
 import { getLatestModpackInstallation, getModpackProject, getModpackVersions, installModpack, type ModpackSource } from './modpacks.api';
 
 interface Props {
@@ -163,7 +164,10 @@ export function ModpackDetailsModal(props: Props) {
             </Alert>
           )}
           {installationQuery.data?.status === 'completed' && installationQuery.data.versionId === selectedRelease?.versionId && (
-            <Alert tone="ok">Modpack instalado com sucesso. O backup de segurança foi mantido.</Alert>
+            <>
+              <Alert tone="ok">Modpack instalado com sucesso. O backup de segurança foi mantido.</Alert>
+              <ManualModsAlert files={installationQuery.data.manualFiles} />
+            </>
           )}
           {installationQuery.data?.status === 'failed' && (
             <Alert title="Instalação não concluída">{installationQuery.data.message}{installationQuery.data.errorMessage ? `: ${installationQuery.data.errorMessage}` : ''}</Alert>

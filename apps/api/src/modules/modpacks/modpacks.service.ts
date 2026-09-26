@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ServerAccessService, type AccessActor } from '../authorization/server-access.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AgentClient } from '../nodes/agent-client.service';
@@ -193,7 +194,13 @@ export class ModpacksService {
     if (!operation) throw new ForbiddenException('A instalação do CurseForge não está ativa neste node.');
     const provider = this.providers.get('curseforge');
     if (!(provider instanceof CurseForgeProvider)) throw new ForbiddenException('O catálogo do CurseForge não está disponível.');
-    return { files: await provider.resolveFiles(dto.files) };
+    const files = await provider.resolveFiles(dto.files);
+    const manualFiles = files.flatMap((file) => file.manual ? [{ name: file.manual.name, filename: file.filename, pageUrl: file.manual.pageUrl }] : []);
+    await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.modpackInstallation.update({
+      where: { id: operation.id },
+      data: { manualFiles: manualFiles.length > 0 ? manualFiles : Prisma.DbNull },
+    }));
+    return { files: files.map(({ manual: _manual, ...file }) => file) };
   }
 
   private async updateOperation(serverId: string, operationId: string, dto: Pick<ModpackProgressDto, 'status' | 'progress' | 'message' | 'backupId' | 'errorMessage'>) {

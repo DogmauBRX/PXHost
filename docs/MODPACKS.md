@@ -25,10 +25,10 @@ The CurseForge adapter (`apps/api/src/modules/plugins/curseforge.provider.ts`) u
 
 1. The Panel sends the Agent only the pack's official `downloadUrl` plus size/SHA-1.
 2. The Agent downloads the `.zip`, validates archive limits and `manifest.json`, then calls `POST /api/remote/servers/:id/modpacks/curseforge/resolve` with the manifest's required `projectID`/`fileID` pairs. The Panel only answers while that server has an active CurseForge operation on the calling node, so a node token can't be used as a general download proxy.
-3. The Panel resolves each file through `POST /v1/mods/files` and `POST /v1/mods`, returning the official `downloadUrl` and SHA-1. Resource packs (class 12) and shaders (class 6552) come back as `skip` and are never installed on the server.
+3. The Panel resolves each file through `POST /v1/mods/files` and `POST /v1/mods`, returning the official `downloadUrl` and SHA-1. Resource packs (class 12), shaders (class 6552) and files tagged `Client` without `Server` in `gameVersions` come back as `skip` and are never installed on the server.
 4. The Agent downloads each file into `mods/` (redirects restricted to `edge.forgecdn.net`/`mediafilez.forgecdn.net`), extracts the manifest's overrides folder, and reuses the same staging, backup and rollback path as `.mrpack` installs.
 
-**Author distribution opt-out is respected.** When CurseForge returns `downloadUrl: null`, the author disallows third-party distribution. The Panel never builds a CDN URL by hand for these files: a restricted pack is shown as not installable, and a pack with restricted mods fails with the list of mods to install manually. Server packs (`isServerPack`) are hidden from the version list because they have no manifest.
+**Author distribution opt-out is respected.** When CurseForge returns `downloadUrl: null`, the author disallows third-party distribution. The Panel never builds a CDN URL by hand for these files: a restricted pack is shown as not installable. Restricted mods inside a pack are skipped, the rest is installed, and the list (name, filename, CurseForge file page) is stored in `modpack_installations.manual_files` so the panel tells the client exactly what to upload by hand. Real example: OreSpawn Adventure 3.0.2 has 54 files; 12 are client-only and 2 server-side mods (Subtle Effects, ServerCore) are restricted. Server packs (`isServerPack`) are hidden from the version list because they have no manifest.
 
 ## Rollout
 

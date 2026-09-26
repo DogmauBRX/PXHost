@@ -6,6 +6,7 @@ import { Alert, Button, ConfirmDialog, LoadingRow, PageHeader } from '@/ui/primi
 import { ADDON_SOURCES } from './sources';
 import type { AddonContext } from './addons.types';
 import { ModpacksPanel } from './ModpacksPanel';
+import { ManualModsAlert } from './ManualModsAlert';
 import { getLatestModpackInstallation, getModpackProject, uninstallLatestModpack, type ModpackSource } from './modpacks.api';
 
 export function AddonsPage({ serverId }: { serverId: string }) {
@@ -128,6 +129,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
               </Button>
             )}
           </div>
+          <ManualModsAlert className="mx-4 mb-4" files={installedModpack.manualFiles} addonDir={software.addonDirDisplay} />
           {uninstall.isError && <Alert className="mx-4 mb-4" title="Não foi possível remover o modpack">{uninstall.error.message}</Alert>}
         </section>
       )}
