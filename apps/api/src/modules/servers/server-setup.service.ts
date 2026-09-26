@@ -437,6 +437,19 @@ export class ServerSetupService {
     });
     const variables = Object.fromEntries(currentVariables.map((row) => [row.variable.envVariable, row.value]));
 
+    // A failed first install cannot use changeVersion: that path is for a
+    // previously working (`ready`) server and assumes the Agent already has
+    // it registered. complete() is the retry path built for install_failed;
+    // dispatchToAgent first tries create and transparently reroutes a
+    // SERVER_EXISTS response to reinstall, covering both possible Agent
+    // states without creating another panel server/allocation.
+    if (server.status === 'install_failed') {
+      return this.complete(actor, serverId, { name: server.name, templateId: server.templateId, variables });
+    }
+    if (server.status !== 'ready') {
+      throw new ConflictException('Aguarde a instalação atual terminar antes de reinstalar esta versão.');
+    }
+
     return this.changeVersion(actor, serverId, { templateId: server.templateId, variables }, 'server.version.reinstalled');
   }
 }

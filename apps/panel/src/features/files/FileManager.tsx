@@ -94,6 +94,7 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
   const canRestore = permissions.includes('backup.restore');
   const canReinstall = permissions.includes('startup.update');
   const serverRunning = server?.powerState !== 'offline';
+  const canReinstallStatus = server?.status === 'ready' || server?.status === 'install_failed';
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: ['files', serverId, path] });
@@ -294,7 +295,7 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
               {canReinstall && (
                 <ReinstallCurrentVersionButton
                   serverId={serverId}
-                  disabled={serverRunning}
+                  disabled={serverRunning || !canReinstallStatus}
                   onStarted={() => {
                     setActionError(null);
                     setActionNotice('Reinstalação iniciada — a versão atual está sendo instalada novamente.');

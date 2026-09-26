@@ -112,6 +112,7 @@ export function VariablesPage({ serverId }: { serverId: string }) {
 
   const canEdit = server?.permissions.includes('startup.update') ?? false;
   const running = isLive(stats?.state ?? null);
+  const canReinstallStatus = server?.status === 'ready' || server?.status === 'install_failed';
 
   const mutation = useMutation({
     mutationFn: (values: Record<string, string>) => updateServerVariables(serverId, values),
@@ -191,7 +192,7 @@ export function VariablesPage({ serverId }: { serverId: string }) {
             </Button>
             <ReinstallCurrentVersionButton
               serverId={serverId}
-              disabled={running}
+              disabled={running || !canReinstallStatus}
               onStarted={() => {
                 setError(null);
                 setNotice('Reinstalação iniciada — a versão atual está sendo instalada novamente.');

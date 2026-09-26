@@ -4,7 +4,7 @@ describe('ServerSetupService.reinstallCurrent', () => {
   it('reuses the current template and every current variable', async () => {
     const access = {
       resolve: jest.fn(async () => ({
-        server: { id: 'server-1', templateId: 'template-1' },
+        server: { id: 'server-1', name: 'Servidor', templateId: 'template-1', status: 'ready' },
         role: 'owner',
         can: () => true,
       })),
@@ -43,5 +43,43 @@ describe('ServerSetupService.reinstallCurrent', () => {
         SERVER_JARFILE: 'server.jar',
       },
     }, 'server.version.reinstalled');
+  });
+
+  it('uses the safe setup retry path after a failed installation', async () => {
+    const access = {
+      resolve: jest.fn(async () => ({
+        server: { id: 'server-1', name: 'Servidor falho', templateId: 'template-1', status: 'install_failed' },
+        role: 'owner',
+        can: () => true,
+      })),
+    };
+    const prisma = {
+      serverVariable: {
+        findMany: jest.fn(async () => [
+          { value: '1.21.10', variable: { envVariable: 'MINECRAFT_VERSION' } },
+          { value: '55.1.0', variable: { envVariable: 'FORGE_VERSION' } },
+        ]),
+      },
+    };
+    const service = new ServerSetupService(
+      prisma as never,
+      access as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const complete = jest.spyOn(service, 'complete').mockResolvedValue({ id: 'server-1', status: 'installing' });
+    const changeVersion = jest.spyOn(service, 'changeVersion');
+    const actor = { id: 'user-1', isAdmin: false };
+
+    await service.reinstallCurrent(actor, 'server-1');
+
+    expect(complete).toHaveBeenCalledWith(actor, 'server-1', {
+      name: 'Servidor falho',
+      templateId: 'template-1',
+      variables: { MINECRAFT_VERSION: '1.21.10', FORGE_VERSION: '55.1.0' },
+    });
+    expect(changeVersion).not.toHaveBeenCalled();
   });
 });
