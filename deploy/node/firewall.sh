@@ -31,7 +31,18 @@ NODE_LAN_IP="192.168.1.100"
 # Must match the allocation range created for this node (Admin > Nodes >
 # Allocations) — every public route's target port falls inside it.
 GAME_PORT_RANGE="25565-25664"
+# Docker's node-wide bridge and subnet. `nft flush ruleset` below removes
+# Docker's own POSTROUTING masquerade rule, so these values are also used to
+# restore container internet egress explicitly.
+DOCKER_BRIDGE="gxhost0"
+CONTAINER_SUBNET="172.31.0.0/24"
 # --------------------------------
+
+WAN_IFACE="$(ip -4 route show default | awk '{print $5; exit}')"
+if [[ -z "$WAN_IFACE" ]]; then
+  echo "Could not determine the default-route interface" >&2
+  exit 1
+fi
 
 nft flush ruleset
 
@@ -86,7 +97,15 @@ nft add rule inet filter input ip saddr "$GATEWAY_TUNNEL_IP" tcp dport 8443 acce
 # remapped port).
 nft add table ip nat
 nft add chain ip nat prerouting '{ type nat hook prerouting priority -100; }'
+nft add chain ip nat postrouting '{ type nat hook postrouting priority 100; policy accept; }'
 nft add rule ip nat prerouting iif "$WG_IFACE" ip saddr "$GATEWAY_TUNNEL_IP" tcp dport "$GAME_PORT_RANGE" dnat to "$NODE_LAN_IP"
+
+# `nft flush ruleset` also deletes Docker's MASQUERADE rule. A FORWARD
+# accept alone is insufficient: without source NAT, an installer SYN leaves
+# the node with its private 172.31.x address and the internet cannot route a
+# reply. This was found live on node03 while Forge's installer remained in
+# SYN-SENT despite host networking working normally.
+nft add rule ip nat postrouting iifname "$DOCKER_BRIDGE" oifname "$WAN_IFACE" ip saddr "$CONTAINER_SUBNET" masquerade
 
 # WRONG CHAIN, found live 2026-09-15 (every real connection attempt
 # timed out — nginx's "upstream timed out... connecting to upstream"):
