@@ -249,7 +249,7 @@ const PLAN_SEEDS: PlanSeed[] = [
     sortOrder: 0,
     memoryMb: 2048,
     diskMb: 5120,
-    cpuLimitPercent: 100,
+    cpuLimitPercent: 300,
     maxDatabases: 1,
     maxBackups: 3,
     maxAllocations: 1,
