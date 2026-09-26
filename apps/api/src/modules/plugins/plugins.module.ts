@@ -6,5 +6,6 @@ import { ActivityModule } from '../activity/activity.module';
 import { ModpacksModule } from '../modpacks/modpacks.module';
 import { PluginsController } from './plugins.controller';
 import { PluginsService } from './plugins.service';
-@Module({ imports: [AuthorizationModule, NodesModule, AuditModule, ActivityModule, ModpacksModule], controllers: [PluginsController], providers: [PluginsService] })
+import { CurseForgeProvider } from './curseforge.provider';
+@Module({ imports: [AuthorizationModule, NodesModule, AuditModule, ActivityModule, ModpacksModule], controllers: [PluginsController], providers: [CurseForgeProvider, PluginsService] })
 export class PluginsModule {}

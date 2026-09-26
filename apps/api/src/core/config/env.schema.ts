@@ -85,6 +85,10 @@ export const envSchema = z.object({
   // for public catalog reads; operators may override this to add contact
   // information as recommended by the provider.
   MODRINTH_USER_AGENT: z.string().min(3).default('gxhost/hosting-panel/0.1.0'),
+  // CurseForge's catalog and file-download APIs require an application key.
+  // It is deliberately server-only: the panel calls our API, never
+  // api.curseforge.com directly, so customers cannot retrieve this secret.
+  CURSEFORGE_API_KEY: optionalSecret(),
 
   // Client account management, Fase 1 — generic SMTP for password-reset
   // emails, no specific provider baked in. All optional, same posture as

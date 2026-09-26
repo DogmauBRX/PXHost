@@ -6,12 +6,14 @@ import { AuditService } from '../audit/audit.service';
 import { ActivityService } from '../activity/activity.service';
 import { ModrinthProvider } from '../modpacks/modrinth.provider';
 import type { ModpackSort, ModpackVersion } from '../modpacks/modpack-provider';
+import { CurseForgeProvider, type CurseForgePluginSort } from './curseforge.provider';
 
 const MAX_PLUGIN_BYTES = 128 * 1024 * 1024;
 const COMPATIBLE_LOADERS: Record<string, string[]> = {
   paper: ['paper', 'spigot', 'bukkit'], purpur: ['purpur', 'paper', 'spigot', 'bukkit'],
   spigot: ['spigot', 'bukkit'], bukkit: ['bukkit'], velocity: ['velocity'], bungeecord: ['bungeecord', 'waterfall'],
 };
+const MOD_LOADERS = new Set(['forge', 'fabric', 'quilt', 'neoforge']);
 
 @Injectable()
 export class PluginsService {
@@ -19,6 +21,7 @@ export class PluginsService {
     private readonly access: ServerAccessService,
     private readonly agent: AgentClient,
     private readonly modrinth: ModrinthProvider,
+    private readonly curseforge: CurseForgeProvider,
     private readonly audit: AuditService,
     private readonly activity: ActivityService,
   ) {}
@@ -84,6 +87,53 @@ export class PluginsService {
     return { fileName: file.filename, versionName: version.versionNumber, message: 'Plugin instalado. Reinicie o servidor para carregá-lo.' };
   }
 
+  async searchCurseForge(actor: AccessActor, serverId: string, query: string, sort: CurseForgePluginSort, offset = 0) {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    if (!can('addons.catalog.read')) throw new ForbiddenException('Missing permission: addons.catalog.read');
+    const loader = server.template?.softwareKind?.toLowerCase();
+    const minecraftVersion = server.variables[0]?.value;
+    if (!loader || !MOD_LOADERS.has(loader) || !minecraftVersion) throw new ConflictException('O software ou a versão do Minecraft não foi identificado como compatível com mods.');
+    return this.curseforge.search({ query, minecraftVersion, loader, sort, offset, limit: 20 });
+  }
+
+  async curseForgeProject(actor: AccessActor, serverId: string, projectId: string) {
+    await this.assertCanRead(actor, serverId);
+    return this.curseforge.getProject(projectId);
+  }
+
+  async curseForgeVersions(actor: AccessActor, serverId: string, projectId: string) {
+    const { minecraftVersion, loader } = await this.modCompatibility(actor, serverId, 'addons.catalog.read');
+    return this.curseforge.getVersions(projectId, minecraftVersion, loader);
+  }
+
+  async installCurseForge(actor: AccessActor, serverId: string, projectId: string, versionId?: string) {
+    const { server, minecraftVersion, loader } = await this.modCompatibility(actor, serverId, 'addons.install');
+    const versions = versionId
+      ? [await this.curseforge.getVersion(projectId, versionId)]
+      : await this.curseforge.getVersions(projectId, minecraftVersion, loader);
+    const version = versions.find((candidate) => candidate.minecraftVersions.includes(minecraftVersion) && candidate.loaders.includes(loader))
+      ?? versions[0];
+    const file = version?.files.find((item) => item.primary && item.filename.endsWith('.jar'));
+    if (!version || !file || file.size <= 0 || file.size > MAX_PLUGIN_BYTES || !/^[\w.-]+\.jar$/i.test(file.filename) || !file.hashes.sha1) {
+      throw new UnprocessableEntityException('Não há um arquivo .jar compatível e verificável para instalar deste mod.');
+    }
+    const content = await this.curseforge.downloadFile(projectId, version.versionId);
+    if (content.byteLength > MAX_PLUGIN_BYTES || content.byteLength > file.size + 1024 * 1024) throw new UnprocessableEntityException('O download do mod excede o limite seguro.');
+    if (createHash('sha1').update(content).digest('hex') !== file.hashes.sha1.toLowerCase()) throw new UnprocessableEntityException('A verificação de integridade do mod falhou.');
+    try {
+      await this.agent.listFiles(server.nodeId, server.id, 'mods');
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) throw error;
+      await this.agent.mkdir(server.nodeId, server.id, 'mods');
+    }
+    await this.agent.writeBinaryFile(server.nodeId, server.id, `mods/${file.filename}`, content);
+    await Promise.allSettled([
+      this.audit.record({ action: 'server.mod.install', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { source: 'curseforge', projectId, versionId: version.versionId, file: file.filename } }),
+      this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.mod.install', properties: { source: 'curseforge', projectId, versionName: version.versionNumber } }),
+    ]);
+    return { fileName: file.filename, versionName: version.versionNumber, message: 'Mod instalado. Reinicie o servidor para carregá-lo.' };
+  }
+
   private async assertCanRead(actor: AccessActor, serverId: string) {
     const { can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('addons.catalog.read')) throw new ForbiddenException('Missing permission: addons.catalog.read');
@@ -97,6 +147,15 @@ export class PluginsService {
     const minecraftVersion = server.variables[0]?.value;
     if (!compatibleLoaders || !minecraftVersion) throw new ConflictException('O software ou a versão do Minecraft não foi identificado.');
     return { compatibleLoaders, minecraftVersion };
+  }
+
+  private async modCompatibility(actor: AccessActor, serverId: string, permission: 'addons.catalog.read' | 'addons.install') {
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    if (!can(permission)) throw new ForbiddenException(`Missing permission: ${permission}`);
+    const loader = server.template?.softwareKind?.toLowerCase();
+    const minecraftVersion = server.variables[0]?.value;
+    if (!loader || !MOD_LOADERS.has(loader) || !minecraftVersion) throw new ConflictException('O software ou a versão do Minecraft não foi identificado como compatível com mods.');
+    return { server, loader, minecraftVersion };
   }
 
   private isCompatible(version: ModpackVersion, compatibleLoaders: string[], minecraftVersion: string) {
