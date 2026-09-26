@@ -13,6 +13,6 @@ import { RemoteModpacksController } from './remote-modpacks.controller';
   imports: [AuthorizationModule, NodesModule, AuditModule, ActivityModule],
   controllers: [ModpacksController, RemoteModpacksController],
   providers: [ModpackCacheService, ModrinthProvider, ModpacksService],
-  exports: [ModpacksService, ModrinthProvider],
+  exports: [ModpackCacheService, ModpacksService, ModrinthProvider],
 })
 export class ModpacksModule {}
