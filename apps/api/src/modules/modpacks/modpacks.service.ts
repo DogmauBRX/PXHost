@@ -126,9 +126,17 @@ export class ModpacksService {
 
     const installation = await this.prisma.withRLS(
       { userId: actor.isAdmin ? null : actor.id, isAdmin: actor.isAdmin },
-      (tx) => tx.modpackInstallation.findFirst({ where: { serverId, status: 'completed' }, orderBy: { createdAt: 'desc' } }),
+      (tx) => tx.modpackInstallation.findFirst({ where: { serverId }, orderBy: { createdAt: 'desc' } }),
     );
     if (!installation) throw new ConflictException('Não há um modpack instalado para remover.');
+    // DELETE is idempotent. A repeated request can arrive while the browser
+    // still renders the pre-removal query result; treating the newest
+    // already-uninstalled operation as success keeps the UI aligned with
+    // the filesystem state. Looking at the newest operation first also
+    // prevents a second DELETE from walking backwards to an older completed
+    // installation and restoring the wrong pre-install backup.
+    if (installation.status === 'uninstalled') return;
+    if (installation.status !== 'completed') throw new ConflictException('Não há um modpack instalado para remover.');
     if (!installation.backupId) throw new ConflictException('O backup de segurança desta instalação não está disponível para remoção segura.');
 
     const runtime = await this.agent.getServerStatus(server.nodeId, server.id);

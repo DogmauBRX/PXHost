@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PackageOpen, Trash2 } from 'lucide-react';
 import { getServer } from '@/features/servers/servers.api';
@@ -28,6 +28,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
   const [sourceId, setSourceId] = useState(ADDON_SOURCES[0].id);
   const [contentType, setContentType] = useState<'mods' | 'modpacks'>('modpacks');
   const [confirmUninstall, setConfirmUninstall] = useState(false);
+  const uninstallInFlight = useRef(false);
   const uninstall = useMutation({
     mutationFn: () => uninstallLatestModpack(serverId),
     onSuccess: async () => {
@@ -35,7 +36,17 @@ export function AddonsPage({ serverId }: { serverId: string }) {
       queryClient.setQueryData(['modpack-installation', serverId], null);
       await queryClient.invalidateQueries({ queryKey: ['files', serverId] });
     },
+    onSettled: async () => {
+      uninstallInFlight.current = false;
+      await queryClient.invalidateQueries({ queryKey: ['modpack-installation', serverId] });
+    },
   });
+
+  const handleUninstall = () => {
+    if (uninstallInFlight.current) return;
+    uninstallInFlight.current = true;
+    uninstall.mutate();
+  };
 
   // The Agent installs a modpack asynchronously. Refresh the list as soon
   // as the operation completes, including when this page stayed open while
@@ -151,7 +162,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
         confirmLabel={uninstall.isPending ? 'Removendo…' : 'Remover e restaurar backup'}
         tone="danger"
         loading={uninstall.isPending}
-        onConfirm={() => uninstall.mutate()}
+        onConfirm={handleUninstall}
         onCancel={() => setConfirmUninstall(false)}
       />
     </>
