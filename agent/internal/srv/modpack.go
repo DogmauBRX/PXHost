@@ -77,16 +77,6 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 	if err := downloadVerified(ctx, spec.SourceURL, archivePath, spec.ExpectedSize, spec.SHA1, spec.SHA512); err != nil {
 		return err
 	}
-	progress(25, "Pacote validado; preparando staging")
-	if err := copyTree(dataDir, stageDir, s.spec.UID); err != nil {
-		return fmt.Errorf("modpack: preparing staging: %w", err)
-	}
-	stageJail, err := fsx.Open(stageDir)
-	if err != nil {
-		return err
-	}
-	defer stageJail.Close()
-
 	zr, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return fmt.Errorf("modpack: invalid mrpack: %w", err)
@@ -109,6 +99,25 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 	if err != nil {
 		return err
 	}
+	// A valid checksum only proves that the CDN returned the exact object the
+	// publisher uploaded. It does not prove that every compressed override in
+	// that object can be read. Validate all entries we will later extract before
+	// copying the live server tree into staging, and name the broken entry in the
+	// user-facing error instead of returning archive/zip's opaque ErrFormat.
+	if err := validateMrpackEntries(zr.File); err != nil {
+		return err
+	}
+
+	progress(25, "Pacote validado; preparando staging")
+	if err := copyTree(dataDir, stageDir, s.spec.UID); err != nil {
+		return fmt.Errorf("modpack: preparing staging: %w", err)
+	}
+	stageJail, err := fsx.Open(stageDir)
+	if err != nil {
+		return err
+	}
+	defer stageJail.Close()
+
 	var incoming int64
 	for _, f := range index.Files {
 		if f.FileSize <= 0 || f.FileSize > maxExpandedBytes || incoming > maxExpandedBytes-f.FileSize {
@@ -187,6 +196,30 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 	s.Jail = newJail
 	go func() { time.Sleep(time.Hour); _ = os.RemoveAll(oldDir) }()
 	progress(98, "Arquivos ativados")
+	return nil
+}
+
+func validateMrpackEntries(files []*zip.File) error {
+	for _, f := range files {
+		if f.FileInfo().IsDir() || (f.Name != "modrinth.index.json" && !strings.HasPrefix(f.Name, "overrides/") && !strings.HasPrefix(f.Name, "server-overrides/")) {
+			continue
+		}
+		r, err := f.Open()
+		if err != nil {
+			return fmt.Errorf("modpack: pacote corrompido na entrada %q: %w", f.Name, err)
+		}
+		read, copyErr := io.Copy(io.Discard, io.LimitReader(r, int64(f.UncompressedSize64)+1))
+		closeErr := r.Close()
+		if copyErr != nil {
+			return fmt.Errorf("modpack: pacote corrompido na entrada %q: %w", f.Name, copyErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("modpack: pacote corrompido na entrada %q: %w", f.Name, closeErr)
+		}
+		if read != int64(f.UncompressedSize64) {
+			return fmt.Errorf("modpack: pacote corrompido na entrada %q: tamanho extraído inválido", f.Name)
+		}
+	}
 	return nil
 }
 
