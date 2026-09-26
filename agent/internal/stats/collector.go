@@ -145,6 +145,7 @@ func (c *Collector) Run(parent context.Context) error {
 	dec := json.NewDecoder(rc)
 	var prev container.StatsResponse
 	haveFirst := false
+	zeroReads := 0
 
 	for {
 		var cur container.StatsResponse
@@ -154,6 +155,19 @@ func (c *Collector) Run(parent context.Context) error {
 			}
 			return err
 		}
+		// Docker does NOT close the stream when a container exits without
+		// being removed: it keeps sending frames whose `read` is the zero
+		// time (verified live on an OOM-killed server). Treat that as the
+		// stream ending, or the caller's crash detection never runs. Two in a
+		// row, so a single odd frame during startup can't end it early.
+		if cur.Read.IsZero() {
+			zeroReads++
+			if zeroReads >= 2 {
+				return nil
+			}
+			continue
+		}
+		zeroReads = 0
 		if !haveFirst {
 			prev = cur
 			haveFirst = true
