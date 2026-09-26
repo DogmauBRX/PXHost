@@ -5,10 +5,8 @@ User-agent: *
 Allow: /$
 Allow: /plans
 Allow: /plans/
-Allow: /login
-Allow: /register
 Disallow: /admin
 Disallow: /client
 Disallow: /checkout
 
-Sitemap: /sitemap.xml
+Sitemap: https://gxhost.com.br/sitemap.xml
