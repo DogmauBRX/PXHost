@@ -11,6 +11,10 @@ const SEARCH_TTL_SECONDS = 5 * 60;
 const PROJECT_TTL_SECONDS = 15 * 60;
 const VERSION_TTL_SECONDS = 5 * 60;
 
+// CurseForge project classes that never belong on a dedicated server.
+const CLIENT_ONLY_CLASS_IDS = new Set([12 /* resource packs */, 6552 /* shaders */]);
+const ALLOWED_CDN_HOSTS = new Set(['edge.forgecdn.net', 'mediafilez.forgecdn.net']);
+
 const LOADER_TYPES: Record<string, number> = {
   forge: 1,
   fabric: 4,
@@ -46,6 +50,7 @@ interface CurseForgeMod {
   categories?: Array<{ name?: string | null; slug?: string | null }>;
   latestFilesIndexes?: Array<{ gameVersion?: string; modLoader?: number }>;
   screenshots?: Array<{ thumbnailUrl?: string | null; url?: string | null }>;
+  classId?: number | null;
 }
 
 interface CurseForgeFile {
@@ -53,12 +58,29 @@ interface CurseForgeFile {
   modId: number;
   displayName?: string | null;
   fileName: string;
+  /** null when the author disallows distribution through third-party apps. */
+  downloadUrl?: string | null;
+  isServerPack?: boolean | null;
   releaseType: number;
   fileDate: string;
   fileLength: number;
   downloadCount?: number;
   gameVersions?: string[];
   hashes?: Array<{ value: string; algo: number }>;
+}
+
+export interface CurseForgeFileRequest {
+  projectId: number;
+  fileId: number;
+}
+
+export interface CurseForgeResolvedFile extends CurseForgeFileRequest {
+  filename: string;
+  size: number;
+  url: string;
+  sha1: string;
+  /** Client-only content (resource packs, shaders) the Agent must not install. */
+  skip: boolean;
 }
 
 interface CurseForgeSearchResponse {
@@ -125,7 +147,9 @@ export class CurseForgeProvider implements ModpackProvider {
       if (filters.minecraftVersion) params.set('gameVersion', filters.minecraftVersion);
       if (loaderType) params.set('modLoaderType', String(loaderType));
       const response = await this.request<{ data: CurseForgeFile[] }>(`/mods/${encodeURIComponent(projectId)}/files?${params.toString()}`);
-      return response.data.map((file) => this.normalizeVersion(file, projectId));
+      // Server packs are ready-made server trees without a manifest.json; only
+      // client packs follow the manifest format the Agent installs.
+      return response.data.filter((file) => !file.isServerPack).map((file) => this.normalizeVersion(file, projectId));
     });
   }
 
@@ -140,6 +164,48 @@ export class CurseForgeProvider implements ModpackProvider {
 
   getMetadata(): Promise<ModpackMetadata> {
     return Promise.resolve({ minecraftVersions: [], loaders: Object.keys(LOADER_TYPES), categories: [] });
+  }
+
+  /**
+   * Resolves the files declared inside a CurseForge manifest for a trusted
+   * node. The Agent never receives the CurseForge API key: it only gets CDN
+   * URLs and hashes after the Panel validates the active installation.
+   */
+  async resolveFiles(requests: CurseForgeFileRequest[]): Promise<CurseForgeResolvedFile[]> {
+    if (requests.length === 0) return [];
+    const distinct = [...new Map(requests.map((item) => [item.fileId, item])).values()];
+    if (distinct.length > 1_000) throw new ModpackProviderError(this.source, 'invalid_response', 'O modpack declara arquivos demais para uma instalação segura.', HttpStatus.UNPROCESSABLE_ENTITY);
+    const [fileResponse, modResponse] = await Promise.all([
+      this.request<{ data: CurseForgeFile[] }>('/mods/files', { method: 'POST', body: { fileIds: distinct.map((item) => item.fileId) } }),
+      this.request<{ data: CurseForgeMod[] }>('/mods', { method: 'POST', body: { modIds: [...new Set(distinct.map((item) => item.projectId))] } }),
+    ]);
+    const files = new Map(fileResponse.data.map((file) => [file.id, file]));
+    const mods = new Map(modResponse.data.map((mod) => [mod.id, mod]));
+
+    const blocked: string[] = [];
+    const resolved: CurseForgeResolvedFile[] = [];
+    for (const requested of distinct) {
+      const file = files.get(requested.fileId);
+      if (!file || file.modId !== requested.projectId) throw new ModpackProviderError(this.source, 'invalid_response', 'Um arquivo declarado pelo modpack não pôde ser validado no CurseForge.', HttpStatus.UNPROCESSABLE_ENTITY);
+      const mod = mods.get(file.modId);
+      const skip = mod?.classId != null && CLIENT_ONLY_CLASS_IDS.has(mod.classId);
+      if (skip) {
+        resolved.push({ ...requested, filename: file.fileName, size: file.fileLength, url: '', sha1: '', skip: true });
+        continue;
+      }
+      if (!file.downloadUrl) {
+        blocked.push(mod?.name ?? file.displayName ?? file.fileName);
+        continue;
+      }
+      const sha1 = file.hashes?.find((hash) => hash.algo === 1)?.value;
+      if (!sha1 || !file.fileName || file.fileLength <= 0) throw new ModpackProviderError(this.source, 'invalid_response', `O arquivo ${file.fileName || file.id} não possui os dados necessários para uma instalação segura.`, HttpStatus.UNPROCESSABLE_ENTITY);
+      resolved.push({ ...requested, filename: file.fileName, size: file.fileLength, url: assertAllowedCdnUrl(file.downloadUrl), sha1, skip: false });
+    }
+    if (blocked.length > 0) {
+      const names = blocked.slice(0, 5).join(', ') + (blocked.length > 5 ? ` e mais ${blocked.length - 5}` : '');
+      throw new ModpackProviderError(this.source, 'invalid_response', `Os autores de alguns mods deste modpack não permitem download por aplicativos de terceiros (${names}). Instale esses mods manualmente ou escolha outro modpack.`, HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+    return resolved;
   }
 
   private normalizeSummary(mod: CurseForgeMod): ModpackSummary {
@@ -163,6 +229,7 @@ export class CurseForgeProvider implements ModpackProvider {
   private normalizeVersion(file: CurseForgeFile, projectId: string): ModpackVersion {
     const sha1 = file.hashes?.find((hash) => hash.algo === 1)?.value;
     const gameVersions = file.gameVersions ?? [];
+    const url = allowedCdnUrlOrEmpty(file.downloadUrl);
     return {
       source: this.source,
       versionId: String(file.id),
@@ -174,16 +241,24 @@ export class CurseForgeProvider implements ModpackProvider {
       releaseType: file.releaseType === 1 ? 'release' : file.releaseType === 2 ? 'beta' : 'alpha',
       publishedAt: file.fileDate,
       downloads: file.downloadCount ?? 0,
-      files: [{ filename: file.fileName, size: file.fileLength, primary: true, url: '', hashes: sha1 ? { sha1 } : {} }],
+      // An empty url marks a pack whose author disallows third-party downloads;
+      // the install flow refuses it with an explanation instead of guessing a CDN path.
+      files: [{
+        filename: file.fileName, size: file.fileLength, primary: true, url, hashes: sha1 ? { sha1 } : {},
+        distributable: Boolean(url),
+        ...(url ? {} : { distributionMessage: 'O autor desta versão não permite download por aplicativos de terceiros.' }),
+      }],
     };
   }
 
-  private async request<T>(path: string): Promise<T> {
+  private async request<T>(path: string, init: { method?: 'POST'; body?: unknown } = {}): Promise<T> {
     if (!this.apiKey) throw new ModpackProviderError('curseforge', 'unavailable', 'O catálogo do CurseForge ainda não foi configurado pelo administrador.', HttpStatus.SERVICE_UNAVAILABLE);
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const response = await fetch(`${API_BASE}${path}`, {
-          headers: { Accept: 'application/json', 'x-api-key': this.apiKey },
+          method: init.method,
+          headers: { Accept: 'application/json', 'x-api-key': this.apiKey, ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
+          body: init.body ? JSON.stringify(init.body) : undefined,
           signal: AbortSignal.timeout(10_000),
         });
         if (response.ok) return (await response.json()) as T;
@@ -205,4 +280,26 @@ export class CurseForgeProvider implements ModpackProvider {
     }
     throw new ModpackProviderError('curseforge', 'unavailable', 'Não foi possível consultar o CurseForge agora.');
   }
+}
+
+function allowedCdnUrlOrEmpty(raw: string | null | undefined): string {
+  if (!raw) return '';
+  try {
+    return assertAllowedCdnUrl(raw);
+  } catch {
+    return '';
+  }
+}
+
+function assertAllowedCdnUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new ModpackProviderError('curseforge', 'invalid_response', 'O CurseForge retornou um link de download inválido.', HttpStatus.UNPROCESSABLE_ENTITY);
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || !ALLOWED_CDN_HOSTS.has(url.hostname)) {
+    throw new ModpackProviderError('curseforge', 'invalid_response', 'O CurseForge retornou um link de download fora do CDN permitido.', HttpStatus.UNPROCESSABLE_ENTITY);
+  }
+  return url.toString();
 }

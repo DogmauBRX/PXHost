@@ -4,7 +4,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { AgentClient } from '../nodes/agent-client.service';
 import { AuditService } from '../audit/audit.service';
 import { ActivityService } from '../activity/activity.service';
-import type { InstallModpackDto, ModpackProgressDto } from './dto/install-modpack.dto';
+import type { InstallModpackDto, ModpackProgressDto, ResolveCurseForgeFilesDto } from './dto/install-modpack.dto';
 import type { ListModpackVersionsDto, SearchModpacksDto } from './dto/modpack-query.dto';
 import type { ModpackProvider, ModpackSource } from './modpack-provider';
 import { ModrinthProvider } from './modrinth.provider';
@@ -32,7 +32,6 @@ export class ModpacksService {
   async install(actor: AccessActor, serverId: string, dto: InstallModpackDto) {
     const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('addons.install')) throw new ForbiddenException('Missing permission: addons.install');
-    if (dto.source === 'curseforge') throw new ConflictException('O catálogo do CurseForge está disponível para pesquisa e detalhes. A instalação automática de modpacks do CurseForge ainda não é suportada pelo Agent.');
     if (!server.template?.softwareKind) throw new ConflictException('O software atual do servidor não foi identificado.');
 
     const runtime = await this.agent.getServerStatus(server.nodeId, server.id);
@@ -46,12 +45,17 @@ export class ModpacksService {
     if (!minecraftVersion || !version.minecraftVersions.includes(minecraftVersion) || !version.loaders.includes(loader)) {
       throw new ConflictException('Escolha uma versão compatível com o Minecraft e o loader atuais do servidor.');
     }
-    const file = version.files.find((candidate) => candidate.primary && candidate.filename.endsWith('.mrpack'))
-      ?? version.files.find((candidate) => candidate.filename.endsWith('.mrpack'));
-    if (!file) throw new UnprocessableEntityException('Esta versão não possui um pacote .mrpack instalável.');
+    const extension = dto.source === 'curseforge' ? '.zip' : '.mrpack';
+    const file = version.files.find((candidate) => candidate.primary && candidate.filename.toLowerCase().endsWith(extension))
+      ?? version.files.find((candidate) => candidate.filename.toLowerCase().endsWith(extension));
+    if (!file) throw new UnprocessableEntityException(`Esta versão não possui um pacote ${extension} instalável.`);
+    if (!file.url) {
+      throw new UnprocessableEntityException('O autor deste modpack não permite download por aplicativos de terceiros. Baixe-o manualmente pelo site do CurseForge.');
+    }
     const source = new URL(file.url);
-    if (source.protocol !== 'https:' || source.hostname !== 'cdn.modrinth.com') {
-      throw new UnprocessableEntityException('O arquivo principal não está hospedado no CDN permitido do Modrinth.');
+    const allowedHosts = dto.source === 'curseforge' ? ['edge.forgecdn.net', 'mediafilez.forgecdn.net'] : ['cdn.modrinth.com'];
+    if (source.protocol !== 'https:' || !allowedHosts.includes(source.hostname)) {
+      throw new UnprocessableEntityException(`O arquivo principal não está hospedado no CDN permitido do ${dto.source === 'curseforge' ? 'CurseForge' : 'Modrinth'}.`);
     }
 
     const operation = await this.prisma.withRLS({ userId: actor.isAdmin ? null : actor.id, isAdmin: actor.isAdmin }, async (tx) => {
@@ -84,6 +88,7 @@ export class ModpacksService {
 
     try {
       await this.agent.installModpack(server.nodeId, server.id, {
+        source: dto.source,
         operationId: operation.id,
         sourceUrl: file.url,
         filename: file.filename,
@@ -166,6 +171,29 @@ export class ModpacksService {
     );
     if (!server) throw new ForbiddenException('Este node não controla o servidor informado.');
     await this.updateOperation(serverId, dto.operationId, dto);
+  }
+
+  /**
+   * The Agent calls this after it has verified the CurseForge manifest inside
+   * the downloaded pack. Binding the resolution to the active operation and
+   * its owning node prevents a node token from becoming a general API-key
+   * proxy for arbitrary CurseForge downloads.
+   */
+  async resolveCurseForgeFiles(nodeId: string, serverId: string, dto: ResolveCurseForgeFilesDto) {
+    const operation = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.modpackInstallation.findFirst({
+      where: {
+        id: dto.operationId,
+        serverId,
+        source: 'curseforge',
+        status: { in: ['pending', 'downloading', 'installing'] },
+        server: { nodeId },
+      },
+      select: { id: true },
+    }));
+    if (!operation) throw new ForbiddenException('A instalação do CurseForge não está ativa neste node.');
+    const provider = this.providers.get('curseforge');
+    if (!(provider instanceof CurseForgeProvider)) throw new ForbiddenException('O catálogo do CurseForge não está disponível.');
+    return { files: await provider.resolveFiles(dto.files) };
   }
 
   private async updateOperation(serverId: string, operationId: string, dto: Pick<ModpackProgressDto, 'status' | 'progress' | 'message' | 'backupId' | 'errorMessage'>) {

@@ -113,6 +113,7 @@ export interface ReinstallAgentServerRequest {
 }
 
 export interface InstallAgentModpackRequest {
+  source: 'modrinth' | 'curseforge';
   operationId: string;
   sourceUrl: string;
   filename: string;

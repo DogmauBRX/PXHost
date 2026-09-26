@@ -16,9 +16,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
     queryFn: () => getLatestModpackInstallation(serverId),
     refetchInterval: (query) => isInstallationActive(query.state.data?.status) ? 2_000 : false,
   });
-  const installedModpack = installation.data?.status === 'completed' && installation.data.source === 'modrinth'
-    ? installation.data
-    : null;
+  const installedModpack = installation.data?.status === 'completed' ? installation.data : null;
   const installedProject = useQuery({
     queryKey: ['modpack-project', serverId, installedModpack?.source, installedModpack?.projectId],
     queryFn: () => getModpackProject(serverId, installedModpack!.source as ModpackSource, installedModpack!.projectId),

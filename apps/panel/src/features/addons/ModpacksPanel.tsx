@@ -116,7 +116,7 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
         projectId={selected?.projectId ?? null}
         serverMinecraftVersion={ctx.server.minecraftVersion}
         serverSoftware={ctx.software.kind}
-        canInstall={canInstall && (selected?.source ?? source) === 'modrinth'}
+        canInstall={canInstall}
         onClose={() => setSelected(null)}
       />
     </div>
@@ -140,7 +140,7 @@ function ModpackCard({ item, onDetails }: { item: ModpackSummary; onDetails: () 
         <span className="inline-flex items-center gap-1"><Download className="h-3.5 w-3.5" />{formatCount(item.downloads)}</span>
         <span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{new Date(item.updatedAt).toLocaleDateString('pt-BR')}</span>
       </div>
-      <div className="mt-3 flex gap-2 border-t border-border pt-3"><Button size="sm" className="flex-1" onClick={onDetails}>Ver detalhes</Button><Button size="sm" variant="primary" className="flex-1" onClick={onDetails}>{item.source === 'curseforge' ? 'Ver versões' : 'Instalar'}</Button></div>
+      <div className="mt-3 flex gap-2 border-t border-border pt-3"><Button size="sm" className="flex-1" onClick={onDetails}>Ver detalhes</Button><Button size="sm" variant="primary" className="flex-1" onClick={onDetails}>Instalar</Button></div>
     </article>
   );
 }

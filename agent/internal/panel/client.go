@@ -11,6 +11,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -140,6 +141,33 @@ type ModpackProgressRequest struct {
 	Message      string `json:"message"`
 	BackupID     string `json:"backupId,omitempty"`
 	ErrorMessage string `json:"errorMessage,omitempty"`
+}
+
+// CurseForgeManifestFile is declared by a trusted CurseForge manifest. The
+// Agent sends only these numeric IDs to the Panel; the Panel resolves the CDN
+// URLs without exposing its CurseForge API key to the node.
+type CurseForgeManifestFile struct {
+	ProjectID int64 `json:"projectId"`
+	FileID    int64 `json:"fileId"`
+}
+
+type CurseForgeResolvedFile struct {
+	ProjectID int64  `json:"projectId"`
+	FileID    int64  `json:"fileId"`
+	Filename  string `json:"filename"`
+	Size      int64  `json:"size"`
+	URL       string `json:"url"`
+	SHA1      string `json:"sha1"`
+	Skip      bool   `json:"skip"`
+}
+
+type ResolveCurseForgeFilesRequest struct {
+	OperationID string                   `json:"operationId"`
+	Files       []CurseForgeManifestFile `json:"files"`
+}
+
+type ResolveCurseForgeFilesResponse struct {
+	Files []CurseForgeResolvedFile `json:"files"`
 }
 
 func (c *Client) ModpackProgress(ctx context.Context, nodeToken, serverUUID string, req ModpackProgressRequest) error {
@@ -316,6 +344,28 @@ func (c *Client) get(ctx context.Context, path, bearerToken string, out interfac
 	return json.Unmarshal(respBody, out)
 }
 
+// StatusError is a non-2xx Panel response.
+type StatusError struct {
+	Status int
+	Body   []byte
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("panel returned %d: %s", e.Status, truncate(e.Body, 500))
+}
+
+// UserMessage returns the Panel's own user-facing "message" field when the
+// body is the API's standard JSON error envelope.
+func (e *StatusError) UserMessage() string {
+	var envelope struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(e.Body, &envelope) == nil {
+		return envelope.Message
+	}
+	return ""
+}
+
 func (c *Client) post(ctx context.Context, path, bearerToken string, body, out interface{}) error {
 	b, err := json.Marshal(body)
 	if err != nil {
@@ -343,7 +393,7 @@ func (c *Client) post(ctx context.Context, path, bearerToken string, body, out i
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("panel returned %d: %s", resp.StatusCode, truncate(respBody, 500))
+		return &StatusError{Status: resp.StatusCode, Body: respBody}
 	}
 	if out != nil {
 		if err := json.Unmarshal(respBody, out); err != nil {
@@ -370,6 +420,19 @@ type InventoryRequest struct {
 	// genuinely empty node indistinguishable from an agent too old to
 	// send one — and the panel must never guess between those two.
 	ServerUUIDs []string `json:"serverUuids"`
+}
+
+func (c *Client) ResolveCurseForgeFiles(ctx context.Context, nodeToken, serverUUID string, req ResolveCurseForgeFilesRequest) ([]CurseForgeResolvedFile, error) {
+	var resp ResolveCurseForgeFilesResponse
+	path := fmt.Sprintf("/api/remote/servers/%s/modpacks/curseforge/resolve", serverUUID)
+	if err := c.post(ctx, path, nodeToken, req, &resp); err != nil {
+		var statusErr *StatusError
+		if errors.As(err, &statusErr) && statusErr.UserMessage() != "" {
+			return nil, errors.New(statusErr.UserMessage())
+		}
+		return nil, fmt.Errorf("panel: curseforge-file-resolve: %w", err)
+	}
+	return resp.Files, nil
 }
 
 // ReportInventory tells the panel exactly which servers this node holds,

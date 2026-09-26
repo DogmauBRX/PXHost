@@ -20,7 +20,7 @@ const EMPTY_VERSIONS: never[] = [];
 
 export function ModpackDetailsModal(props: Props) {
   const { serverId, source, projectId, serverMinecraftVersion, serverSoftware, canInstall, onClose } = props;
-  const supportsInstall = source === 'modrinth';
+  const sourceLabel = source === 'curseforge' ? 'CurseForge' : 'Modrinth';
   const [minecraftVersion, setMinecraftVersion] = useState('');
   const [loader, setLoader] = useState('');
   const [versionId, setVersionId] = useState('');
@@ -66,6 +66,8 @@ export function ModpackDetailsModal(props: Props) {
   const compatible = Boolean(selectedRelease)
     && (!serverMinecraftVersion || serverMinecraftVersion === effectiveMinecraft)
     && (!serverSoftware || serverSoftware === effectiveLoader);
+  const packageFile = selectedRelease?.files.find((file) => file.primary) ?? selectedRelease?.files[0];
+  const distributable = packageFile?.distributable !== false;
   const activeInstallation = isActive(installationQuery.data?.status) ? installationQuery.data : null;
   const installMutation = useMutation({
     mutationFn: () => installModpack(serverId, source, projectId as string, selectedRelease!.versionId),
@@ -80,17 +82,17 @@ export function ModpackDetailsModal(props: Props) {
       open={projectId !== null}
       onClose={onClose}
       title={project?.name ?? 'Detalhes do modpack'}
-      description={project ? `${source === 'curseforge' ? 'CurseForge' : 'Modrinth'}${project.author ? ` · por ${project.author}` : ''}` : undefined}
+      description={project ? `${sourceLabel}${project.author ? ` · por ${project.author}` : ''}` : undefined}
       size="lg"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Fechar</Button>
           <Button
             variant="primary"
-            disabled={!supportsInstall || !canInstall || !compatible || !selectedRelease || Boolean(activeInstallation) || installMutation.isPending}
+            disabled={!distributable || !canInstall || !compatible || !selectedRelease || Boolean(activeInstallation) || installMutation.isPending}
             onClick={() => installMutation.mutate()}
           >
-            <PackageOpen className="h-4 w-4" /> {supportsInstall ? (installMutation.isPending ? 'Iniciando…' : activeInstallation ? 'Instalando…' : 'Instalar Modpack') : 'Instalação indisponível'}
+            <PackageOpen className="h-4 w-4" /> {!distributable ? 'Instalação indisponível' : installMutation.isPending ? 'Iniciando…' : activeInstallation ? 'Instalando…' : 'Instalar Modpack'}
           </Button>
         </>
       }
@@ -142,12 +144,16 @@ export function ModpackDetailsModal(props: Props) {
               <Compatibility label={`Minecraft ${effectiveMinecraft || 'não informado'}`} ok={!serverMinecraftVersion || serverMinecraftVersion === effectiveMinecraft} current={serverMinecraftVersion ? `Servidor: ${serverMinecraftVersion}` : 'Versão atual não detectada'} />
               <Compatibility label={effectiveLoader ? loaderLabel(effectiveLoader) : 'Loader não informado'} ok={!serverSoftware || serverSoftware === effectiveLoader} current={`Servidor: ${serverSoftware ? loaderLabel(serverSoftware) : 'não detectado'}`} />
             </div>
-            <p className="mt-3 text-xs text-text-faint">RAM e espaço necessários não são publicados pelo Modrinth para esta release; nenhuma estimativa foi inventada.</p>
-            {selectedRelease?.files[0] && <p className="mt-1 inline-flex items-center gap-1 text-xs text-text-faint"><HardDrive className="h-3.5 w-3.5" />Pacote: {formatBytes(selectedRelease.files[0].size)}</p>}
+            <p className="mt-3 text-xs text-text-faint">RAM e espaço necessários não são publicados pelo {sourceLabel} para esta release; nenhuma estimativa foi inventada.</p>
+            {packageFile && <p className="mt-1 inline-flex items-center gap-1 text-xs text-text-faint"><HardDrive className="h-3.5 w-3.5" />Pacote: {formatBytes(packageFile.size)}</p>}
           </div>
 
-          {!supportsInstall && <Alert tone="info">As versões do CurseForge podem ser consultadas aqui. A instalação automática ainda não está disponível porque o Agent atualmente instala somente pacotes <code>.mrpack</code> do Modrinth.</Alert>}
-          {supportsInstall && !canInstall && <Alert tone="warn">Você não possui a permissão de instalar modpacks neste servidor.</Alert>}
+          {!distributable && (
+            <Alert tone="warn" title="Instalação automática indisponível">
+              {packageFile?.distributionMessage ?? 'O autor desta versão não permite download por aplicativos de terceiros.'} Baixe pela <a className="underline" href={project.pageUrl} target="_blank" rel="noreferrer">página original</a> e envie pelo gerenciador de arquivos.
+            </Alert>
+          )}
+          {distributable && !canInstall && <Alert tone="warn">Você não possui a permissão de instalar modpacks neste servidor.</Alert>}
           {!compatible && <Alert tone="warn">Esta release não corresponde à versão do Minecraft e ao loader atuais. Troque a seleção ou altere primeiro o software do servidor.</Alert>}
           {installMutation.isError && <Alert>Não foi possível iniciar a instalação: {installMutation.error.message}</Alert>}
           {activeInstallation && (
@@ -162,7 +168,7 @@ export function ModpackDetailsModal(props: Props) {
           {installationQuery.data?.status === 'failed' && (
             <Alert title="Instalação não concluída">{installationQuery.data.message}{installationQuery.data.errorMessage ? `: ${installationQuery.data.errorMessage}` : ''}</Alert>
           )}
-          {supportsInstall && <Alert tone="info">O servidor precisa estar desligado. Antes de alterar os arquivos, o Agent cria um backup, valida o pacote e instala em uma área de staging com rollback automático.</Alert>}
+          {distributable && <Alert tone="info">O servidor precisa estar desligado. Antes de alterar os arquivos, o Agent cria um backup, valida o pacote e instala em uma área de staging com rollback automático.</Alert>}
 
           {project.body && <div><h3 className="mb-2 text-sm font-semibold">Sobre</h3><p className="whitespace-pre-wrap text-sm leading-6 text-text-muted">{project.body}</p></div>}
         </div>

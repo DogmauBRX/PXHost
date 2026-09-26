@@ -17,7 +17,18 @@ This document records the analysis that preceded the catalog implementation and 
 
 `ModpackProvider` normalizes search, project, release and metadata responses. The UI and controllers only consume normalized values and select a provider from a registry; provider-specific JSON remains inside its adapter.
 
-The Modrinth adapter uses the official v2 API, an identifying User-Agent, bounded timeouts, one safe retry for GET requests, explicit 429 handling and Redis TTLs. Modrinth is the single supported catalog, keeping the installation path focused on the `.mrpack` format validated by the Agent.
+The Modrinth adapter uses the official v2 API, an identifying User-Agent, bounded timeouts, one safe retry for GET requests, explicit 429 handling and Redis TTLs.
+
+### CurseForge
+
+The CurseForge adapter (`apps/api/src/modules/plugins/curseforge.provider.ts`) uses the approved 3rd-party API key (`CURSEFORGE_API_KEY`), which never leaves the Panel:
+
+1. The Panel sends the Agent only the pack's official `downloadUrl` plus size/SHA-1.
+2. The Agent downloads the `.zip`, validates archive limits and `manifest.json`, then calls `POST /api/remote/servers/:id/modpacks/curseforge/resolve` with the manifest's required `projectID`/`fileID` pairs. The Panel only answers while that server has an active CurseForge operation on the calling node, so a node token can't be used as a general download proxy.
+3. The Panel resolves each file through `POST /v1/mods/files` and `POST /v1/mods`, returning the official `downloadUrl` and SHA-1. Resource packs (class 12) and shaders (class 6552) come back as `skip` and are never installed on the server.
+4. The Agent downloads each file into `mods/` (redirects restricted to `edge.forgecdn.net`/`mediafilez.forgecdn.net`), extracts the manifest's overrides folder, and reuses the same staging, backup and rollback path as `.mrpack` installs.
+
+**Author distribution opt-out is respected.** When CurseForge returns `downloadUrl: null`, the author disallows third-party distribution. The Panel never builds a CDN URL by hand for these files: a restricted pack is shown as not installable, and a pack with restricted mods fails with the list of mods to install manually. Server packs (`isServerPack`) are hidden from the version list because they have no manifest.
 
 ## Rollout
 

@@ -378,6 +378,13 @@ func allowedModrinthURL(raw string) error {
 }
 
 func downloadVerified(ctx context.Context, source, dest string, expected int64, sha1Hex, sha512Hex string) error {
+	return downloadVerifiedWithPolicy(ctx, source, dest, expected, sha1Hex, sha512Hex, allowedModrinthURL)
+}
+
+// downloadVerifiedWithPolicy applies allowURL to every redirect hop, so a CDN
+// cannot bounce the download to an unapproved host. Callers validate the
+// initial URL themselves.
+func downloadVerifiedWithPolicy(ctx context.Context, source, dest string, expected int64, sha1Hex, sha512Hex string, allowURL func(string) error) error {
 	if expected <= 0 {
 		return fmt.Errorf("missing expected download size")
 	}
@@ -385,7 +392,12 @@ func downloadVerified(ctx context.Context, source, dest string, expected int64, 
 	if err != nil {
 		return err
 	}
-	client := &http.Client{Timeout: 15 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error { return allowedModrinthURL(req.URL.String()) }}
+	client := &http.Client{Timeout: 15 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("too many redirects")
+		}
+		return allowURL(req.URL.String())
+	}}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
