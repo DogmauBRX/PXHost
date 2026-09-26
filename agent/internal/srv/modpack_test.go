@@ -151,3 +151,17 @@ func TestValidateMrpackEntriesNamesCorruptedOverride(t *testing.T) {
 		t.Fatalf("expected a named corrupt-entry error, got %v", err)
 	}
 }
+
+func TestFabricEnvironmentToleratesLenientJSON(t *testing.T) {
+	cases := map[string]string{
+		`{"environment":"client"}`:                                       "client",
+		`{"environment":"*","description":"a` + "\n" + `b"}`:             "*",
+		`{"description":"line` + "\n" + `break","environment":"client"}`: "client",
+		`{"description":"broken` + "\n" + `"}`:                           "",
+	}
+	for raw, want := range cases {
+		if got := fabricEnvironment([]byte(raw)); got != want {
+			t.Fatalf("fabricEnvironment(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}

@@ -4,12 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gxhost/agent/internal/backup"
 	"github.com/gxhost/agent/internal/panel"
 	"github.com/gxhost/agent/internal/srv"
 )
+
+// modpackBootTimeout is past the agent's own 5-minute ready cap, after which
+// a slow-but-alive server is promoted to running anyway.
+const modpackBootTimeout = 6 * time.Minute
 
 type installModpackRequest struct {
 	Source      string `json:"source"`
@@ -96,8 +102,18 @@ func (s *Server) runModpackInstall(target *srv.Server, req installModpackRequest
 		report("configuring", 98, "Iniciando o servidor para validar a instalação", b.ID, "")
 		err = target.Start(s.bgCtx, s.dc)
 		if err == nil {
-			report("completed", 100, "Modpack instalado e servidor iniciado", b.ID, "")
-			return
+			report("configuring", 99, "Aguardando o servidor terminar de carregar os mods", b.ID, "")
+			// A container that starts is not a server that boots: mod loading
+			// failures (wrong Java, missing dependency) only show up here.
+			state := target.WaitForBoot(s.bgCtx, modpackBootTimeout)
+			if state == srv.StateRunning {
+				report("completed", 100, "Modpack instalado e servidor iniciado", b.ID, "")
+				return
+			}
+			err = fmt.Errorf("o servidor não terminou de iniciar com o modpack (estado: %s)", state)
+			if hint := target.BootFailureHint(4); hint != "" {
+				err = fmt.Errorf("%w:\n%s", err, hint)
+			}
 		}
 		_ = target.Kill(s.bgCtx, s.dc)
 	}

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -346,27 +347,42 @@ func isFabricClientOnlyMod(filePath string) (bool, error) {
 		if f.Name != "fabric.mod.json" {
 			continue
 		}
+		// This is a best-effort optimisation, never a reason to fail the
+		// install: anything we can't read is kept and left to the loader.
 		if f.UncompressedSize64 > uint64(maxFabricModMetaBytes) {
-			return false, fmt.Errorf("fabric.mod.json is too large")
+			return false, nil
 		}
 		r, err := f.Open()
 		if err != nil {
-			return false, err
+			return false, nil
 		}
-		var metadata struct {
-			Environment string `json:"environment"`
+		raw, readErr := io.ReadAll(io.LimitReader(r, maxFabricModMetaBytes))
+		_ = r.Close()
+		if readErr != nil {
+			return false, nil
 		}
-		decodeErr := json.NewDecoder(io.LimitReader(r, maxFabricModMetaBytes)).Decode(&metadata)
-		closeErr := r.Close()
-		if decodeErr != nil {
-			return false, fmt.Errorf("invalid fabric.mod.json: %w", decodeErr)
-		}
-		if closeErr != nil {
-			return false, closeErr
-		}
-		return strings.EqualFold(metadata.Environment, "client"), nil
+		return strings.EqualFold(fabricEnvironment(raw), "client"), nil
 	}
 	return false, nil
+}
+
+var fabricEnvironmentPattern = regexp.MustCompile(`"environment"\s*:\s*"([^"]*)"`)
+
+// fabricEnvironment reads fabric.mod.json's top-level "environment". Fabric's
+// own parser is lenient (published mods ship raw newlines inside strings,
+// e.g. Better End and Cobblemon Additions), so a strict decode failure falls
+// back to a pattern match instead of rejecting a valid mod.
+func fabricEnvironment(raw []byte) string {
+	var metadata struct {
+		Environment string `json:"environment"`
+	}
+	if json.Unmarshal(raw, &metadata) == nil {
+		return metadata.Environment
+	}
+	if match := fabricEnvironmentPattern.FindSubmatch(raw); match != nil {
+		return string(match[1])
+	}
+	return ""
 }
 
 func allowedModrinthURL(raw string) error {

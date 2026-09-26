@@ -356,6 +356,47 @@ func (s *Server) awaitReady(sub *console.Subscriber) {
 	}
 }
 
+// WaitForBoot blocks until the server leaves StateStarting (boot-done line
+// seen, crash, or stop) or timeout elapses, and returns the state it ended in.
+func (s *Server) WaitForBoot(ctx context.Context, timeout time.Duration) State {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(readyPollInterval)
+	defer ticker.Stop()
+	for {
+		s.mu.Lock()
+		state := s.State
+		s.mu.Unlock()
+		if state != StateStarting {
+			return state
+		}
+		select {
+		case <-ctx.Done():
+			return state
+		case <-deadline.C:
+			return state
+		case <-ticker.C:
+		}
+	}
+}
+
+// BootFailureHint returns the last console lines that look like the reason
+// a boot failed (FATAL/ERROR/exception), for a user-facing error message.
+func (s *Server) BootFailureHint(max int) string {
+	lines, _ := s.Hub.RingSince(0)
+	var hits []string
+	for _, line := range lines {
+		text := strings.TrimSpace(line.Data)
+		if strings.Contains(text, "FATAL") || strings.Contains(text, "Exception") || strings.Contains(text, "/ERROR]") || strings.Contains(text, "requires") {
+			hits = append(hits, text)
+		}
+	}
+	if len(hits) > max {
+		hits = hits[len(hits)-max:]
+	}
+	return strings.Join(hits, "\n")
+}
+
 func (s *Server) isStarting() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
