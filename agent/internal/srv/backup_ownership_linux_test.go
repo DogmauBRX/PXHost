@@ -128,6 +128,28 @@ func TestManager_ReassertDataDirOwnershipFixesWrongOwner(t *testing.T) {
 	}
 }
 
+func TestServer_InstallOwnershipCheckRejectsUnrepairableDataDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("requires an unprivileged process to exercise a failed chown")
+	}
+
+	dataDir := t.TempDir()
+	node := spec.Node{DataDir: dataDir}
+	sv := spec.Server{UUID: "install-owner-test", UID: os.Getuid(), Limits: spec.Limits{MemoryMB: 512}}
+	s, err := New(sv, node)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Model a directory whose expected sandbox uid differs from its real
+	// owner. The old install path ignored this state and only failed inside
+	// Docker at `cd /mnt/server`; the preflight must surface it directly.
+	s.spec.UID = os.Getuid() + 1
+	if err := s.ensureDataDirOwnership(); err == nil {
+		t.Fatal("ownership check succeeded despite being unable to chown the data directory")
+	}
+}
+
 func ownerUID(t *testing.T, path string) int {
 	t.Helper()
 	info, err := os.Stat(path)

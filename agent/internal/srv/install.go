@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/gxhost/agent/internal/console"
@@ -33,6 +34,20 @@ const defaultInstallTimeout = 15 * time.Minute
 func (s *Server) Install(ctx context.Context, dc dockerFull, image, entrypoint, script string, timeout time.Duration) error {
 	if timeout <= 0 {
 		timeout = defaultInstallTimeout
+	}
+
+	// The installer runs as the server's sandboxed uid and its first action
+	// is normally `cd /mnt/server`. A restored/swapped directory, or a
+	// creation-time chown that failed, can leave the bind-mount root owned by
+	// the agent with mode 0750. In that state Docker starts the installer
+	// normally, but every install fails later with an opaque permission error.
+	//
+	// Do this in the install path itself instead of relying only on the
+	// manager's periodic ownership sweep: a reinstall may begin before the
+	// next sweep, and a failed chown must abort with the real cause before an
+	// installer container is created.
+	if err := s.ensureDataDirOwnership(); err != nil {
+		return fmt.Errorf("srv: preparing install data directory: %w", err)
 	}
 
 	scriptPath, err := s.writeInstallScript(script)
@@ -85,6 +100,14 @@ func (s *Server) Install(ctx context.Context, dc dockerFull, image, entrypoint, 
 	}
 	if exitCode != 0 {
 		return fmt.Errorf("srv: install script exited %d", exitCode)
+	}
+	return nil
+}
+
+func (s *Server) ensureDataDirOwnership() error {
+	dataDir := filepath.Join(s.node.DataDir, s.UUID)
+	if err := os.Chown(dataDir, s.spec.UID, s.spec.UID); err != nil && runtime.GOOS == "linux" {
+		return fmt.Errorf("chown %q to uid %d: %w", dataDir, s.spec.UID, err)
 	}
 	return nil
 }
