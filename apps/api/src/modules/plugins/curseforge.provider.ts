@@ -2,10 +2,11 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ModpackCacheService } from '../modpacks/modpack-cache.service';
 import { ModpackProviderError } from '../modpacks/modpack-provider.error';
+import type { ModpackMetadata, ModpackProject, ModpackProvider, ModpackSearchQuery, ModpackSearchResult, ModpackSummary, ModpackVersion } from '../modpacks/modpack-provider';
 
 const API_BASE = 'https://api.curseforge.com/v1';
 const MINECRAFT_GAME_ID = 432;
-const MINECRAFT_MODS_CLASS_ID = 6;
+const MINECRAFT_MODPACKS_CLASS_ID = 4471;
 const SEARCH_TTL_SECONDS = 5 * 60;
 const PROJECT_TTL_SECONDS = 15 * 60;
 const VERSION_TTL_SECONDS = 5 * 60;
@@ -24,55 +25,12 @@ const LOADER_NAMES: Record<number, string> = {
   6: 'neoforge',
 };
 
-const SORT_FIELDS: Record<CurseForgePluginSort, number> = {
+const SORT_FIELDS: Record<ModpackSearchQuery['sort'], number> = {
   relevance: 1,
   popularity: 2,
   updated: 3,
   downloads: 6,
 };
-
-export type CurseForgePluginSort = 'relevance' | 'popularity' | 'downloads' | 'updated';
-
-export interface CurseForgePluginSummary {
-  projectId: string;
-  slug: string;
-  name: string;
-  author: string | null;
-  icon: string | null;
-  description: string;
-  downloads: number;
-  categories: string[];
-  minecraftVersions: string[];
-  loaders: string[];
-  updatedAt: string;
-}
-
-export interface CurseForgePluginProject extends CurseForgePluginSummary {
-  body: string;
-  gallery: string[];
-  pageUrl: string;
-  publishedAt: string;
-}
-
-export interface CurseForgePluginVersion {
-  versionId: string;
-  projectId: string;
-  name: string;
-  versionNumber: string;
-  minecraftVersions: string[];
-  loaders: string[];
-  releaseType: 'release' | 'beta' | 'alpha';
-  publishedAt: string;
-  downloads: number;
-  files: Array<{ filename: string; size: number; primary: boolean; hashes: { sha1?: string } }>;
-}
-
-export interface CurseForgePluginSearchResult {
-  items: CurseForgePluginSummary[];
-  total: number;
-  offset: number;
-  limit: number;
-}
 
 interface CurseForgeMod {
   id: number;
@@ -109,7 +67,8 @@ interface CurseForgeSearchResponse {
 }
 
 @Injectable()
-export class CurseForgeProvider {
+export class CurseForgeProvider implements ModpackProvider {
+  readonly source = 'curseforge' as const;
   private readonly apiKey?: string;
 
   constructor(
@@ -119,21 +78,21 @@ export class CurseForgeProvider {
     this.apiKey = config.get<string>('CURSEFORGE_API_KEY');
   }
 
-  search(query: { query: string; minecraftVersion: string; loader: string; sort: CurseForgePluginSort; offset: number; limit: number }): Promise<CurseForgePluginSearchResult> {
-    const loaderType = LOADER_TYPES[query.loader.toLowerCase()];
-    if (!loaderType) throw new ModpackProviderError('curseforge', 'invalid_response', 'O software deste servidor não é compatível com o catálogo do CurseForge.', HttpStatus.CONFLICT);
-    return this.cache.remember('curseforge:mods:search', query, SEARCH_TTL_SECONDS, async () => {
+  search(query: ModpackSearchQuery): Promise<ModpackSearchResult> {
+    const loaderType = query.loader ? LOADER_TYPES[query.loader.toLowerCase()] : undefined;
+    if (query.loader && !loaderType) throw new ModpackProviderError(this.source, 'invalid_response', 'O loader selecionado não é compatível com o catálogo do CurseForge.', HttpStatus.CONFLICT);
+    return this.cache.remember('curseforge:modpacks:search', query, SEARCH_TTL_SECONDS, async () => {
       const params = new URLSearchParams({
         gameId: String(MINECRAFT_GAME_ID),
-        classId: String(MINECRAFT_MODS_CLASS_ID),
-        gameVersion: query.minecraftVersion,
-        modLoaderType: String(loaderType),
-        searchFilter: query.query,
+        classId: String(MINECRAFT_MODPACKS_CLASS_ID),
+        searchFilter: query.query ?? '',
         sortField: String(SORT_FIELDS[query.sort]),
         sortOrder: 'desc',
         index: String(query.offset),
         pageSize: String(Math.min(50, query.limit)),
       });
+      if (query.minecraftVersion) params.set('gameVersion', query.minecraftVersion);
+      if (loaderType) params.set('modLoaderType', String(loaderType));
       const response = await this.request<CurseForgeSearchResponse>(`/mods/search?${params.toString()}`);
       return {
         items: response.data.map((mod) => this.normalizeSummary(mod)),
@@ -144,61 +103,49 @@ export class CurseForgeProvider {
     });
   }
 
-  getProject(projectId: string): Promise<CurseForgePluginProject> {
-    return this.cache.remember('curseforge:mods:project', projectId, PROJECT_TTL_SECONDS, async () => {
+  getProject(projectId: string): Promise<ModpackProject> {
+    return this.cache.remember('curseforge:modpacks:project', projectId, PROJECT_TTL_SECONDS, async () => {
       const response = await this.request<{ data: CurseForgeMod }>(`/mods/${encodeURIComponent(projectId)}`);
       const mod = response.data;
       return {
         ...this.normalizeSummary(mod),
         body: mod.summary ?? '',
         gallery: (mod.screenshots ?? []).map((item) => item.url ?? item.thumbnailUrl).filter((url): url is string => Boolean(url)),
-        pageUrl: mod.links?.websiteUrl ?? `https://www.curseforge.com/minecraft/mc-mods/${mod.slug ?? mod.id}`,
+        pageUrl: mod.links?.websiteUrl ?? `https://www.curseforge.com/minecraft/modpacks/${mod.slug ?? mod.id}`,
         publishedAt: mod.dateCreated ?? mod.dateModified ?? new Date(0).toISOString(),
       };
     });
   }
 
-  getVersions(projectId: string, minecraftVersion: string, loader: string): Promise<CurseForgePluginVersion[]> {
-    const loaderType = LOADER_TYPES[loader.toLowerCase()];
-    if (!loaderType) throw new ModpackProviderError('curseforge', 'invalid_response', 'O software deste servidor não é compatível com o catálogo do CurseForge.', HttpStatus.CONFLICT);
-    return this.cache.remember('curseforge:mods:versions', { projectId, minecraftVersion, loader }, VERSION_TTL_SECONDS, async () => {
-      const params = new URLSearchParams({ gameVersion: minecraftVersion, modLoaderType: String(loaderType), index: '0', pageSize: '50' });
+  getVersions(projectId: string, filters: { minecraftVersion?: string; loader?: string } = {}): Promise<ModpackVersion[]> {
+    const loaderType = filters.loader ? LOADER_TYPES[filters.loader.toLowerCase()] : undefined;
+    if (filters.loader && !loaderType) throw new ModpackProviderError(this.source, 'invalid_response', 'O loader selecionado não é compatível com o catálogo do CurseForge.', HttpStatus.CONFLICT);
+    return this.cache.remember('curseforge:modpacks:versions', { projectId, ...filters }, VERSION_TTL_SECONDS, async () => {
+      const params = new URLSearchParams({ index: '0', pageSize: '50' });
+      if (filters.minecraftVersion) params.set('gameVersion', filters.minecraftVersion);
+      if (loaderType) params.set('modLoaderType', String(loaderType));
       const response = await this.request<{ data: CurseForgeFile[] }>(`/mods/${encodeURIComponent(projectId)}/files?${params.toString()}`);
       return response.data.map((file) => this.normalizeVersion(file, projectId));
     });
   }
 
-  getVersion(projectId: string, versionId: string): Promise<CurseForgePluginVersion> {
-    return this.cache.remember('curseforge:mods:version', { projectId, versionId }, VERSION_TTL_SECONDS, async () => {
+  getVersion(versionId: string, projectId?: string): Promise<ModpackVersion> {
+    if (!projectId) throw new ModpackProviderError(this.source, 'invalid_response', 'O modpack da versão não foi informado.', HttpStatus.BAD_REQUEST);
+    return this.cache.remember('curseforge:modpacks:version', { projectId, versionId }, VERSION_TTL_SECONDS, async () => {
       const response = await this.request<{ data: CurseForgeFile }>(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(versionId)}`);
-      if (String(response.data.modId) !== projectId) throw new ModpackProviderError('curseforge', 'not_found', 'Versão do mod não encontrada.', HttpStatus.NOT_FOUND);
+      if (String(response.data.modId) !== projectId) throw new ModpackProviderError('curseforge', 'not_found', 'Versão do modpack não encontrada.', HttpStatus.NOT_FOUND);
       return this.normalizeVersion(response.data, projectId);
     });
   }
 
-  async getDownloadUrl(projectId: string, versionId: string): Promise<string> {
-    const response = await this.request<{ data: string }>(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(versionId)}/download-url`);
-    if (!response.data) throw new ModpackProviderError('curseforge', 'unavailable', 'O CurseForge não disponibilizou o download deste mod.');
-    return response.data;
+  getMetadata(): Promise<ModpackMetadata> {
+    return Promise.resolve({ minecraftVersions: [], loaders: Object.keys(LOADER_TYPES), categories: [] });
   }
 
-  async downloadFile(projectId: string, versionId: string): Promise<Buffer> {
-    const url = new URL(await this.getDownloadUrl(projectId, versionId));
-    if (url.protocol !== 'https:' || !url.hostname.endsWith('.forgecdn.net')) {
-      throw new ModpackProviderError('curseforge', 'invalid_response', 'O arquivo do CurseForge não está hospedado em um CDN permitido.');
-    }
-    const response = await fetch(url, {
-      headers: { 'x-api-key': this.apiKey! },
-      redirect: 'error',
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!response.ok || !response.body) throw new ModpackProviderError('curseforge', 'unavailable', 'Não foi possível baixar o mod do CurseForge agora.');
-    return Buffer.from(await response.arrayBuffer());
-  }
-
-  private normalizeSummary(mod: CurseForgeMod): CurseForgePluginSummary {
+  private normalizeSummary(mod: CurseForgeMod): ModpackSummary {
     const indexes = mod.latestFilesIndexes ?? [];
     return {
+      source: this.source,
       projectId: String(mod.id),
       slug: mod.slug ?? String(mod.id),
       name: mod.name,
@@ -213,10 +160,11 @@ export class CurseForgeProvider {
     };
   }
 
-  private normalizeVersion(file: CurseForgeFile, projectId: string): CurseForgePluginVersion {
+  private normalizeVersion(file: CurseForgeFile, projectId: string): ModpackVersion {
     const sha1 = file.hashes?.find((hash) => hash.algo === 1)?.value;
     const gameVersions = file.gameVersions ?? [];
     return {
+      source: this.source,
       versionId: String(file.id),
       projectId,
       name: file.displayName ?? file.fileName,
@@ -226,7 +174,7 @@ export class CurseForgeProvider {
       releaseType: file.releaseType === 1 ? 'release' : file.releaseType === 2 ? 'beta' : 'alpha',
       publishedAt: file.fileDate,
       downloads: file.downloadCount ?? 0,
-      files: [{ filename: file.fileName, size: file.fileLength, primary: true, hashes: sha1 ? { sha1 } : {} }],
+      files: [{ filename: file.fileName, size: file.fileLength, primary: true, url: '', hashes: sha1 ? { sha1 } : {} }],
     };
   }
 
@@ -239,7 +187,7 @@ export class CurseForgeProvider {
           signal: AbortSignal.timeout(10_000),
         });
         if (response.ok) return (await response.json()) as T;
-        if (response.status === 404) throw new ModpackProviderError('curseforge', 'not_found', 'Mod não encontrado no CurseForge.', HttpStatus.NOT_FOUND);
+        if (response.status === 404) throw new ModpackProviderError('curseforge', 'not_found', 'Modpack não encontrado no CurseForge.', HttpStatus.NOT_FOUND);
         if ((response.status === 429 || response.status >= 500) && attempt === 0) {
           await new Promise((resolve) => setTimeout(resolve, 250));
           continue;

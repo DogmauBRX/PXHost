@@ -1,4 +1,4 @@
-export type ModpackSource = 'modrinth';
+export type ModpackSource = 'modrinth' | 'curseforge';
 export type ModpackSort = 'relevance' | 'popularity' | 'downloads' | 'updated';
 
 export interface ModpackSearchQuery {

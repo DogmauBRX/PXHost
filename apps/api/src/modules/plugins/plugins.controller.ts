@@ -41,35 +41,4 @@ export class PluginsController {
     return this.plugins.install(user, serverId, projectId, versionId);
   }
 
-  @Get('curseforge/search')
-  searchCurseForge(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('serverId') serverId: string,
-    @Query('query') query = '',
-    @Query('sort') requestedSort = 'downloads',
-    @Query('offset') offset = '0',
-  ) {
-    const sort = SORTS.has(requestedSort as ModpackSort) ? requestedSort as ModpackSort : 'downloads';
-    return this.plugins.searchCurseForge(user, serverId, query, sort, Math.max(0, Number(offset) || 0));
-  }
-
-  @Get('curseforge/:projectId')
-  curseForgeProject(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Param('projectId') projectId: string) {
-    return this.plugins.curseForgeProject(user, serverId, projectId);
-  }
-
-  @Get('curseforge/:projectId/versions')
-  curseForgeVersions(@CurrentUser() user: AuthenticatedUser, @Param('serverId') serverId: string, @Param('projectId') projectId: string) {
-    return this.plugins.curseForgeVersions(user, serverId, projectId);
-  }
-
-  @Post('curseforge/install')
-  installCurseForge(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('serverId') serverId: string,
-    @Body('projectId') projectId: string,
-    @Body('versionId') versionId?: string,
-  ) {
-    return this.plugins.installCurseForge(user, serverId, projectId, versionId);
-  }
 }

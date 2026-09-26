@@ -17,7 +17,7 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
   const [sort, setSort] = useState<ModpackSort>('relevance');
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<{ source: ModpackSource; projectId: string } | null>(null);
-  const source: ModpackSource = 'modrinth';
+  const [source, setSource] = useState<ModpackSource>('modrinth');
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -46,8 +46,23 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
     setOffset(0);
   }
 
+  function selectSource(nextSource: ModpackSource) {
+    setSource(nextSource);
+    setMinecraftVersion('');
+    setLoader('');
+    setCategory('');
+    setOffset(0);
+  }
+
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-1 border-b border-border" role="tablist" aria-label="Catálogo de modpacks">
+        {(['modrinth', 'curseforge'] as const).map((catalog) => (
+          <button key={catalog} type="button" role="tab" aria-selected={source === catalog} onClick={() => selectSource(catalog)} className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${source === catalog ? 'border-accent text-accent-strong' : 'border-transparent text-text-muted hover:text-text'}`}>
+            {catalog === 'modrinth' ? 'Modrinth' : 'CurseForge'}
+          </button>
+        ))}
+      </div>
       <div className="grid gap-3 lg:grid-cols-[minmax(16rem,2fr)_repeat(4,minmax(8rem,1fr))]">
         <Input icon={Search} value={draftQuery} onChange={(e) => setDraftQuery(e.target.value)} placeholder="Pesquisar modpacks..." aria-label="Pesquisar modpacks" />
         <Select value={minecraftVersion} onChange={(e) => resetPage(setMinecraftVersion, e.target.value)} aria-label="Versão do Minecraft">
@@ -71,7 +86,7 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
       </div>
 
       {results.isError && <Alert title="Catálogo indisponível">{results.error.message}</Alert>}
-      {results.isLoading && <LoadingRow label="Buscando modpacks no Modrinth…" />}
+      {results.isLoading && <LoadingRow label={`Buscando modpacks no ${source === 'curseforge' ? 'CurseForge' : 'Modrinth'}…`} />}
       {!results.isLoading && !results.isError && results.data?.items.length === 0 && (
         <EmptyState icon={Search} title="Nenhum modpack encontrado" description="Tente remover um filtro ou pesquisar outro nome." />
       )}
@@ -101,7 +116,7 @@ export function ModpacksPanel({ serverId, ctx }: { serverId: string; ctx: AddonC
         projectId={selected?.projectId ?? null}
         serverMinecraftVersion={ctx.server.minecraftVersion}
         serverSoftware={ctx.software.kind}
-        canInstall={canInstall}
+        canInstall={canInstall && (selected?.source ?? source) === 'modrinth'}
         onClose={() => setSelected(null)}
       />
     </div>
@@ -114,7 +129,7 @@ function ModpackCard({ item, onDetails }: { item: ModpackSummary; onDetails: () 
     <article className="flex min-h-64 flex-col rounded-card border border-border bg-surface p-4 shadow-xs transition hover:border-border-strong">
       <div className="flex items-start gap-3">
         {item.icon ? <img src={item.icon} alt="" loading="lazy" className="h-14 w-14 shrink-0 rounded-xl object-cover" /> : <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-surface-2"><PackageOpen className="h-6 w-6 text-text-faint" /></div>}
-        <div className="min-w-0 flex-1"><h3 className="truncate font-semibold text-text">{item.name}</h3><p className="truncate text-xs text-text-faint">{item.author ? `por ${item.author}` : 'Autor não informado'}</p><Badge>Modrinth</Badge></div>
+        <div className="min-w-0 flex-1"><h3 className="truncate font-semibold text-text">{item.name}</h3><p className="truncate text-xs text-text-faint">{item.author ? `por ${item.author}` : 'Autor não informado'}</p><Badge>{item.source === 'curseforge' ? 'CurseForge' : 'Modrinth'}</Badge></div>
       </div>
       <p className="mt-3 line-clamp-3 text-sm leading-5 text-text-muted">{item.description}</p>
       <div className="mt-3 flex flex-wrap gap-1.5">
@@ -125,7 +140,7 @@ function ModpackCard({ item, onDetails }: { item: ModpackSummary; onDetails: () 
         <span className="inline-flex items-center gap-1"><Download className="h-3.5 w-3.5" />{formatCount(item.downloads)}</span>
         <span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{new Date(item.updatedAt).toLocaleDateString('pt-BR')}</span>
       </div>
-      <div className="mt-3 flex gap-2 border-t border-border pt-3"><Button size="sm" className="flex-1" onClick={onDetails}>Ver detalhes</Button><Button size="sm" variant="primary" className="flex-1" onClick={onDetails}>Instalar</Button></div>
+      <div className="mt-3 flex gap-2 border-t border-border pt-3"><Button size="sm" className="flex-1" onClick={onDetails}>Ver detalhes</Button><Button size="sm" variant="primary" className="flex-1" onClick={onDetails}>{item.source === 'curseforge' ? 'Ver versões' : 'Instalar'}</Button></div>
     </article>
   );
 }

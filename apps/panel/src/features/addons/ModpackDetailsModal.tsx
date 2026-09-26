@@ -20,6 +20,7 @@ const EMPTY_VERSIONS: never[] = [];
 
 export function ModpackDetailsModal(props: Props) {
   const { serverId, source, projectId, serverMinecraftVersion, serverSoftware, canInstall, onClose } = props;
+  const supportsInstall = source === 'modrinth';
   const [minecraftVersion, setMinecraftVersion] = useState('');
   const [loader, setLoader] = useState('');
   const [versionId, setVersionId] = useState('');
@@ -79,17 +80,17 @@ export function ModpackDetailsModal(props: Props) {
       open={projectId !== null}
       onClose={onClose}
       title={project?.name ?? 'Detalhes do modpack'}
-      description={project ? `Modrinth${project.author ? ` · por ${project.author}` : ''}` : undefined}
+      description={project ? `${source === 'curseforge' ? 'CurseForge' : 'Modrinth'}${project.author ? ` · por ${project.author}` : ''}` : undefined}
       size="lg"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Fechar</Button>
           <Button
             variant="primary"
-            disabled={!canInstall || !compatible || !selectedRelease || Boolean(activeInstallation) || installMutation.isPending}
+            disabled={!supportsInstall || !canInstall || !compatible || !selectedRelease || Boolean(activeInstallation) || installMutation.isPending}
             onClick={() => installMutation.mutate()}
           >
-            <PackageOpen className="h-4 w-4" /> {installMutation.isPending ? 'Iniciando…' : activeInstallation ? 'Instalando…' : 'Instalar Modpack'}
+            <PackageOpen className="h-4 w-4" /> {supportsInstall ? (installMutation.isPending ? 'Iniciando…' : activeInstallation ? 'Instalando…' : 'Instalar Modpack') : 'Instalação indisponível'}
           </Button>
         </>
       }
@@ -145,7 +146,8 @@ export function ModpackDetailsModal(props: Props) {
             {selectedRelease?.files[0] && <p className="mt-1 inline-flex items-center gap-1 text-xs text-text-faint"><HardDrive className="h-3.5 w-3.5" />Pacote: {formatBytes(selectedRelease.files[0].size)}</p>}
           </div>
 
-          {!canInstall && <Alert tone="warn">Você não possui a permissão de instalar modpacks neste servidor.</Alert>}
+          {!supportsInstall && <Alert tone="info">As versões do CurseForge podem ser consultadas aqui. A instalação automática ainda não está disponível porque o Agent atualmente instala somente pacotes <code>.mrpack</code> do Modrinth.</Alert>}
+          {supportsInstall && !canInstall && <Alert tone="warn">Você não possui a permissão de instalar modpacks neste servidor.</Alert>}
           {!compatible && <Alert tone="warn">Esta release não corresponde à versão do Minecraft e ao loader atuais. Troque a seleção ou altere primeiro o software do servidor.</Alert>}
           {installMutation.isError && <Alert>Não foi possível iniciar a instalação: {installMutation.error.message}</Alert>}
           {activeInstallation && (
@@ -160,7 +162,7 @@ export function ModpackDetailsModal(props: Props) {
           {installationQuery.data?.status === 'failed' && (
             <Alert title="Instalação não concluída">{installationQuery.data.message}{installationQuery.data.errorMessage ? `: ${installationQuery.data.errorMessage}` : ''}</Alert>
           )}
-          <Alert tone="info">O servidor precisa estar desligado. Antes de alterar os arquivos, o Agent cria um backup, valida o pacote e instala em uma área de staging com rollback automático.</Alert>
+          {supportsInstall && <Alert tone="info">O servidor precisa estar desligado. Antes de alterar os arquivos, o Agent cria um backup, valida o pacote e instala em uma área de staging com rollback automático.</Alert>}
 
           {project.body && <div><h3 className="mb-2 text-sm font-semibold">Sobre</h3><p className="whitespace-pre-wrap text-sm leading-6 text-text-muted">{project.body}</p></div>}
         </div>

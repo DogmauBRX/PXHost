@@ -73,7 +73,6 @@ export function ModrinthPluginsPanel({ serverId, ctx }: AddonSourcePanelProps) {
         softwareLabel={ctx.software.label}
         minecraftVersion={ctx.server.minecraftVersion}
         canInstall={canInstall}
-        source="modrinth"
         onClose={() => setSelectedProjectId(null)}
       />
     </div>

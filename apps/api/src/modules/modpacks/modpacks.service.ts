@@ -8,6 +8,7 @@ import type { InstallModpackDto, ModpackProgressDto } from './dto/install-modpac
 import type { ListModpackVersionsDto, SearchModpacksDto } from './dto/modpack-query.dto';
 import type { ModpackProvider, ModpackSource } from './modpack-provider';
 import { ModrinthProvider } from './modrinth.provider';
+import { CurseForgeProvider } from '../plugins/curseforge.provider';
 
 @Injectable()
 export class ModpacksService {
@@ -20,15 +21,18 @@ export class ModpacksService {
     private readonly audit: AuditService,
     private readonly activity: ActivityService,
     modrinth: ModrinthProvider,
+    curseforge: CurseForgeProvider,
   ) {
     this.providers = new Map<ModpackSource, ModpackProvider>([
       [modrinth.source, modrinth],
+      [curseforge.source, curseforge],
     ]);
   }
 
   async install(actor: AccessActor, serverId: string, dto: InstallModpackDto) {
     const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('addons.install')) throw new ForbiddenException('Missing permission: addons.install');
+    if (dto.source === 'curseforge') throw new ConflictException('O catálogo do CurseForge está disponível para pesquisa e detalhes. A instalação automática de modpacks do CurseForge ainda não é suportada pelo Agent.');
     if (!server.template?.softwareKind) throw new ConflictException('O software atual do servidor não foi identificado.');
 
     const runtime = await this.agent.getServerStatus(server.nodeId, server.id);
