@@ -96,7 +96,7 @@ describe('CurseForgeProvider', () => {
     ]);
 
     expect(files.map((item) => [item.projectId, item.skip])).toEqual([[10, true], [11, true], [12, true], [13, false]]);
-    expect(projectMeta[11]).toEqual({ slug: 'colorwheel', name: 'Colorwheel', requires: [10] });
+    expect(projectMeta[11]).toEqual({ slug: 'colorwheel', name: 'Colorwheel', requires: [10], filename: 'colorwheel.jar' });
     expect(projectMeta[13].requires).toEqual([]); // optional dependencies don't count
   });
 

@@ -1,26 +1,28 @@
 import { planCurseForgeRetrySkips } from './curseforge-retry-plan';
 import type { CurseForgeProjectMeta } from '../plugins/curseforge.provider';
 
-// Project ids here are arbitrary; the shapes mirror DeceasedCraft 5.10.17,
-// where these exact crashes were captured live on 2026-09-27.
-const OCULUS = 1;
-const COLORWHEEL = 2;
-const COLORWHEEL_PATCHER = 3;
-const SODIUM_EXTRAS = 4;
-const ITEMPHYSIC_LITE = 5;
-const FRAMEWORK = 6;
-const CONTROLLABLE = 7;
-const CGM = 8;
+// Slugs, names and jar names below are the real ones from DeceasedCraft
+// 5.10.17, where these exact crashes were captured live on 2026-09-27.
+const OCULUS = 581495;
+const COLORWHEEL = 1254143;
+const COLORWHEEL_PATCHER = 1285475;
+const SODIUM_EXTRAS = 558905;
+const ITEMPHYSIC_LITE = 270441;
+const FRAMEWORK = 549225;
+const CONTROLLABLE = 317269;
+const CREATIVECORE = 257814;
+const CREATE_BETTER_FPS = 900001;
 
 const meta: Record<number, CurseForgeProjectMeta> = {
-  [OCULUS]: { slug: 'oculus', name: 'Oculus', requires: [] },
-  [COLORWHEEL]: { slug: 'colorwheel', name: 'Colorwheel', requires: [OCULUS] },
-  [COLORWHEEL_PATCHER]: { slug: 'colorwheel-patcher', name: 'Colorwheel Patcher', requires: [COLORWHEEL] },
-  [SODIUM_EXTRAS]: { slug: 'sodium-extras', name: 'Sodium Extras', requires: [] },
-  [ITEMPHYSIC_LITE]: { slug: 'itemphysic-lite', name: 'ItemPhysic Lite', requires: [] },
-  [FRAMEWORK]: { slug: 'framework', name: 'Framework', requires: [] },
-  [CONTROLLABLE]: { slug: 'controllable', name: 'Controllable', requires: [FRAMEWORK] },
-  [CGM]: { slug: 'mrcrayfishs-gun-mod', name: "MrCrayfish's Gun Mod", requires: [FRAMEWORK] },
+  [OCULUS]: { slug: 'oculus', name: 'Oculus', requires: [], filename: 'oculus-mc1.20.1-1.8.0.jar' },
+  [COLORWHEEL]: { slug: 'colorwheel', name: 'Colorwheel', requires: [OCULUS], filename: 'colorwheel-forge-1.1.1+mc1.20.1.jar' },
+  [COLORWHEEL_PATCHER]: { slug: 'colorwheel-patcher', name: 'Colorwheel Patcher', requires: [COLORWHEEL], filename: 'colorwheel_patcher-forge-1.0.3+mc1.20.1.jar' },
+  [SODIUM_EXTRAS]: { slug: 'magnesium-extras', name: 'Sodium/Embeddium Extras', requires: [], filename: 'sodiumextras-forge-1.0.7-1.20.1.jar' },
+  [ITEMPHYSIC_LITE]: { slug: 'itemphysic-lite', name: 'ItemPhysic Lite', requires: [CREATIVECORE], filename: 'ItemPhysicLite_FORGE_v1.6.6_mc1.20.1.jar' },
+  [CREATIVECORE]: { slug: 'creativecore', name: 'CreativeCore', requires: [], filename: 'CreativeCore_FORGE_v2.12.9_mc1.20.1.jar' },
+  [FRAMEWORK]: { slug: 'framework', name: 'Framework', requires: [], filename: 'framework-forge-1.20.1-0.7.15.jar' },
+  [CONTROLLABLE]: { slug: 'controllable', name: 'Controllable', requires: [FRAMEWORK], filename: 'controllable-forge-1.20.1-0.21.7.jar' },
+  [CREATE_BETTER_FPS]: { slug: 'create-better-fps', name: 'Create Better FPS', requires: [], filename: 'createbetterfps-1.20.1-1.1.1.jar' },
 };
 
 const missingDependencyCrash = [
@@ -28,46 +30,43 @@ const missingDependencyCrash = [
   'Mod §ecolorwheel§r requires §6oculus§r §o1.7.0 or above§r',
 ].join('\n');
 
-const clientCodeCrash = [
-  '[main/ERROR] [minecraft/Main]: Failed to start the minecraft server',
-  'net.minecraftforge.fml.LoadingFailedException: Loading errors encountered: [',
-  '\tSodium Extras (sodiumextras) has failed to load correctly',
+// Verbatim from the Agent's error message on the live retest.
+const constructCrash = [
+  'o servidor não terminou de iniciar com o modpack (estado: crashed):',
+  'Sodium Extras (sodiumextras) has failed to load correctly',
   '§7java.lang.RuntimeException: Attempted to load class net/minecraft/client/Options for invalid dist DEDICATED_SERVER,',
-  '\tItemPhysicLite (itemphysiclite) has failed to load correctly',
+  'ItemPhysicLite (itemphysiclite) has failed to load correctly',
   '§7java.lang.ExceptionInInitializerError: null,',
-  '\tFramework (framework) has failed to load correctly',
+  'Framework (framework) has failed to load correctly',
   '§7java.lang.NoClassDefFoundError: net/minecraft/client/gui/components/toasts/Toast',
-  ']',
 ].join('\n');
 
 describe('planCurseForgeRetrySkips', () => {
   it('skips a mod that requires one we skipped, plus anything that requires it in turn', () => {
-    expect(planCurseForgeRetrySkips(missingDependencyCrash, meta, [OCULUS]).sort()).toEqual([COLORWHEEL, COLORWHEEL_PATCHER]);
+    expect(planCurseForgeRetrySkips(missingDependencyCrash, meta, [OCULUS]).sort()).toEqual([COLORWHEEL, COLORWHEEL_PATCHER].sort());
   });
 
   it('ignores a missing dependency we did not skip ourselves', () => {
     expect(planCurseForgeRetrySkips(missingDependencyCrash, meta, [])).toEqual([]);
   });
 
-  it('skips a mod that reached for client-only code, matching mod id to slug despite punctuation', () => {
-    expect(planCurseForgeRetrySkips(clientCodeCrash, meta, [])).toContain(SODIUM_EXTRAS);
+  it('on the real DeceasedCraft construct crash, skips the leaf mods and keeps Framework', () => {
+    expect(planCurseForgeRetrySkips(constructCrash, meta, []).sort()).toEqual([SODIUM_EXTRAS, ITEMPHYSIC_LITE].sort());
   });
 
-  it('never skips a mod that kept mods require, even when it shows a client-code error (the Framework trap)', () => {
-    expect(planCurseForgeRetrySkips(clientCodeCrash, meta, [])).not.toContain(FRAMEWORK);
+  it('matches a mod id to its jar when neither slug nor name resemble it', () => {
+    // "sodiumextras" vs slug "magnesium-extras" / name "Sodium/Embeddium Extras".
+    expect(planCurseForgeRetrySkips(constructCrash, meta, [])).toContain(SODIUM_EXTRAS);
   });
 
-  it('does not treat a failure without a client-only cause as client-only', () => {
-    // ItemPhysicLite's own cause here is an ExceptionInInitializerError, not client code.
-    expect(planCurseForgeRetrySkips(clientCodeCrash, meta, [])).not.toContain(ITEMPHYSIC_LITE);
+  it('never claims a jar whose name merely starts with a shorter mod id', () => {
+    const crash = 'Create (create) has failed to load correctly\n§7java.lang.NullPointerException';
+    expect(planCurseForgeRetrySkips(crash, meta, [])).toEqual([]);
   });
 
-  it('matches by display name when the mod id is unrelated to the slug', () => {
-    const crash = [
-      '\tItemPhysic Lite (weirdid) has failed to load correctly',
-      '§7java.lang.NoClassDefFoundError: net/minecraft/client/renderer/ItemRenderer',
-    ].join('\n');
-    expect(planCurseForgeRetrySkips(crash, meta, [])).toEqual([ITEMPHYSIC_LITE]);
+  it('never skips a mod that kept mods require (the Framework trap)', () => {
+    const crash = 'Framework (framework) has failed to load correctly\n§7java.lang.NoClassDefFoundError: net/minecraft/client/gui/components/toasts/Toast';
+    expect(planCurseForgeRetrySkips(crash, meta, [])).toEqual([]);
   });
 
   it('returns nothing for an unrelated failure', () => {

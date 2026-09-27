@@ -79,6 +79,13 @@ export interface CurseForgeProjectMeta {
   name: string;
   /** Projects in the same manifest this one declares as a required dependency. */
   requires: number[];
+  /**
+   * The jar's file name. Forge names a failing mod by its internal mod id
+   * ("sodiumextras"), which often matches neither slug nor display name
+   * ("magnesium-extras", "Sodium/Embeddium Extras") but does prefix the jar
+   * ("sodiumextras-forge-1.0.7-1.20.1.jar").
+   */
+  filename?: string;
 }
 
 export interface CurseForgeFileRequest {
@@ -230,6 +237,7 @@ export class CurseForgeProvider implements ModpackProvider {
       const existing = projectMeta[file.modId];
       projectMeta[file.modId] = {
         slug: mod?.slug ?? String(file.modId),
+        filename: file.fileName,
         name: mod?.name ?? file.displayName ?? file.fileName,
         requires: [...new Set([...(existing?.requires ?? []), ...requires])],
       };

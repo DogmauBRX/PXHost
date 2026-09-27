@@ -11,9 +11,6 @@ const MISSING_DEPENDENCY = /Mod\s+([a-z0-9_.-]+)\s+requires\s+([a-z0-9_.-]+)/gi;
 //   §7java.lang.RuntimeException: Attempted to load class net/minecraft/client/Options for invalid dist DEDICATED_SERVER
 const MOD_FAILED = /^\s*(.*?)\s*\(([a-z0-9_.-]+)\) has failed to load correctly/i;
 
-// Causes that prove the mod reached for client-only game code on a server.
-const CLIENT_ONLY_CAUSE = /net\/minecraft\/client\/|invalid dist DEDICATED_SERVER/i;
-
 function stripFormatting(text: string): string {
   return text.replace(/§./g, '');
 }
@@ -34,17 +31,21 @@ function normalize(value: string): string {
  *   without it, so X is skipped too — along with anything that itself
  *   requires X, since it would fail the same way next round.
  *
- * - "X has failed to load correctly" caused by client-only game code: X is
- *   skipped ONLY if no project that stays installed declares it as a
- *   required dependency. Forge lists cascade victims in the same failure
- *   block — found live 2026-09-27: Framework appeared there with a client
- *   class error of its own, but four server-side mods genuinely needed it,
- *   and removing it broke the server outright. A mod others depend on is
- *   never assumed to be the culprit.
+ * - "X has failed to load correctly": X is skipped ONLY if no project that
+ *   stays installed declares it as a required dependency. Forge lists
+ *   cascade victims in the same failure block — found live 2026-09-27:
+ *   Framework appeared there with a client-class error of its own, but four
+ *   server-side mods genuinely needed it, and removing it broke the server
+ *   outright. A mod others depend on is never assumed to be the culprit.
+ *   The cause itself isn't required to name client code: on the same pack,
+ *   ItemPhysicLite failed with a bare ExceptionInInitializerError, which a
+ *   client-code rule would never skip, leaving the server unbootable every
+ *   attempt. A mod nothing else needs that stops the server from booting at
+ *   all is safer gone than present.
  *
- * Forge mod ids aren't CurseForge ids; a project is matched when either
- * its slug or its display name normalizes to the same letters and digits
- * as the mod id (or the display name Forge printed).
+ * Forge mod ids aren't CurseForge ids; a project is matched by slug or
+ * display name (compared ignoring punctuation), or failing that by the jar
+ * name starting with the mod id.
  */
 export function planCurseForgeRetrySkips(
   errorMessage: string,
@@ -55,9 +56,19 @@ export function planCurseForgeRetrySkips(
   const excluded = new Set(alreadySkipped);
   const projectIds = Object.keys(meta).map(Number);
 
-  const lookup = (...labels: Array<string | undefined>): number | undefined => {
-    const wanted = labels.filter((label): label is string => Boolean(label)).map(normalize).filter(Boolean);
-    return projectIds.find((id) => wanted.includes(normalize(meta[id].slug)) || wanted.includes(normalize(meta[id].name)));
+  const lookup = (modId: string, displayName?: string): number | undefined => {
+    const wanted = [modId, displayName].filter((label): label is string => Boolean(label)).map(normalize).filter(Boolean);
+    const byLabel = projectIds.find((id) => wanted.includes(normalize(meta[id].slug)) || wanted.includes(normalize(meta[id].name)));
+    if (byLabel !== undefined) return byLabel;
+    // Fall back to the jar name, which conventionally starts with the mod id.
+    // The id must end at a separator so "create" never claims
+    // "createbetterfps-…jar"; ambiguous matches are refused.
+    const id = modId.toLowerCase();
+    const byFile = projectIds.filter((projectId) => {
+      const file = meta[projectId].filename?.toLowerCase();
+      return Boolean(file?.startsWith(id)) && !/[a-z]/.test(file!.charAt(id.length));
+    });
+    return byFile.length === 1 ? byFile[0] : undefined;
   };
 
   const newSkips = new Set<number>();
@@ -83,17 +94,14 @@ export function planCurseForgeRetrySkips(
     }
   }
 
-  // Mods that reached for client-only game code.
-  const lines = text.split('\n');
+  // Mods Forge reports as having failed to load.
   const candidates = new Set<number>();
-  lines.forEach((line, index) => {
+  for (const line of text.split('\n')) {
     const match = MOD_FAILED.exec(line);
-    if (!match) return;
-    const cause = lines.slice(index + 1, index + 3).join('\n');
-    if (!CLIENT_ONLY_CAUSE.test(cause)) return;
+    if (!match) continue;
     const id = lookup(match[2], match[1]);
     if (id !== undefined && !excluded.has(id) && !newSkips.has(id)) candidates.add(id);
-  });
+  }
   const kept = projectIds.filter((id) => !excluded.has(id) && !newSkips.has(id) && !candidates.has(id));
   for (const id of candidates) {
     if (kept.some((keptId) => meta[keptId].requires.includes(id))) continue; // possible cascade victim
