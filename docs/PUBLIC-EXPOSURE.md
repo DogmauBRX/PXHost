@@ -143,6 +143,23 @@ Forçar uma reconciliação manual: botão "Reconciliar agora" em
    sudo sysctl -w net.ipv4.ip_forward=1
    echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
    ```
+   `firewall.sh` não persiste sozinho (seu próprio comentário de topo já
+   avisa) — o jeito padrão em Debian/Ubuntu é colar a saída de
+   `nft list ruleset` em `/etc/nftables.conf` e deixar o `nftables.service`
+   de fábrica recarregar isso no boot. **Se fizer isso, instale também o
+   override abaixo antes de qualquer `systemctl restart nftables`** — o
+   `ExecStop` de fábrica desse serviço é `nft flush ruleset`, que apaga
+   junto as tabelas que o próprio Docker mantém para os `-p` dos
+   containers (o Docker não as recria sozinho). Achado ao vivo em
+   2026-09-27: um restart do `nftables` para aplicar uma correção de regra
+   derrubou a publicação de porta de um servidor de cliente, e o agent
+   travou no meio de uma chamada ao Docker até ser reiniciado também — ver
+   o comentário no próprio `firewall.sh`.
+   ```bash
+   sudo install -m 0644 deploy/node/nftables-service-override.conf \
+     /etc/systemd/system/nftables.service.d/override.conf
+   sudo systemctl daemon-reload
+   ```
    Instale também a regra DNAT como serviço persistente. Ela usa uma
    tabela nftables própria e não apaga nem substitui as regras criadas
    pelo Docker:

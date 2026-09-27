@@ -33,6 +33,25 @@ NODE_LAN_IP="192.168.1.100"
 GAME_PORT_RANGE="25565-25664"
 # --------------------------------
 
+# `nft flush ruleset` wipes EVERY table, including the ones Docker itself
+# creates for `-p`/`--publish` port mappings (its own "nat"/"filter" tables,
+# entirely separate from the ones this script adds below). Docker does not
+# recreate them on its own once they're gone — found live 2026-09-27: after
+# re-running the equivalent of this flush on a node with a running
+# container, that container's own port stayed published and reachable
+# (existing conntrack state), but starting ANOTHER stopped server on the
+# same node failed with "Unable to enable DNAT rule" (iptables trying to
+# insert into a DOCKER chain that no longer existed), and the container got
+# stuck in "Created" — the agent's Start() blocked inside the Docker call
+# indefinitely, so even unrelated servers on that node stopped responding
+# to status checks until the agent itself was restarted. `systemctl
+# restart docker` below is what actually fixes it (dockerd reasserts its
+# chains on start); this script does it automatically so a manual re-run
+# is never the two-step foot-gun that incident was. This is exactly why
+# `gxhost-game-dnat.sh` (installed separately, see docs/PUBLIC-EXPOSURE.md
+# §5.2) owns its own dedicated nftables table instead of going anywhere
+# near this flush — prefer re-running that one alone for routine DNAT
+# changes, and reserve this script for actual base-ruleset edits.
 nft flush ruleset
 
 nft add table inet filter
@@ -101,3 +120,13 @@ nft add rule inet filter input iif "$WG_IFACE" ip daddr "$NODE_LAN_IP" tcp dport
 
 echo "nftables rules applied: control-plane 8443 + game ${GAME_PORT_RANGE} accepted only from ${GATEWAY_TUNNEL_IP}, DNAT'd to ${NODE_LAN_IP}."
 echo "Verify: nft list ruleset — and confirm net.ipv4.ip_forward=1 (sysctl net.ipv4.ip_forward=1; add to /etc/sysctl.conf to persist)."
+
+# See the flush's own comment above: Docker's chains are gone at this
+# point if it was already running. Restarting it (not reloading — dockerd
+# only reprograms iptables/nftables on start) is what actually restores
+# them. Skipped when Docker isn't installed/running at all (fresh node,
+# not yet at that step of docs/DEPLOY.md).
+if systemctl is-active --quiet docker 2>/dev/null; then
+  echo "Restarting Docker so it reprograms its own iptables/nftables rules (the flush above wiped them)..."
+  systemctl restart docker
+fi
