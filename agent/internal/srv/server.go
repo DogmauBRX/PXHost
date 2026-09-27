@@ -524,7 +524,7 @@ func (s *Server) Kill(ctx context.Context, dc dockerFull) error {
 // is a different, harder problem this endpoint doesn't attempt — the
 // caller (panel) is expected to refuse the edit in the UI while running,
 // but this guard is the real enforcement point per architecture doc 2.5.
-func (s *Server) UpdateVariables(ctx context.Context, dc dockerFull, newEnv map[string]string) error {
+func (s *Server) UpdateVariables(ctx context.Context, dc dockerFull, newEnv map[string]string, startupTemplate string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -532,6 +532,9 @@ func (s *Server) UpdateVariables(ctx context.Context, dc dockerFull, newEnv map[
 		return fmt.Errorf("%w: server %s", ErrServerNotStopped, s.UUID)
 	}
 
+	if startupTemplate != "" {
+		s.spec.StartupTmpl = startupTemplate
+	}
 	s.spec.Env = newEnv
 	return s.recreateContainerLocked(ctx, dc)
 }

@@ -210,8 +210,10 @@ export class AgentClient {
    * agent itself refuses otherwise, but the panel-side check exists so a
    * 409 is the rare case, not the expected one.
    */
-  async updateVariables(nodeId: string, serverUuid: string, declaredVariables: string[], variables: Record<string, string>): Promise<{ updated: boolean }> {
-    return this.call(nodeId, 'PATCH', `/api/servers/${serverUuid}/variables`, { declaredVariables, variables });
+  async updateVariables(nodeId: string, serverUuid: string, declaredVariables: string[], variables: Record<string, string>, startupTemplate?: string | null): Promise<{ updated: boolean }> {
+    // startupTemplate: an agent that restarted rebuilt this server from the
+    // container's rendered entrypoint and no longer has the {{VAR}} template.
+    return this.call(nodeId, 'PATCH', `/api/servers/${serverUuid}/variables`, { declaredVariables, variables, ...(startupTemplate ? { startupTemplate } : {}) });
   }
 
   /**

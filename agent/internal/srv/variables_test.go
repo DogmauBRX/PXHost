@@ -16,7 +16,7 @@ func TestServer_UpdateVariablesRefusesWhenNotOffline(t *testing.T) {
 	s, _ := newBackupTestServer(t)
 	s.State = StateRunning
 
-	if err := s.UpdateVariables(context.Background(), nil, map[string]string{"FOO": "bar"}); err == nil {
+	if err := s.UpdateVariables(context.Background(), nil, map[string]string{"FOO": "bar"}, ""); err == nil {
 		t.Fatal("UpdateVariables on a running server: got nil error, want a refusal")
 	}
 }
@@ -25,7 +25,7 @@ func TestServer_UpdateVariablesRefusesWhenStarting(t *testing.T) {
 	s, _ := newBackupTestServer(t)
 	s.State = StateStarting
 
-	if err := s.UpdateVariables(context.Background(), nil, map[string]string{"FOO": "bar"}); err == nil {
+	if err := s.UpdateVariables(context.Background(), nil, map[string]string{"FOO": "bar"}, ""); err == nil {
 		t.Fatal("UpdateVariables while starting: got nil error, want a refusal")
 	}
 }

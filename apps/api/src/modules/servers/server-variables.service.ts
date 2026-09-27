@@ -121,8 +121,12 @@ export class ServerVariablesService {
     // recreating the container with it.
     const templateId = server.templateId;
     const rlsCtx = { userId: actor.id, isAdmin: actor.isAdmin };
-    const [templateVars, serverVars] = await this.prisma.withRLS(rlsCtx, (tx) =>
-      Promise.all([tx.templateVariable.findMany({ where: { templateId } }), tx.serverVariable.findMany({ where: { serverId: server.id } })]),
+    const [templateVars, serverVars, startup] = await this.prisma.withRLS(rlsCtx, (tx) =>
+      Promise.all([
+        tx.templateVariable.findMany({ where: { templateId } }),
+        tx.serverVariable.findMany({ where: { serverId: server.id } }),
+        tx.server.findUnique({ where: { id: server.id }, select: { startupCommand: true } }),
+      ]),
     );
     const byEnvVar = new Map(templateVars.map((tv) => [tv.envVariable, tv]));
     const currentByVariableId = new Map(serverVars.map((v) => [v.variableId.toString(), v.value]));
@@ -147,6 +151,7 @@ export class ServerVariablesService {
       server.id,
       templateVars.map((tv) => tv.envVariable),
       resolvedValues,
+      startup?.startupCommand,
     );
 
     await this.prisma.withRLS(rlsCtx, (tx) =>

@@ -140,6 +140,10 @@ func (s *Server) handleSuspend(w http.ResponseWriter, r *http.Request) {
 type updateVariablesRequest struct {
 	DeclaredVars []string          `json:"declaredVariables"`
 	Variables    map[string]string `json:"variables"`
+	// StartupTemplate re-supplies the {{VAR}} template. A server adopted
+	// after an agent restart only knows its already-rendered entrypoint, so
+	// without this a variable edit would recreate the same old command.
+	StartupTemplate string `json:"startupTemplate,omitempty"`
 }
 
 // handleUpdateVariables is the agent's half of the panel's Configurações
@@ -169,7 +173,7 @@ func (s *Server) handleUpdateVariables(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := target.UpdateVariables(r.Context(), s.dc, env); err != nil {
+	if err := target.UpdateVariables(r.Context(), s.dc, env, req.StartupTemplate); err != nil {
 		writeErrorResp(w, http.StatusConflict, "UPDATE_VARIABLES_FAILED", err.Error())
 		return
 	}
