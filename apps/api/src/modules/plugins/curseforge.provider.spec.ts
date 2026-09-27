@@ -34,26 +34,28 @@ describe('CurseForgeProvider', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('resolves manifest files using the official download URL and never sends the key to the CDN', async () => {
-    const fetchMock = mockCurseForge([file()], [{ id: 10, name: 'Mod', classId: 6 }]);
+    const fetchMock = mockCurseForge([file()], [{ id: 10, name: 'Mod', slug: 'mod', classId: 6 }]);
 
-    const resolved = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }]);
+    const { files, projectSlugs } = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }]);
 
-    expect(resolved).toEqual([{ projectId: 10, fileId: 5001, filename: 'mod.jar', size: 123, url: 'https://edge.forgecdn.net/files/5/1/mod.jar', sha1: 'abc', skip: false }]);
+    expect(files).toEqual([{ projectId: 10, fileId: 5001, filename: 'mod.jar', size: 123, url: 'https://edge.forgecdn.net/files/5/1/mod.jar', sha1: 'abc', skip: false }]);
+    expect(projectSlugs).toEqual({ 10: 'mod' });
     expect(fetchMock.mock.calls.every(([url]) => String(url).startsWith('https://api.curseforge.com/'))).toBe(true);
   });
 
   it('skips restricted mods for manual install instead of guessing a CDN path', async () => {
-    mockCurseForge([file({ downloadUrl: null })], [{ id: 10, name: 'Restricted Mod', classId: 6, links: { websiteUrl: 'https://www.curseforge.com/minecraft/mc-mods/restricted/' } }]);
+    mockCurseForge([file({ downloadUrl: null })], [{ id: 10, name: 'Restricted Mod', slug: 'restricted-mod', classId: 6, links: { websiteUrl: 'https://www.curseforge.com/minecraft/mc-mods/restricted/' } }]);
 
-    const [resolved] = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }]);
+    const { files: [resolved], projectSlugs } = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }]);
 
     expect(resolved).toMatchObject({ skip: true, url: '', manual: { name: 'Restricted Mod', pageUrl: 'https://www.curseforge.com/minecraft/mc-mods/restricted/files/5001' } });
+    expect(projectSlugs).toEqual({ 10: 'restricted-mod' });
   });
 
   it('marks resource packs and shaders as skipped without requiring a download URL', async () => {
     mockCurseForge([file({ downloadUrl: null })], [{ id: 10, name: 'Shader', classId: 6552 }]);
 
-    const [resolved] = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }]);
+    const { files: [resolved] } = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }]);
 
     expect(resolved.skip).toBe(true);
     expect(resolved.url).toBe('');
@@ -63,11 +65,19 @@ describe('CurseForgeProvider', () => {
     mockCurseForge([
       file({ id: 5001, modId: 10, downloadUrl: null, gameVersions: ['Client', '1.20.1', 'Forge'] }),
       file({ id: 5002, modId: 11, fileName: 'both.jar', gameVersions: ['Client', 'Server', '1.20.1', 'Forge'] }),
-    ], [{ id: 10, name: 'Client Mod', classId: 6 }, { id: 11, name: 'Both Mod', classId: 6 }]);
+    ], [{ id: 10, name: 'Client Mod', slug: 'client-mod', classId: 6 }, { id: 11, name: 'Both Mod', slug: 'both-mod', classId: 6 }]);
 
-    const resolved = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }, { projectId: 11, fileId: 5002 }]);
+    const { files: resolved } = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }, { projectId: 11, fileId: 5002 }]);
 
     expect(resolved.map((item) => [item.fileId, item.skip])).toEqual([[5001, true], [5002, false]]);
+  });
+
+  it('returns a projectId->slug map for every project in the manifest, for correlating a later boot failure', async () => {
+    mockCurseForge([file()], [{ id: 10, name: 'Mod', slug: 'colorwheel' }]);
+
+    const { projectSlugs } = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }]);
+
+    expect(projectSlugs).toEqual({ 10: 'colorwheel' });
   });
 
   it('rejects a file that belongs to a different project than the manifest declared', async () => {

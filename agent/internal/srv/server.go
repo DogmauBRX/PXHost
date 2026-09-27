@@ -380,21 +380,44 @@ func (s *Server) WaitForBoot(ctx context.Context, timeout time.Duration) State {
 	}
 }
 
+// maxDependencyHintLines bounds how many "Mod X requires Y" lines
+// BootFailureHint keeps, independent of max. A modded pack failing on
+// several missing/mismatched dependencies at once prints one such line per
+// mod; losing all but the last one to a small general-purpose cap would
+// mean only ONE dependency editor per boot attempt, understating a crash
+// that needs several before the server can boot.
+const maxDependencyHintLines = 16
+
 // BootFailureHint returns the last console lines that look like the reason
-// a boot failed (FATAL/ERROR/exception), for a user-facing error message.
+// a boot failed, for a user-facing error message. "Mod X requires Y" lines
+// (a modded loader's own missing/mismatched-dependency report) are kept
+// separately from generic FATAL/ERROR/exception lines and never crowded out
+// by them, since callers (e.g. the Panel's CurseForge auto-retry, which
+// parses these to identify which mod to additionally exclude) depend on
+// every such line surviving, not just the most recent one.
 func (s *Server) BootFailureHint(max int) string {
 	lines, _ := s.Hub.RingSince(0)
-	var hits []string
+	var dependencyHits, otherHits []string
 	for _, line := range lines {
 		text := strings.TrimSpace(line.Data)
-		if strings.Contains(text, "FATAL") || strings.Contains(text, "Exception") || strings.Contains(text, "/ERROR]") || strings.Contains(text, "requires") {
-			hits = append(hits, text)
+		switch {
+		case strings.Contains(text, "requires"):
+			dependencyHits = append(dependencyHits, text)
+		case strings.Contains(text, "FATAL") || strings.Contains(text, "Exception") || strings.Contains(text, "/ERROR]"):
+			otherHits = append(otherHits, text)
 		}
 	}
-	if len(hits) > max {
-		hits = hits[len(hits)-max:]
+	if len(dependencyHits) > maxDependencyHintLines {
+		dependencyHits = dependencyHits[len(dependencyHits)-maxDependencyHintLines:]
 	}
-	return strings.Join(hits, "\n")
+	otherBudget := max - len(dependencyHits)
+	if otherBudget < 0 {
+		otherBudget = 0
+	}
+	if len(otherHits) > otherBudget {
+		otherHits = otherHits[len(otherHits)-otherBudget:]
+	}
+	return strings.Join(append(otherHits, dependencyHits...), "\n")
 }
 
 func (s *Server) isStarting() bool {

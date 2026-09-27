@@ -173,8 +173,8 @@ export class CurseForgeProvider implements ModpackProvider {
    * node. The Agent never receives the CurseForge API key: it only gets CDN
    * URLs and hashes after the Panel validates the active installation.
    */
-  async resolveFiles(requests: CurseForgeFileRequest[]): Promise<CurseForgeResolvedFile[]> {
-    if (requests.length === 0) return [];
+  async resolveFiles(requests: CurseForgeFileRequest[]): Promise<{ files: CurseForgeResolvedFile[]; projectSlugs: Record<number, string> }> {
+    if (requests.length === 0) return { files: [], projectSlugs: {} };
     const distinct = [...new Map(requests.map((item) => [item.fileId, item])).values()];
     if (distinct.length > 1_000) throw new ModpackProviderError(this.source, 'invalid_response', 'O modpack declara arquivos demais para uma instalação segura.', HttpStatus.UNPROCESSABLE_ENTITY);
     const [fileResponse, modResponse] = await Promise.all([
@@ -206,7 +206,9 @@ export class CurseForgeProvider implements ModpackProvider {
       if (!sha1 || !file.fileName || file.fileLength <= 0) throw new ModpackProviderError(this.source, 'invalid_response', `O arquivo ${file.fileName || file.id} não possui os dados necessários para uma instalação segura.`, HttpStatus.UNPROCESSABLE_ENTITY);
       resolved.push({ ...requested, filename: file.fileName, size: file.fileLength, url: assertAllowedCdnUrl(file.downloadUrl), sha1, skip: false });
     }
-    return resolved;
+    const projectSlugs: Record<number, string> = {};
+    for (const mod of modResponse.data) projectSlugs[mod.id] = mod.slug ?? String(mod.id);
+    return { files: resolved, projectSlugs };
   }
 
   private normalizeSummary(mod: CurseForgeMod): ModpackSummary {

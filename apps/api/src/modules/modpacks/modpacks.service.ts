@@ -11,6 +11,25 @@ import type { ModpackProvider, ModpackSource } from './modpack-provider';
 import { ModrinthProvider } from './modrinth.provider';
 import { CurseForgeProvider } from '../plugins/curseforge.provider';
 
+// See maybeRetryCurseForgeInstall's own comment for what this bounds.
+const MAX_CURSEFORGE_AUTO_RETRIES = 2;
+
+// Matches Forge/NeoForge's own missing/mismatched-dependency report, one
+// line per broken dependency, e.g.:
+//   Mod §ecolorwheel§r requires §6oculus§r §o1.7.0 or above§r
+// `§.` matches any single Minecraft formatting-code letter after `§`,
+// since which color a given loader version uses for which role isn't a
+// stable contract worth hardcoding exactly.
+const FORGE_MISSING_DEPENDENCY_PATTERN = /Mod\s+§.([a-z0-9_.-]+)§r\s+requires\s+§.([a-z0-9_.-]+)§r/gi;
+
+function asNumberArray(value: unknown): number[] {
+  return Array.isArray(value) ? value.filter((item): item is number => typeof item === 'number') : [];
+}
+
+function asStringRecord(value: unknown): Record<string, string> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, string>) : {};
+}
+
 @Injectable()
 export class ModpacksService {
   private readonly providers: Map<ModpackSource, ModpackProvider>;
@@ -59,7 +78,33 @@ export class ModpacksService {
       throw new UnprocessableEntityException(`O arquivo principal não está hospedado no CDN permitido do ${dto.source === 'curseforge' ? 'CurseForge' : 'Modrinth'}.`);
     }
 
-    const operation = await this.prisma.withRLS({ userId: actor.isAdmin ? null : actor.id, isAdmin: actor.isAdmin }, async (tx) => {
+    const operation = await this.dispatchInstall({
+      serverId, nodeId: server.nodeId, diskMb: server.diskMb, requestedBy: actor.id, actorIsAdmin: actor.isAdmin,
+      source: dto.source, projectId: dto.projectId, versionId: dto.versionId,
+      projectName: project.name, versionName: version.versionNumber, minecraftVersion, loader, file,
+    });
+    await Promise.allSettled([
+      this.audit.record({ action: 'server.modpack.install', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { operationId: operation.id, source: dto.source, projectId: dto.projectId, versionId: dto.versionId } }),
+      this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.modpack.install', properties: { operationId: operation.id, projectName: project.name, versionName: version.versionNumber } }),
+    ]);
+    return this.latestInstallation(actor, serverId);
+  }
+
+  /**
+   * Shared by a user-initiated install() and maybeRetryCurseForgeInstall():
+   * creates the operation row (with the same conflict/advisory-lock guard
+   * either way) and dispatches it to the Agent, rolling the row back to
+   * 'failed' if the Agent itself refuses the dispatch.
+   */
+  private async dispatchInstall(params: {
+    serverId: string; nodeId: string; diskMb: number; requestedBy: string; actorIsAdmin: boolean;
+    source: ModpackSource; projectId: string; versionId: string; projectName: string; versionName: string;
+    minecraftVersion: string; loader: string;
+    file: { url: string; filename: string; size: number; hashes: { sha1?: string; sha512?: string } };
+    retry?: { extraSkipProjectIds: number[]; retryCount: number; retriedFromId: string };
+  }) {
+    const { serverId, nodeId, diskMb, requestedBy, actorIsAdmin, source, projectId, versionId, projectName, versionName, minecraftVersion, loader, file, retry } = params;
+    const operation = await this.prisma.withRLS({ userId: actorIsAdmin ? null : requestedBy, isAdmin: actorIsAdmin }, async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${serverId}))`;
       const active = await tx.modpackInstallation.findFirst({
         where: { serverId, status: { in: ['pending', 'downloading', 'installing', 'configuring', 'rolling_back'] } },
@@ -75,40 +120,39 @@ export class ModpacksService {
       }
       return tx.modpackInstallation.create({ data: {
         serverId,
-        requestedBy: actor.id,
-        source: dto.source,
-        projectId: dto.projectId,
-        versionId: dto.versionId,
-        projectName: project.name,
-        versionName: version.versionNumber,
+        requestedBy,
+        source,
+        projectId,
+        versionId,
+        projectName,
+        versionName,
         minecraftVersion,
         loader,
         message: 'Aguardando o Agent',
+        extraSkipProjectIds: retry ? retry.extraSkipProjectIds : undefined,
+        retryCount: retry?.retryCount ?? 0,
+        retriedFromId: retry?.retriedFromId,
       } });
     });
 
     try {
-      await this.agent.installModpack(server.nodeId, server.id, {
-        source: dto.source,
+      await this.agent.installModpack(nodeId, serverId, {
+        source,
         operationId: operation.id,
         sourceUrl: file.url,
         filename: file.filename,
         size: file.size,
         sha1: file.hashes.sha1,
         sha512: file.hashes.sha512,
-        diskLimitMb: server.diskMb,
+        diskLimitMb: diskMb,
       });
     } catch (error) {
-      await this.updateOperation(server.id, operation.id, {
+      await this.updateOperation(serverId, operation.id, {
         status: 'failed', progress: 0, message: 'O Agent recusou a instalação', errorMessage: error instanceof Error ? error.message : 'Falha desconhecida',
       });
       throw error;
     }
-    await Promise.allSettled([
-      this.audit.record({ action: 'server.modpack.install', targetType: 'server', targetId: server.id, actorId: actor.id, metadata: { operationId: operation.id, source: dto.source, projectId: dto.projectId, versionId: dto.versionId } }),
-      this.activity.record({ actorId: actor.id, serverId: server.id, event: 'server.modpack.install', properties: { operationId: operation.id, projectName: project.name, versionName: version.versionNumber } }),
-    ]);
-    return this.latestInstallation(actor, serverId);
+    return operation;
   }
 
   async latestInstallation(actor: AccessActor, serverId: string) {
@@ -172,6 +216,78 @@ export class ModpacksService {
     );
     if (!server) throw new ForbiddenException('Este node não controla o servidor informado.');
     await this.updateOperation(serverId, dto.operationId, dto);
+    if (dto.status === 'failed') {
+      const operation = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.modpackInstallation.findUnique({ where: { id: dto.operationId } }));
+      if (operation?.source === 'curseforge') await this.maybeRetryCurseForgeInstall(operation);
+    }
+  }
+
+  /**
+   * A CurseForge modpack can include a mod we correctly skipped (client-only,
+   * or the author restricting distribution) that ANOTHER mod declares a
+   * mandatory, non-client-scoped dependency on — the modpack itself is
+   * misconfigured for dedicated-server use, but the missing companion is
+   * usually cosmetic and safe to drop too. Forge/NeoForge report this at
+   * boot as one "Mod §e<modid>§r requires §6<depId>§r" line per broken
+   * dependency (BootFailureHint keeps every such line, uncapped by the
+   * general hint budget — see its own comment). When the missing <depId>
+   * matches the slug of a project we deliberately skipped in the attempt
+   * that just failed, retrying once more with <modid> ALSO forced to skip
+   * fixes exactly this class of failure without any customer action.
+   *
+   * Bounded to MAX_AUTO_RETRIES: a chain of dependents-of-dependents should
+   * resolve well within that, and this must never become a silent retry
+   * loop that never surfaces a REAL failure to the customer.
+   */
+  private async maybeRetryCurseForgeInstall(operation: {
+    id: string; serverId: string; requestedBy: string; projectId: string; versionId: string; projectName: string; versionName: string;
+    minecraftVersion: string; loader: string; errorMessage: string | null; retryCount: number;
+    extraSkipProjectIds: unknown; skippedProjectIds: unknown; fileSlugs: unknown;
+  }): Promise<void> {
+    if (operation.retryCount >= MAX_CURSEFORGE_AUTO_RETRIES || !operation.errorMessage) return;
+    const pairs = [...operation.errorMessage.matchAll(FORGE_MISSING_DEPENDENCY_PATTERN)].map((match) => [match[1].toLowerCase(), match[2].toLowerCase()] as const);
+    if (pairs.length === 0) return;
+
+    const fileSlugs = asStringRecord(operation.fileSlugs);
+    const skippedProjectIds = new Set(asNumberArray(operation.skippedProjectIds));
+    const slugToProjectId = new Map(Object.entries(fileSlugs).map(([projectId, slug]) => [slug.toLowerCase(), Number(projectId)]));
+    const existingExtraSkips = asNumberArray(operation.extraSkipProjectIds);
+    const newSkips = new Set<number>();
+    for (const [complainingSlug, missingSlug] of pairs) {
+      const missingProjectId = slugToProjectId.get(missingSlug);
+      if (missingProjectId === undefined || !skippedProjectIds.has(missingProjectId)) continue; // not caused by one of our own skips
+      const complainingProjectId = slugToProjectId.get(complainingSlug);
+      if (complainingProjectId === undefined || existingExtraSkips.includes(complainingProjectId)) continue;
+      newSkips.add(complainingProjectId);
+    }
+    if (newSkips.size === 0) return;
+
+    try {
+      const server = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.server.findUniqueOrThrow({ where: { id: operation.serverId }, select: { nodeId: true, diskMb: true } }));
+      const runtime = await this.agent.getServerStatus(server.nodeId, operation.serverId);
+      if (runtime.state !== 'offline') return; // rollback should have left it offline; bail rather than fight a concurrent action
+      const provider = this.providers.get('curseforge');
+      if (!(provider instanceof CurseForgeProvider)) return;
+      const version = await provider.getVersion(operation.versionId, operation.projectId);
+      const file = version.files.find((candidate) => candidate.primary && candidate.filename.toLowerCase().endsWith('.zip')) ?? version.files.find((candidate) => candidate.filename.toLowerCase().endsWith('.zip'));
+      if (!file?.url) return;
+
+      const extraSkipProjectIds = [...existingExtraSkips, ...newSkips];
+      const retried = await this.dispatchInstall({
+        serverId: operation.serverId, nodeId: server.nodeId, diskMb: server.diskMb, requestedBy: operation.requestedBy, actorIsAdmin: true,
+        source: 'curseforge', projectId: operation.projectId, versionId: operation.versionId,
+        projectName: operation.projectName, versionName: operation.versionName, minecraftVersion: operation.minecraftVersion, loader: operation.loader,
+        file, retry: { extraSkipProjectIds, retryCount: operation.retryCount + 1, retriedFromId: operation.id },
+      });
+      const skippedNames = [...newSkips].map((id) => fileSlugs[String(id)] ?? String(id));
+      await Promise.allSettled([
+        this.audit.record({ action: 'server.modpack.install.retry', targetType: 'server', targetId: operation.serverId, actorId: operation.requestedBy, metadata: { operationId: retried.id, retriedFromId: operation.id, retryCount: operation.retryCount + 1, additionallySkipped: skippedNames } }),
+        this.activity.record({ actorId: operation.requestedBy, serverId: operation.serverId, event: 'server.modpack.install.retry', properties: { operationId: retried.id, projectName: operation.projectName, additionallySkipped: skippedNames } }),
+      ]);
+    } catch {
+      // Best-effort: the original 'failed' status set by updateOperation()
+      // above already stands, so the customer sees a real outcome either way.
+    }
   }
 
   /**
@@ -189,16 +305,27 @@ export class ModpacksService {
         status: { in: ['pending', 'downloading', 'installing'] },
         server: { nodeId },
       },
-      select: { id: true },
+      select: { id: true, extraSkipProjectIds: true },
     }));
     if (!operation) throw new ForbiddenException('A instalação do CurseForge não está ativa neste node.');
     const provider = this.providers.get('curseforge');
     if (!(provider instanceof CurseForgeProvider)) throw new ForbiddenException('O catálogo do CurseForge não está disponível.');
-    const files = await provider.resolveFiles(dto.files);
+    const { files: resolved, projectSlugs } = await provider.resolveFiles(dto.files);
+    const extraSkipProjectIds = new Set(asNumberArray(operation.extraSkipProjectIds));
+    // See maybeRetryCurseForgeInstall's comment: a retry forces skip=true on
+    // projects that CurseForge itself would have resolved normally, because
+    // something else in the pack declared a bad dependency on a project we
+    // ALREADY skipped for an unrelated reason (client-only/author-restricted).
+    const files = resolved.map((file) => extraSkipProjectIds.has(Number(file.projectId)) ? { ...file, skip: true } : file);
     const manualFiles = files.flatMap((file) => file.manual ? [{ name: file.manual.name, filename: file.filename, pageUrl: file.manual.pageUrl }] : []);
+    const skippedProjectIds = [...new Set(files.filter((file) => file.skip).map((file) => Number(file.projectId)))];
     await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.modpackInstallation.update({
       where: { id: operation.id },
-      data: { manualFiles: manualFiles.length > 0 ? manualFiles : Prisma.DbNull },
+      data: {
+        manualFiles: manualFiles.length > 0 ? manualFiles : Prisma.DbNull,
+        skippedProjectIds,
+        fileSlugs: projectSlugs,
+      },
     }));
     return { files: files.map(({ manual: _manual, ...file }) => file) };
   }
