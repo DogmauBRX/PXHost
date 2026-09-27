@@ -78,6 +78,92 @@ describe('ModpacksService uninstall', () => {
   });
 });
 
+describe('ModpacksService latestInstallation manual-file resolution', () => {
+  const actor = { id: 'user-1', isAdmin: false };
+  const server = { id: 'server-1', nodeId: 'node-1', template: { softwareKind: 'forge' } };
+  const access = { resolve: jest.fn(async () => ({ server, role: 'owner', can: () => true })) };
+  const audit = { record: jest.fn(async () => undefined) };
+  const activity = { record: jest.fn(async () => undefined) };
+  const modrinth = { source: 'modrinth' };
+  const curseforge = { source: 'curseforge' };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  function createService(installationRow: Record<string, unknown> | null, listFiles: jest.Mock) {
+    const installation = {
+      findFirst: jest.fn(async () => installationRow),
+      update: jest.fn(async (args: { data: Record<string, unknown> }) => ({ ...installationRow, ...args.data })),
+    };
+    const tx = { modpackInstallation: installation };
+    const prisma = { withRLS: jest.fn(async (_scope: unknown, op: (client: typeof tx) => Promise<unknown>) => op(tx)) };
+    const agent = { listFiles };
+    const service = new ModpacksService(
+      access as never, prisma as never, agent as never, audit as never, activity as never, modrinth as never, curseforge as never,
+    );
+    return { service, installation };
+  }
+
+  const manualFiles = [
+    { name: 'Shots Fired', filename: 'shotsfired-1.20.1-0.2.2.jar', pageUrl: 'https://x/shots' },
+    { name: 'Bee Fix', filename: 'BeeFix-1.20-1.0.7.jar', pageUrl: 'https://x/bee' },
+  ];
+
+  it('drops a manual file from the list once it appears in the addon directory, and persists that', async () => {
+    const listFiles = jest.fn(async () => [
+      { name: 'shotsfired-1.20.1-0.2.2.jar', isDir: false, size: 100, mode: '0644', modTime: '2026-01-01' },
+      { name: 'other.jar', isDir: false, size: 100, mode: '0644', modTime: '2026-01-01' },
+    ]);
+    const { service, installation } = createService({ id: 'op-1', status: 'completed', manualFiles }, listFiles);
+
+    const result = await service.latestInstallation(actor, server.id);
+
+    expect(listFiles).toHaveBeenCalledWith(server.nodeId, server.id, 'mods');
+    expect((result as { manualFiles: unknown[] }).manualFiles).toEqual([manualFiles[1]]);
+    expect(installation.update).toHaveBeenCalledWith({ where: { id: 'op-1' }, data: { manualFiles: [manualFiles[1]] } });
+  });
+
+  it('clears manualFiles entirely once every listed file is present', async () => {
+    const listFiles = jest.fn(async () => manualFiles.map((f) => ({ name: f.filename, isDir: false, size: 1, mode: '0644', modTime: '2026-01-01' })));
+    const { service, installation } = createService({ id: 'op-1', status: 'completed', manualFiles }, listFiles);
+
+    const result = await service.latestInstallation(actor, server.id);
+
+    expect((result as { manualFiles: unknown }).manualFiles).toBeNull();
+    expect(installation.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ manualFiles: expect.anything() }) }));
+  });
+
+  it('does not touch the row when nothing has changed, and skips the Agent call entirely once there is nothing left to check', async () => {
+    const listFiles = jest.fn();
+    const { service, installation } = createService({ id: 'op-1', status: 'completed', manualFiles: [] }, listFiles);
+
+    await service.latestInstallation(actor, server.id);
+
+    expect(listFiles).not.toHaveBeenCalled();
+    expect(installation.update).not.toHaveBeenCalled();
+  });
+
+  it('leaves an active (non-completed) installation alone', async () => {
+    const listFiles = jest.fn();
+    const { service, installation } = createService({ id: 'op-1', status: 'installing', manualFiles }, listFiles);
+
+    const result = await service.latestInstallation(actor, server.id);
+
+    expect(listFiles).not.toHaveBeenCalled();
+    expect(installation.update).not.toHaveBeenCalled();
+    expect((result as { manualFiles: unknown[] }).manualFiles).toBe(manualFiles);
+  });
+
+  it('degrades gracefully when the Agent is unreachable, keeping the stale list', async () => {
+    const listFiles = jest.fn(async () => { throw new Error('agent unreachable'); });
+    const { service, installation } = createService({ id: 'op-1', status: 'completed', manualFiles }, listFiles);
+
+    const result = await service.latestInstallation(actor, server.id);
+
+    expect((result as { manualFiles: unknown[] }).manualFiles).toBe(manualFiles);
+    expect(installation.update).not.toHaveBeenCalled();
+  });
+});
+
 describe('ModpacksService CurseForge dependency-failure auto-retry', () => {
   const nodeId = 'node-1';
   const serverId = 'server-1';

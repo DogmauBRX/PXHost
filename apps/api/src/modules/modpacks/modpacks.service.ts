@@ -10,6 +10,7 @@ import type { ListModpackVersionsDto, SearchModpacksDto } from './dto/modpack-qu
 import type { ModpackProvider, ModpackSource } from './modpack-provider';
 import { ModrinthProvider } from './modrinth.provider';
 import { CurseForgeProvider } from '../plugins/curseforge.provider';
+import { describeSoftware } from '../templates/software';
 
 // See maybeRetryCurseForgeInstall's own comment for what this bounds.
 const MAX_CURSEFORGE_AUTO_RETRIES = 2;
@@ -156,11 +157,46 @@ export class ModpacksService {
   }
 
   async latestInstallation(actor: AccessActor, serverId: string) {
-    const { can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
+    const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('addons.catalog.read')) throw new ForbiddenException('Missing permission: addons.catalog.read');
-    return this.prisma.withRLS({ userId: actor.isAdmin ? null : actor.id, isAdmin: actor.isAdmin }, (tx) =>
+    const installation = await this.prisma.withRLS({ userId: actor.isAdmin ? null : actor.id, isAdmin: actor.isAdmin }, (tx) =>
       tx.modpackInstallation.findFirst({ where: { serverId }, orderBy: { createdAt: 'desc' } }),
     );
+    return this.withResolvedManualFiles(installation, server);
+  }
+
+  /**
+   * manualFiles is a snapshot taken at install time. A customer who follows
+   * the warning and uploads the restricted mods by hand has no other way to
+   * make it go away — found live 2026-09-27: the alert stayed up after the
+   * customer had genuinely added every listed file. Once an install is
+   * 'completed', check which of the still-listed files are now actually
+   * present in the addon directory and drop those from the stored list
+   * (persisted, so this only costs an Agent call once per file that
+   * appears, not on every subsequent page load).
+   */
+  private async withResolvedManualFiles<T extends { id: string; status: string; manualFiles: unknown }>(
+    installation: T | null,
+    server: { id: string; nodeId: string; template?: { softwareKind: string | null } | null },
+  ): Promise<T | null> {
+    if (!installation || installation.status !== 'completed') return installation;
+    const manual = installation.manualFiles;
+    if (!Array.isArray(manual) || manual.length === 0) return installation;
+    const addonDir = describeSoftware(server.template?.softwareKind ?? null).addonDir;
+    if (!addonDir) return installation;
+    try {
+      const entries = await this.agent.listFiles(server.nodeId, server.id, addonDir);
+      const present = new Set(entries.filter((entry) => !entry.isDir).map((entry) => entry.name.toLowerCase()));
+      const outstanding = (manual as Array<{ filename: string }>).filter((file) => !present.has(file.filename.toLowerCase()));
+      if (outstanding.length === manual.length) return installation; // nothing resolved yet
+      await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.modpackInstallation.update({
+        where: { id: installation.id },
+        data: { manualFiles: outstanding.length > 0 ? outstanding : Prisma.DbNull },
+      }));
+      return { ...installation, manualFiles: outstanding.length > 0 ? outstanding : null };
+    } catch {
+      return installation; // best-effort — an unreachable Agent shouldn't break the page, the stale list is still informative
+    }
   }
 
   /**
