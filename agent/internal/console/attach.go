@@ -3,7 +3,9 @@ package console
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -64,16 +66,26 @@ func (p *Pump) run() {
 	pumpLines(errR, "stderr", p.hub) // blocks this goroutine until the stream ends
 }
 
+// pumpLines publishes r line by line until it ends. A line longer than
+// maxLineBytes is published as consecutive maxLineBytes chunks — reading
+// must never stop early. It used to (bufio.Scanner returns ErrTooLong and
+// quits), and nothing restarted it: found live 2026-09-27 on a 318-mod
+// Forge pack. One oversized line froze the whole console — both streams
+// share StdCopy's demultiplexer, which blocks once either pipe stops being
+// read — so the Agent never saw the boot-done or boot-failure line, and the
+// game process itself hung blocked on a stdout write nobody would ever
+// read, which is what made its crash look like a silent, CPU-idle hang.
 func pumpLines(r io.Reader, stream string, hub *Hub) {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 4096), maxLineBytes)
-	for sc.Scan() {
-		hub.Publish(stream, sc.Text())
+	br := bufio.NewReaderSize(r, maxLineBytes)
+	for {
+		line, err := br.ReadSlice('\n')
+		if len(line) > 0 {
+			hub.Publish(stream, strings.TrimRight(string(line), "\r\n"))
+		}
+		if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
+			return // io.EOF (container stream ended) or a real read error
+		}
 	}
-	// A line longer than maxLineBytes causes bufio.Scanner to error out
-	// (ErrTooLong) rather than silently truncate mid-token; that is
-	// intentional here so a runaway single line can't be mistaken for
-	// several — the caller sees the pump end and can restart it.
 }
 
 // Write sends raw bytes to the container's stdin. Callers must apply their
