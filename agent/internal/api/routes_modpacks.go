@@ -42,7 +42,7 @@ func (s *Server) handleModpackInstall(w http.ResponseWriter, r *http.Request) {
 		writeErrorResp(w, http.StatusUnprocessableEntity, "INVALID_BODY", "operationId, sourceUrl and size are required")
 		return
 	}
-	if target.State != srv.StateOffline {
+	if !target.State.IsStopped() {
 		writeErrorResp(w, http.StatusConflict, "SERVER_NOT_STOPPED", "server must be offline before installing a modpack")
 		return
 	}
@@ -120,7 +120,9 @@ func (s *Server) runModpackInstall(target *srv.Server, req installModpackRequest
 
 	report("rolling_back", 95, "Falha detectada; restaurando o backup", b.ID, err.Error())
 	restoreErr := target.Restore(s.bgCtx, s.backups, b.ID)
-	if restoreErr != nil && !errors.Is(restoreErr, srv.ErrServerNotStopped) {
+	// Any Restore error means the previous files are NOT back — including
+	// ErrServerNotStopped, which this used to treat as success.
+	if restoreErr != nil {
 		report("failed", 100, "Falha na instalação e no rollback automático", b.ID, err.Error()+"; rollback: "+restoreErr.Error())
 		return
 	}

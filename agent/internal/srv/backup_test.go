@@ -54,6 +54,33 @@ func TestServer_BackupThenRestoreSwapsInNewContent(t *testing.T) {
 	}
 }
 
+// A modpack install whose boot crashes leaves the server Crashed; its
+// automatic rollback must still be able to restore the pre-install backup.
+func TestServer_RestoreAllowedAfterCrash(t *testing.T) {
+	s, provider := newBackupTestServer(t)
+	ctx := context.Background()
+	if _, err := s.Jail.WriteFile("world.dat", strings.NewReader("before install"), s.UID(), 1000); err != nil {
+		t.Fatalf("seed WriteFile: %v", err)
+	}
+	b, err := s.Backup(ctx, provider, nil)
+	if err != nil {
+		t.Fatalf("Backup: %v", err)
+	}
+	if _, err := s.Jail.WriteFile("world.dat", strings.NewReader("broken modpack"), s.UID(), 1000); err != nil {
+		t.Fatalf("overwrite WriteFile: %v", err)
+	}
+	s.mu.Lock()
+	s.State = StateCrashed
+	s.mu.Unlock()
+
+	if err := s.Restore(ctx, provider, b.ID); err != nil {
+		t.Fatalf("Restore from StateCrashed: %v", err)
+	}
+	if got, _ := s.Jail.ReadFile("world.dat"); string(got) != "before install" {
+		t.Fatalf("post-restore content = %q, want %q", got, "before install")
+	}
+}
+
 func TestServer_RestoreRejectedWhileRunning(t *testing.T) {
 	s, provider := newBackupTestServer(t)
 	s.mu.Lock()

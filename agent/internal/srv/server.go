@@ -33,6 +33,17 @@ const (
 	StateCrashed  State = "crashed"
 )
 
+// IsStopped reports whether no game process is running, so the server's
+// files can be safely replaced (restore, modpack install, reinstall,
+// transfer). Crashed counts: it is only ever set once the container is
+// gone or has been killed. Found live 2026-09-27 — treating only Offline
+// as stopped meant a crash during a modpack install left the server
+// Crashed, the automatic rollback's Restore refused, and the operation
+// still reported "arquivos anteriores restaurados".
+func (st State) IsStopped() bool {
+	return st == StateOffline || st == StateCrashed
+}
+
 // Server is one game server's in-memory handle. All Docker calls for this
 // server are serialized through mu, so a stop and a concurrent start can
 // never race each other into an inconsistent container.
@@ -706,7 +717,7 @@ func (s *Server) UpdateVariables(ctx context.Context, dc dockerFull, newEnv map[
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.State != StateOffline {
+	if !s.State.IsStopped() {
 		return fmt.Errorf("%w: server %s", ErrServerNotStopped, s.UUID)
 	}
 
@@ -742,7 +753,7 @@ func (s *Server) Reinstall(ctx context.Context, dc dockerFull, image, startupTem
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.State != StateOffline {
+	if !s.State.IsStopped() {
 		return fmt.Errorf("%w: server %s", ErrServerNotStopped, s.UUID)
 	}
 

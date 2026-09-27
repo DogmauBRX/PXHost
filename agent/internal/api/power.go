@@ -20,7 +20,7 @@ func performPower(ctx context.Context, dc *dockerx.Client, s *srv.Server, action
 	case "stop":
 		return s.Stop(ctx, dc)
 	case "restart":
-		if s.State != srv.StateOffline {
+		if !s.State.IsStopped() {
 			if err := s.Stop(ctx, dc); err != nil {
 				return fmt.Errorf("restart: stop phase: %w", err)
 			}

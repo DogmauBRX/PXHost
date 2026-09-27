@@ -20,7 +20,7 @@ func (s *Server) Export(ctx context.Context, provider backup.Provider) (backup.B
 	s.mu.Lock()
 	state := s.State
 	s.mu.Unlock()
-	if state != StateOffline {
+	if !state.IsStopped() {
 		return backup.Backup{}, fmt.Errorf("%w (current state: %s)", ErrServerNotStopped, state)
 	}
 	return provider.Create(ctx, s.UUID, s.Jail, backup.NewIgnoreSet())

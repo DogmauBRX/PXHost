@@ -49,7 +49,7 @@ func (s *Server) Restore(ctx context.Context, provider backup.Provider, backupID
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.State != StateOffline {
+	if !s.State.IsStopped() {
 		return fmt.Errorf("%w (current state: %s)", ErrServerNotStopped, s.State)
 	}
 

@@ -65,7 +65,7 @@ const modrinthAPIBaseURL = "https://api.modrinth.com/v2"
 func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, progress func(int, string)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.State != StateOffline {
+	if !s.State.IsStopped() {
 		return fmt.Errorf("%w (current state: %s)", ErrServerNotStopped, s.State)
 	}
 	if err := allowedModrinthURL(spec.SourceURL); err != nil {

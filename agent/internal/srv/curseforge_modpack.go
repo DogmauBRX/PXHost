@@ -51,7 +51,7 @@ type curseForgeManifest struct {
 func (s *Server) InstallCurseForgeModpack(ctx context.Context, spec ModpackInstallSpec, resolve func(context.Context, []CurseForgeManifestFile) ([]CurseForgeResolvedFile, error), progress func(int, string)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.State != StateOffline {
+	if !s.State.IsStopped() {
 		return fmt.Errorf("%w (current state: %s)", ErrServerNotStopped, s.State)
 	}
 	if err := allowedCurseForgeURL(spec.SourceURL); err != nil {

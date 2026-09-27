@@ -254,7 +254,7 @@ func (s *Server) handleReinstallServer(w http.ResponseWriter, r *http.Request) {
 		writeErrorResp(w, http.StatusNotFound, "SERVER_NOT_FOUND", "no server registered with that uuid")
 		return
 	}
-	if target.State != srv.StateOffline {
+	if !target.State.IsStopped() {
 		writeErrorResp(w, http.StatusConflict, "SERVER_RUNNING", "server must be stopped before changing its version")
 		return
 	}
@@ -336,7 +336,7 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if target.State != srv.StateOffline {
+	if !target.State.IsStopped() {
 		// Best-effort, never fatal. Remove below force-removes, which
 		// kills a running container on its own, so this Kill only exists
 		// to tear the console/stats pumps down first — and the one way
