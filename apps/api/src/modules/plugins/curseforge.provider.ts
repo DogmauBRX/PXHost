@@ -67,6 +67,18 @@ interface CurseForgeFile {
   downloadCount?: number;
   gameVersions?: string[];
   hashes?: Array<{ value: string; algo: number }>;
+  dependencies?: Array<{ modId: number; relationType: number }>;
+}
+
+// CurseForge's FileRelationType: 3 = RequiredDependency.
+const REQUIRED_DEPENDENCY = 3;
+
+/** Per-project facts the Panel needs to reason about a failed boot later. */
+export interface CurseForgeProjectMeta {
+  slug: string;
+  name: string;
+  /** Projects in the same manifest this one declares as a required dependency. */
+  requires: number[];
 }
 
 export interface CurseForgeFileRequest {
@@ -173,8 +185,8 @@ export class CurseForgeProvider implements ModpackProvider {
    * node. The Agent never receives the CurseForge API key: it only gets CDN
    * URLs and hashes after the Panel validates the active installation.
    */
-  async resolveFiles(requests: CurseForgeFileRequest[]): Promise<{ files: CurseForgeResolvedFile[]; projectSlugs: Record<number, string> }> {
-    if (requests.length === 0) return { files: [], projectSlugs: {} };
+  async resolveFiles(requests: CurseForgeFileRequest[]): Promise<{ files: CurseForgeResolvedFile[]; projectSlugs: Record<number, string>; projectMeta: Record<number, CurseForgeProjectMeta> }> {
+    if (requests.length === 0) return { files: [], projectSlugs: {}, projectMeta: {} };
     const distinct = [...new Map(requests.map((item) => [item.fileId, item])).values()];
     if (distinct.length > 1_000) throw new ModpackProviderError(this.source, 'invalid_response', 'O modpack declara arquivos demais para uma instalação segura.', HttpStatus.UNPROCESSABLE_ENTITY);
     const [fileResponse, modResponse] = await Promise.all([
@@ -206,9 +218,27 @@ export class CurseForgeProvider implements ModpackProvider {
       if (!sha1 || !file.fileName || file.fileLength <= 0) throw new ModpackProviderError(this.source, 'invalid_response', `O arquivo ${file.fileName || file.id} não possui os dados necessários para uma instalação segura.`, HttpStatus.UNPROCESSABLE_ENTITY);
       resolved.push({ ...requested, filename: file.fileName, size: file.fileLength, url: assertAllowedCdnUrl(file.downloadUrl), sha1, skip: false });
     }
+
+    const inManifest = new Set(distinct.map((item) => item.projectId));
+    const projectMeta: Record<number, CurseForgeProjectMeta> = {};
+    for (const requested of distinct) {
+      const file = files.get(requested.fileId)!;
+      const mod = mods.get(file.modId);
+      const requires = (file.dependencies ?? [])
+        .filter((dep) => dep.relationType === REQUIRED_DEPENDENCY && dep.modId !== file.modId && inManifest.has(dep.modId))
+        .map((dep) => dep.modId);
+      const existing = projectMeta[file.modId];
+      projectMeta[file.modId] = {
+        slug: mod?.slug ?? String(file.modId),
+        name: mod?.name ?? file.displayName ?? file.fileName,
+        requires: [...new Set([...(existing?.requires ?? []), ...requires])],
+      };
+    }
+    cascadeClientOnlySkips(resolved, projectMeta);
+
     const projectSlugs: Record<number, string> = {};
     for (const mod of modResponse.data) projectSlugs[mod.id] = mod.slug ?? String(mod.id);
-    return { files: resolved, projectSlugs };
+    return { files: resolved, projectSlugs, projectMeta };
   }
 
   private normalizeSummary(mod: CurseForgeMod): ModpackSummary {
@@ -282,6 +312,35 @@ export class CurseForgeProvider implements ModpackProvider {
       }
     }
     throw new ModpackProviderError('curseforge', 'unavailable', 'Não foi possível consultar o CurseForge agora.');
+  }
+}
+
+/**
+ * A mod that DECLARES a required dependency on something we skipped as
+ * client-only can't load on the server either — Forge refuses the whole
+ * boot ("Mod colorwheel requires oculus", found live 2026-09-27 on
+ * DeceasedCraft). Skipping it up front avoids a guaranteed failed attempt.
+ * Transitive, since a dependent's own dependents fail the same way.
+ *
+ * Author-restricted files (manual) deliberately do NOT trigger this: the
+ * customer is told to add those by hand, and their dependents must still
+ * be there once they do.
+ */
+function cascadeClientOnlySkips(files: CurseForgeResolvedFile[], meta: Record<number, CurseForgeProjectMeta>): void {
+  const clientOnly = new Set(files.filter((file) => file.skip && !file.manual).map((file) => file.projectId));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const file of files) {
+      if (file.skip) continue;
+      if ((meta[file.projectId]?.requires ?? []).some((dep) => clientOnly.has(dep))) {
+        file.skip = true;
+        file.url = '';
+        file.sha1 = '';
+        clientOnly.add(file.projectId);
+        changed = true;
+      }
+    }
   }
 }
 

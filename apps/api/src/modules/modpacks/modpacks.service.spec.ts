@@ -240,7 +240,7 @@ describe('ModpacksService CurseForge dependency-failure auto-retry', () => {
   });
 
   it('does not retry once MAX_AUTO_RETRIES is reached', async () => {
-    const { service, installation } = createService({ ...failedOperation, retryCount: 2 });
+    const { service, installation } = createService({ ...failedOperation, retryCount: 3 });
 
     await service.reportProgress(nodeId, serverId, { operationId: 'op-1', status: 'failed', progress: 100, message: 'Falha', errorMessage: failedOperation.errorMessage });
 

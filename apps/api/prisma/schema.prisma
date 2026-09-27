@@ -931,6 +931,8 @@ model ModpackInstallation {
   /// attempt's resolution — lets a failure's "Mod X requires Y" message be
   /// matched back to CurseForge projects without another live API call.
   fileSlugs           Json?     @map("file_slugs")
+  /// { [projectId]: { slug, name, requires: projectId[] } } — see CurseForgeProjectMeta.
+  projectMeta         Json?     @map("project_meta")
   retryCount          Int       @default(0) @map("retry_count")
   retriedFromId       String?   @map("retried_from_id") @db.Uuid
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz

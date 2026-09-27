@@ -39,6 +39,24 @@ func TestBootFailureHintFillsRemainingBudgetWithGenericLines(t *testing.T) {
 	}
 }
 
+func TestBootFailureHintKeepsModLoadFailuresWithTheirCauseLine(t *testing.T) {
+	s, _ := newBackupTestServer(t)
+	s.Hub.Publish("stdout", "[main/ERROR] [minecraft/Main]: Failed to start the minecraft server")
+	s.Hub.Publish("stdout", "net.minecraftforge.fml.LoadingFailedException: Loading errors encountered: [")
+	s.Hub.Publish("stdout", "\tSodium Extras (sodiumextras) has failed to load correctly")
+	s.Hub.Publish("stdout", "§7java.lang.RuntimeException: Attempted to load class net/minecraft/client/Options for invalid dist DEDICATED_SERVER,")
+	s.Hub.Publish("stdout", "\tFramework (framework) has failed to load correctly")
+	s.Hub.Publish("stdout", "§7java.lang.NoClassDefFoundError: net/minecraft/client/gui/components/toasts/Toast")
+
+	hint := s.BootFailureHint(2)
+
+	for _, want := range []string{"sodiumextras", "invalid dist DEDICATED_SERVER", "framework", "NoClassDefFoundError"} {
+		if !contains(hint, want) {
+			t.Fatalf("BootFailureHint dropped %q, got:\n%s", want, hint)
+		}
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {

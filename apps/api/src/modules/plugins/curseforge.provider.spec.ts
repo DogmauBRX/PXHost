@@ -80,6 +80,37 @@ describe('CurseForgeProvider', () => {
     expect(projectSlugs).toEqual({ 10: 'colorwheel' });
   });
 
+  it('skips, transitively, mods that require a client-only mod we skipped', async () => {
+    mockCurseForge([
+      file({ id: 5001, modId: 10, fileName: 'oculus.jar', gameVersions: ['Client', '1.20.1', 'Forge'] }),
+      file({ id: 5002, modId: 11, fileName: 'colorwheel.jar', dependencies: [{ modId: 10, relationType: 3 }] }),
+      file({ id: 5003, modId: 12, fileName: 'patcher.jar', dependencies: [{ modId: 11, relationType: 3 }] }),
+      file({ id: 5004, modId: 13, fileName: 'optional.jar', dependencies: [{ modId: 10, relationType: 2 }] }),
+    ], [
+      { id: 10, name: 'Oculus', slug: 'oculus' }, { id: 11, name: 'Colorwheel', slug: 'colorwheel' },
+      { id: 12, name: 'Patcher', slug: 'patcher' }, { id: 13, name: 'Optional', slug: 'optional' },
+    ]);
+
+    const { files, projectMeta } = await provider.resolveFiles([
+      { projectId: 10, fileId: 5001 }, { projectId: 11, fileId: 5002 }, { projectId: 12, fileId: 5003 }, { projectId: 13, fileId: 5004 },
+    ]);
+
+    expect(files.map((item) => [item.projectId, item.skip])).toEqual([[10, true], [11, true], [12, true], [13, false]]);
+    expect(projectMeta[11]).toEqual({ slug: 'colorwheel', name: 'Colorwheel', requires: [10] });
+    expect(projectMeta[13].requires).toEqual([]); // optional dependencies don't count
+  });
+
+  it('keeps dependents of an author-restricted mod, since the customer adds that one by hand', async () => {
+    mockCurseForge([
+      file({ id: 5001, modId: 10, fileName: 'restricted.jar', downloadUrl: null }),
+      file({ id: 5002, modId: 11, fileName: 'dependent.jar', dependencies: [{ modId: 10, relationType: 3 }] }),
+    ], [{ id: 10, name: 'Restricted', slug: 'restricted' }, { id: 11, name: 'Dependent', slug: 'dependent' }]);
+
+    const { files } = await provider.resolveFiles([{ projectId: 10, fileId: 5001 }, { projectId: 11, fileId: 5002 }]);
+
+    expect(files.find((item) => item.projectId === 11)?.skip).toBe(false);
+  });
+
   it('rejects a file that belongs to a different project than the manifest declared', async () => {
     mockCurseForge([file({ modId: 99 })], [{ id: 99, name: 'Other', classId: 6 }]);
 

@@ -333,6 +333,37 @@ func isFatalBootErrorLine(data string) bool {
 	return strings.Contains(data, fatalBootErrorMarker)
 }
 
+const (
+	fatalBootDrainQuiet = 1500 * time.Millisecond
+	fatalBootDrainMax   = 5 * time.Second
+)
+
+// drainUntilQuiet consumes sub until no line arrives for quiet, or max
+// elapses. The lines still land in the Hub's ring (the pump publishes
+// there regardless of subscribers); this only waits for them to arrive.
+func drainUntilQuiet(sub *console.Subscriber, quiet, max time.Duration) {
+	deadline := time.NewTimer(max)
+	defer deadline.Stop()
+	idle := time.NewTimer(quiet)
+	defer idle.Stop()
+	for {
+		select {
+		case _, ok := <-sub.C():
+			if !ok {
+				return
+			}
+			if !idle.Stop() {
+				<-idle.C
+			}
+			idle.Reset(quiet)
+		case <-idle.C:
+			return
+		case <-deadline.C:
+			return
+		}
+	}
+}
+
 // awaitReady watches sub for readyLogMarker and promotes StateStarting to
 // StateRunning the moment it appears, or reacts to fatalBootErrorMarker or
 // readyWaitCap, whichever of the three comes first. Runs for the lifetime
@@ -364,6 +395,10 @@ func (s *Server) awaitReady(dc dockerFull, sub *console.Subscriber) {
 				return
 			}
 			if isFatalBootErrorLine(line.Data) {
+				// The loader prints its per-mod failure list right AFTER
+				// this line; killing now would lose it (the pump closes on
+				// teardown), and BootFailureHint needs it.
+				drainUntilQuiet(sub, fatalBootDrainQuiet, fatalBootDrainMax)
 				s.handleFatalBootError(dc)
 				return
 			}
@@ -452,9 +487,18 @@ const maxDependencyHintLines = 16
 func (s *Server) BootFailureHint(max int) string {
 	lines, _ := s.Hub.RingSince(0)
 	var dependencyHits, otherHits []string
-	for _, line := range lines {
-		text := strings.TrimSpace(line.Data)
+	for i := 0; i < len(lines); i++ {
+		text := strings.TrimSpace(lines[i].Data)
 		switch {
+		case strings.Contains(text, "has failed to load correctly"):
+			// Forge's per-mod construct failure; its cause is the NEXT line
+			// (e.g. "java.lang.NoClassDefFoundError: net/minecraft/client/…"),
+			// which the Panel reads to tell client-only mods apart.
+			dependencyHits = append(dependencyHits, text)
+			if i+1 < len(lines) {
+				dependencyHits = append(dependencyHits, strings.TrimSpace(lines[i+1].Data))
+				i++
+			}
 		case strings.Contains(text, "requires"):
 			dependencyHits = append(dependencyHits, text)
 		case strings.Contains(text, "FATAL") || strings.Contains(text, "Exception") || strings.Contains(text, "/ERROR]"):

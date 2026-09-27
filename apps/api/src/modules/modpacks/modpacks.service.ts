@@ -9,19 +9,14 @@ import type { InstallModpackDto, ModpackProgressDto, ResolveCurseForgeFilesDto }
 import type { ListModpackVersionsDto, SearchModpacksDto } from './dto/modpack-query.dto';
 import type { ModpackProvider, ModpackSource } from './modpack-provider';
 import { ModrinthProvider } from './modrinth.provider';
-import { CurseForgeProvider } from '../plugins/curseforge.provider';
+import { CurseForgeProvider, type CurseForgeProjectMeta } from '../plugins/curseforge.provider';
+import { planCurseForgeRetrySkips } from './curseforge-retry-plan';
 import { describeSoftware } from '../templates/software';
 
-// See maybeRetryCurseForgeInstall's own comment for what this bounds.
-const MAX_CURSEFORGE_AUTO_RETRIES = 2;
-
-// Matches Forge/NeoForge's own missing/mismatched-dependency report, one
-// line per broken dependency, e.g.:
-//   Mod §ecolorwheel§r requires §6oculus§r §o1.7.0 or above§r
-// `§.` matches any single Minecraft formatting-code letter after `§`,
-// since which color a given loader version uses for which role isn't a
-// stable contract worth hardcoding exactly.
-const FORGE_MISSING_DEPENDENCY_PATTERN = /Mod\s+§.([a-z0-9_.-]+)§r\s+requires\s+§.([a-z0-9_.-]+)§r/gi;
+// See maybeRetryCurseForgeInstall's own comment for what this bounds. A
+// pack like DeceasedCraft can need one round for a missing dependency and
+// another for client-only mods that only fail once loading gets that far.
+const MAX_CURSEFORGE_AUTO_RETRIES = 3;
 
 function asNumberArray(value: unknown): number[] {
   return Array.isArray(value) ? value.filter((item): item is number => typeof item === 'number') : [];
@@ -29,6 +24,14 @@ function asNumberArray(value: unknown): number[] {
 
 function asStringRecord(value: unknown): Record<string, string> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, string>) : {};
+}
+
+/** projectMeta when stored; otherwise slugs alone (rows written before it existed). */
+function asProjectMeta(projectMeta: unknown, fileSlugs: unknown): Record<number, CurseForgeProjectMeta> {
+  if (projectMeta && typeof projectMeta === 'object' && !Array.isArray(projectMeta)) return projectMeta as Record<number, CurseForgeProjectMeta>;
+  const meta: Record<number, CurseForgeProjectMeta> = {};
+  for (const [id, slug] of Object.entries(asStringRecord(fileSlugs))) meta[Number(id)] = { slug, name: slug, requires: [] };
+  return meta;
 }
 
 @Injectable()
@@ -278,25 +281,14 @@ export class ModpacksService {
   private async maybeRetryCurseForgeInstall(operation: {
     id: string; serverId: string; requestedBy: string; projectId: string; versionId: string; projectName: string; versionName: string;
     minecraftVersion: string; loader: string; errorMessage: string | null; retryCount: number;
-    extraSkipProjectIds: unknown; skippedProjectIds: unknown; fileSlugs: unknown;
+    extraSkipProjectIds: unknown; skippedProjectIds: unknown; fileSlugs: unknown; projectMeta: unknown;
   }): Promise<void> {
     if (operation.retryCount >= MAX_CURSEFORGE_AUTO_RETRIES || !operation.errorMessage) return;
-    const pairs = [...operation.errorMessage.matchAll(FORGE_MISSING_DEPENDENCY_PATTERN)].map((match) => [match[1].toLowerCase(), match[2].toLowerCase()] as const);
-    if (pairs.length === 0) return;
-
-    const fileSlugs = asStringRecord(operation.fileSlugs);
-    const skippedProjectIds = new Set(asNumberArray(operation.skippedProjectIds));
-    const slugToProjectId = new Map(Object.entries(fileSlugs).map(([projectId, slug]) => [slug.toLowerCase(), Number(projectId)]));
+    const meta = asProjectMeta(operation.projectMeta, operation.fileSlugs);
     const existingExtraSkips = asNumberArray(operation.extraSkipProjectIds);
-    const newSkips = new Set<number>();
-    for (const [complainingSlug, missingSlug] of pairs) {
-      const missingProjectId = slugToProjectId.get(missingSlug);
-      if (missingProjectId === undefined || !skippedProjectIds.has(missingProjectId)) continue; // not caused by one of our own skips
-      const complainingProjectId = slugToProjectId.get(complainingSlug);
-      if (complainingProjectId === undefined || existingExtraSkips.includes(complainingProjectId)) continue;
-      newSkips.add(complainingProjectId);
-    }
-    if (newSkips.size === 0) return;
+    const alreadySkipped = new Set([...asNumberArray(operation.skippedProjectIds), ...existingExtraSkips]);
+    const newSkips = planCurseForgeRetrySkips(operation.errorMessage, meta, alreadySkipped);
+    if (newSkips.length === 0) return;
 
     try {
       const server = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.server.findUniqueOrThrow({ where: { id: operation.serverId }, select: { nodeId: true, diskMb: true } }));
@@ -315,7 +307,7 @@ export class ModpacksService {
         projectName: operation.projectName, versionName: operation.versionName, minecraftVersion: operation.minecraftVersion, loader: operation.loader,
         file, retry: { extraSkipProjectIds, retryCount: operation.retryCount + 1, retriedFromId: operation.id },
       });
-      const skippedNames = [...newSkips].map((id) => fileSlugs[String(id)] ?? String(id));
+      const skippedNames = newSkips.map((id) => meta[id]?.name ?? String(id));
       await Promise.allSettled([
         this.audit.record({ action: 'server.modpack.install.retry', targetType: 'server', targetId: operation.serverId, actorId: operation.requestedBy, metadata: { operationId: retried.id, retriedFromId: operation.id, retryCount: operation.retryCount + 1, additionallySkipped: skippedNames } }),
         this.activity.record({ actorId: operation.requestedBy, serverId: operation.serverId, event: 'server.modpack.install.retry', properties: { operationId: retried.id, projectName: operation.projectName, additionallySkipped: skippedNames } }),
@@ -346,7 +338,7 @@ export class ModpacksService {
     if (!operation) throw new ForbiddenException('A instalação do CurseForge não está ativa neste node.');
     const provider = this.providers.get('curseforge');
     if (!(provider instanceof CurseForgeProvider)) throw new ForbiddenException('O catálogo do CurseForge não está disponível.');
-    const { files: resolved, projectSlugs } = await provider.resolveFiles(dto.files);
+    const { files: resolved, projectSlugs, projectMeta } = await provider.resolveFiles(dto.files);
     const extraSkipProjectIds = new Set(asNumberArray(operation.extraSkipProjectIds));
     // See maybeRetryCurseForgeInstall's comment: a retry forces skip=true on
     // projects that CurseForge itself would have resolved normally, because
@@ -361,6 +353,7 @@ export class ModpacksService {
         manualFiles: manualFiles.length > 0 ? manualFiles : Prisma.DbNull,
         skippedProjectIds,
         fileSlugs: projectSlugs,
+        projectMeta: projectMeta as unknown as Prisma.InputJsonValue,
       },
     }));
     return { files: files.map(({ manual: _manual, ...file }) => file) };
