@@ -6,10 +6,14 @@ import type { CurseForgeProjectMeta } from '../plugins/curseforge.provider';
 // Matched after formatting codes are stripped (see stripFormatting).
 const MISSING_DEPENDENCY = /Mod\s+([a-z0-9_.-]+)\s+requires\s+([a-z0-9_.-]+)/gi;
 
-// Forge's per-mod construct failure, followed on the next line by the cause:
+// Forge reports a per-mod lifecycle failure in more than one wording
+// depending on which phase it happened in, all following the same
+// "Name (modid) <phrase>" shape, cause on the next line:
 //   Sodium Extras (sodiumextras) has failed to load correctly
 //   §7java.lang.RuntimeException: Attempted to load class net/minecraft/client/Options for invalid dist DEDICATED_SERVER
-const MOD_FAILED = /^\s*(.*?)\s*\(([a-z0-9_.-]+)\) has failed to load correctly/i;
+//   Distant Horizons (distanthorizons) encountered an error during the sided_setup event phase
+//   §7java.lang.NullPointerException: Cannot invoke "…IMinecraftClientWrapper.crashMinecraft(…)" because "…MC_CLIENT" is null
+const MOD_FAILED = /^\s*(.*?)\s*\(([a-z0-9_.-]+)\)\s+(?:has failed to load correctly|encountered an error during the \S+ event phase)/i;
 
 function stripFormatting(text: string): string {
   return text.replace(/§./g, '');
@@ -31,7 +35,9 @@ function normalize(value: string): string {
  *   without it, so X is skipped too — along with anything that itself
  *   requires X, since it would fail the same way next round.
  *
- * - "X has failed to load correctly": X is skipped ONLY if no project that
+ * - "X has failed to load correctly" / "X encountered an error during the
+ *   <phase> event phase" (Forge's wording depends on which lifecycle phase
+ *   failed): X is skipped ONLY if no project that
  *   stays installed declares it as a required dependency. Forge lists
  *   cascade victims in the same failure block — found live 2026-09-27:
  *   Framework appeared there with a client-class error of its own, but four
@@ -94,7 +100,7 @@ export function planCurseForgeRetrySkips(
     }
   }
 
-  // Mods Forge reports as having failed to load.
+  // Mods Forge reports as failed, whichever lifecycle phase it happened in.
   const candidates = new Set<number>();
   for (const line of text.split('\n')) {
     const match = MOD_FAILED.exec(line);

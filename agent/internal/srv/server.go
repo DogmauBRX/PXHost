@@ -558,9 +558,10 @@ func (s *Server) BootFailureHint(max int) string {
 	for i := 0; i < len(lines); i++ {
 		text := strings.TrimSpace(lines[i].Data)
 		switch {
-		case strings.Contains(text, "has failed to load correctly"):
-			// Forge's per-mod construct failure; its cause is the NEXT line
-			// (e.g. "java.lang.NoClassDefFoundError: net/minecraft/client/…"),
+		case strings.Contains(text, "has failed to load correctly") || strings.Contains(text, "encountered an error during the"):
+			// Forge's per-mod lifecycle failure (construct or a later phase
+			// like sided_setup); its cause is the NEXT line (e.g.
+			// "java.lang.NoClassDefFoundError: net/minecraft/client/…"),
 			// which the Panel reads to tell client-only mods apart.
 			dependencyHits = append(dependencyHits, text)
 			if i+1 < len(lines) {

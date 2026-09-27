@@ -57,6 +57,21 @@ func TestBootFailureHintKeepsModLoadFailuresWithTheirCauseLine(t *testing.T) {
 	}
 }
 
+func TestBootFailureHintKeepsLaterPhaseFailuresToo(t *testing.T) {
+	s, _ := newBackupTestServer(t)
+	s.Hub.Publish("stdout", "net.minecraftforge.fml.LoadingFailedException: Loading errors encountered: [")
+	s.Hub.Publish("stdout", "\tDistant Horizons (distanthorizons) encountered an error during the sided_setup event phase")
+	s.Hub.Publish("stdout", `§7java.lang.NullPointerException: Cannot invoke "…IMinecraftClientWrapper.crashMinecraft(…)" because "…MC_CLIENT" is null`)
+
+	hint := s.BootFailureHint(2)
+
+	for _, want := range []string{"distanthorizons", "sided_setup", "MC_CLIENT"} {
+		if !contains(hint, want) {
+			t.Fatalf("BootFailureHint dropped %q, got:\n%s", want, hint)
+		}
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {

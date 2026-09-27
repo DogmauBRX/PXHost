@@ -12,6 +12,7 @@ const FRAMEWORK = 549225;
 const CONTROLLABLE = 317269;
 const CREATIVECORE = 257814;
 const CREATE_BETTER_FPS = 900001;
+const DISTANT_HORIZONS = 396890;
 
 const meta: Record<number, CurseForgeProjectMeta> = {
   [OCULUS]: { slug: 'oculus', name: 'Oculus', requires: [], filename: 'oculus-mc1.20.1-1.8.0.jar' },
@@ -23,7 +24,15 @@ const meta: Record<number, CurseForgeProjectMeta> = {
   [FRAMEWORK]: { slug: 'framework', name: 'Framework', requires: [], filename: 'framework-forge-1.20.1-0.7.15.jar' },
   [CONTROLLABLE]: { slug: 'controllable', name: 'Controllable', requires: [FRAMEWORK], filename: 'controllable-forge-1.20.1-0.21.7.jar' },
   [CREATE_BETTER_FPS]: { slug: 'create-better-fps', name: 'Create Better FPS', requires: [], filename: 'createbetterfps-1.20.1-1.1.1.jar' },
+  [DISTANT_HORIZONS]: { slug: 'distant-horizons', name: 'Distant Horizons', requires: [], filename: 'DistantHorizons-2.3.5-b-1.20.1-forge.jar' },
 };
+
+// Verbatim from the live crash after Framework's own dependents were removed.
+const sidedSetupCrash = [
+  'net.minecraftforge.fml.LoadingFailedException: Loading errors encountered: [',
+  'Distant Horizons (distanthorizons) encountered an error during the sided_setup event phase',
+  '§7java.lang.NullPointerException: Cannot invoke "com.seibel.distanthorizons.core.wrapperInterfaces.minecraft.IMinecraftClientWrapper.crashMinecraft(String, java.lang.Throwable)" because "com.seibel.distanthorizons.core.Initializer.MC_CLIENT" is null',
+].join('\n');
 
 const missingDependencyCrash = [
   'net.minecraftforge.fml.LoadingFailedException: Loading errors encountered: [',
@@ -67,6 +76,10 @@ describe('planCurseForgeRetrySkips', () => {
   it('never skips a mod that kept mods require (the Framework trap)', () => {
     const crash = 'Framework (framework) has failed to load correctly\n§7java.lang.NoClassDefFoundError: net/minecraft/client/gui/components/toasts/Toast';
     expect(planCurseForgeRetrySkips(crash, meta, [])).toEqual([]);
+  });
+
+  it('skips a mod that fails during a later lifecycle phase, not just construct', () => {
+    expect(planCurseForgeRetrySkips(sidedSetupCrash, meta, [])).toEqual([DISTANT_HORIZONS]);
   });
 
   it('returns nothing for an unrelated failure', () => {
