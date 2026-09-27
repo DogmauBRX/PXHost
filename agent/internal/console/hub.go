@@ -85,6 +85,11 @@ func (h *Hub) RingSince(since uint64) (lines []Line, gap bool) {
 	return h.ring.Since(since)
 }
 
+// LastSeq is the Seq of the newest line published so far (0 if none).
+func (h *Hub) LastSeq() uint64 {
+	return h.ring.LastSeq()
+}
+
 func (h *Hub) SubscriberCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

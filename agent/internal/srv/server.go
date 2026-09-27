@@ -242,6 +242,7 @@ func (s *Server) Start(ctx context.Context, dc dockerFull) error {
 	// first" reasoning as the pump itself just above — no boot line can
 	// be missed between here and dc.StartContainer below.
 	readySub := s.Hub.Subscribe()
+	bootFromSeq := s.Hub.LastSeq()
 
 	s.State = StateStarting
 	if err := dc.StartContainer(ctx, s.ContainerID); err != nil {
@@ -260,7 +261,7 @@ func (s *Server) Start(ctx context.Context, dc dockerFull) error {
 	// StateStarting until awaitReady sees the software's own boot-done
 	// log line (or its bounded timeout), so "Ativo" means the world is
 	// actually loaded, not just that a process exists.
-	go s.awaitReady(dc, readySub)
+	go s.awaitReady(dc, readySub, bootFromSeq)
 
 	memLimitBytes := uint64(s.spec.Limits.MemoryMB) * 1024 * 1024
 	cpuLimitPercent := uint64(s.spec.Limits.CPUPercent)
@@ -374,7 +375,7 @@ func drainUntilQuiet(sub *console.Subscriber, quiet, max time.Duration) {
 // server off StateStarting for its own reasons by the time this fires,
 // overwriting that with StateRunning would be a real regression, not a
 // no-op.
-func (s *Server) awaitReady(dc dockerFull, sub *console.Subscriber) {
+func (s *Server) awaitReady(dc dockerFull, sub *console.Subscriber, fromSeq uint64) {
 	defer s.Hub.Unsubscribe(sub)
 
 	deadline := time.NewTimer(readyWaitCap)
@@ -382,31 +383,53 @@ func (s *Server) awaitReady(dc dockerFull, sub *console.Subscriber) {
 	ticker := time.NewTicker(readyPollInterval)
 	defer ticker.Stop()
 
+	// The subscriber only wakes this loop up; the lines themselves are read
+	// back from the ring. Hub.Publish drops lines for a subscriber whose
+	// buffer is full rather than block, and a modded loader prints its
+	// whole mod table (hundreds of lines) in one burst right before any
+	// failure — found live 2026-09-27: the "Failed to start" line was
+	// dropped that way on a 318-mod pack, so the boot looked like a slow
+	// one and was promoted to running after readyWaitCap. The ring keeps
+	// every line.
+	scan := newBootScanner(s.Hub, fromSeq)
+	act := func() bool {
+		switch scan.next() {
+		case bootReady:
+			s.promoteStartingTo(StateRunning)
+			return true
+		case bootFailed:
+			// The loader prints its per-mod failure list right AFTER the
+			// fatal line; killing now would lose it (the pump closes on
+			// teardown), and BootFailureHint needs it.
+			drainUntilQuiet(sub, fatalBootDrainQuiet, fatalBootDrainMax)
+			s.handleFatalBootError(dc)
+			return true
+		}
+		return false
+	}
+
 	for {
 		select {
 		case <-s.bgCtx.Done():
 			return
-		case line, ok := <-sub.C():
+		case _, ok := <-sub.C():
 			if !ok {
 				return
 			}
-			if isReadyLine(line.Data) {
-				s.promoteStartingTo(StateRunning)
-				return
-			}
-			if isFatalBootErrorLine(line.Data) {
-				// The loader prints its per-mod failure list right AFTER
-				// this line; killing now would lose it (the pump closes on
-				// teardown), and BootFailureHint needs it.
-				drainUntilQuiet(sub, fatalBootDrainQuiet, fatalBootDrainMax)
-				s.handleFatalBootError(dc)
+			if act() {
 				return
 			}
 		case <-ticker.C:
 			if !s.isStarting() {
 				return // Stop/Kill/crash already decided this server's state elsewhere
 			}
+			if act() {
+				return
+			}
 		case <-deadline.C:
+			if act() {
+				return
+			}
 			// Not necessarily wrong — a genuinely slow modpack could
 			// still be mid-boot — but readyLogMarker never showing up
 			// within readyWaitCap is unusual enough to be worth an
@@ -416,6 +439,40 @@ func (s *Server) awaitReady(dc dockerFull, sub *console.Subscriber) {
 			return
 		}
 	}
+}
+
+type bootOutcome int
+
+const (
+	bootPending bootOutcome = iota
+	bootReady
+	bootFailed
+)
+
+// bootScanner walks a Hub's ring forward from a starting Seq, returning the
+// first boot-deciding line it finds. Split out of awaitReady so the
+// "never miss a line" behavior is testable without a goroutine or Docker.
+type bootScanner struct {
+	hub     *console.Hub
+	lastSeq uint64
+}
+
+func newBootScanner(hub *console.Hub, fromSeq uint64) *bootScanner {
+	return &bootScanner{hub: hub, lastSeq: fromSeq}
+}
+
+func (b *bootScanner) next() bootOutcome {
+	lines, _ := b.hub.RingSince(b.lastSeq)
+	for _, line := range lines {
+		b.lastSeq = line.Seq
+		if isReadyLine(line.Data) {
+			return bootReady
+		}
+		if isFatalBootErrorLine(line.Data) {
+			return bootFailed
+		}
+	}
+	return bootPending
 }
 
 // handleFatalBootError marks a server crashed the moment its own game
