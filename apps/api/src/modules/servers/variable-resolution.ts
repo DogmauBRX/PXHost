@@ -39,6 +39,21 @@ export function resolveDeclaredVariables(
   return resolved;
 }
 
+const MIN_HEAP_MB = 512;
+const MIN_JVM_HEADROOM_MB = 512;
+const JVM_HEADROOM_RATIO = 0.15;
+
+/**
+ * The -Xmx for a container whose cgroup limit is `memoryMb`. The JVM uses
+ * memory beyond the heap (metaspace, threads, GC, native buffers), so a heap
+ * equal to the limit gets the container OOM-killed under load — found live
+ * with All the Mods 10 on a 6 GB plan.
+ */
+export function jvmHeapMb(memoryMb: number): number {
+  const headroom = Math.max(MIN_JVM_HEADROOM_MB, Math.ceil(memoryMb * JVM_HEADROOM_RATIO));
+  return Math.max(MIN_HEAP_MB, memoryMb - headroom);
+}
+
 /**
  * Resource variables are owned by the server's snapshotted plan limits,
  * never by a template default. Templates still declare SERVER_MEMORY so
@@ -47,7 +62,7 @@ export function resolveDeclaredVariables(
  */
 export function applyPlanManagedVariables(values: Record<string, string>, memoryMb: number): Record<string, string> {
   if (Object.prototype.hasOwnProperty.call(values, 'SERVER_MEMORY')) {
-    values.SERVER_MEMORY = String(memoryMb);
+    values.SERVER_MEMORY = String(jvmHeapMb(memoryMb));
   }
   return values;
 }

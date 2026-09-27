@@ -6,6 +6,7 @@ import { AgentClient } from '../nodes/agent-client.service';
 import { AuditService } from '../audit/audit.service';
 import { ActivityService } from '../activity/activity.service';
 import { deriveVariableOptionShape, validateVariableValue, type VariableOptionKind } from './variable-rules';
+import { applyPlanManagedVariables } from './variable-resolution';
 
 export interface ClientVariable {
   id: string;
@@ -138,6 +139,8 @@ export class ServerVariablesService {
     for (const tv of templateVars) {
       resolvedValues[tv.envVariable] = values[tv.envVariable] ?? currentByVariableId.get(tv.id.toString()) ?? tv.defaultValue;
     }
+    applyPlanManagedVariables(resolvedValues, server.memoryMb);
+    const changedFromStored = new Set(templateVars.filter((tv) => resolvedValues[tv.envVariable] !== currentByVariableId.get(tv.id.toString())).map((tv) => tv.envVariable));
 
     await this.agent.updateVariables(
       server.nodeId,
@@ -149,7 +152,7 @@ export class ServerVariablesService {
     await this.prisma.withRLS(rlsCtx, (tx) =>
       Promise.all(
         templateVars
-          .filter((tv) => values[tv.envVariable] !== undefined)
+          .filter((tv) => values[tv.envVariable] !== undefined || changedFromStored.has(tv.envVariable))
           .map((tv) =>
             tx.serverVariable.upsert({
               where: { serverId_variableId: { serverId: server.id, variableId: tv.id } },

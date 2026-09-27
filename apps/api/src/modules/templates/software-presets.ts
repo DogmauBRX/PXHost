@@ -312,7 +312,7 @@ const INSTALL_ENTRYPOINT = 'bash';
 function serverMemoryVariable(sortOrder: number): TemplateVariableDto {
   return {
     name: 'Server Memory (MB)',
-    description: "The container's memory limit, substituted into -Xmx. Set by the plan, not directly editable.",
+    description: 'Java heap (-Xmx), derived from the plan memory with JVM headroom (see jvmHeapMb). Set by the plan, not directly editable.',
     envVariable: 'SERVER_MEMORY',
     defaultValue: '1024',
     rules: 'required|integer|min:512',
