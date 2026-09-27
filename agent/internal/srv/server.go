@@ -260,7 +260,7 @@ func (s *Server) Start(ctx context.Context, dc dockerFull) error {
 	// StateStarting until awaitReady sees the software's own boot-done
 	// log line (or its bounded timeout), so "Ativo" means the world is
 	// actually loaded, not just that a process exists.
-	go s.awaitReady(readySub)
+	go s.awaitReady(dc, readySub)
 
 	memLimitBytes := uint64(s.spec.Limits.MemoryMB) * 1024 * 1024
 	cpuLimitPercent := uint64(s.spec.Limits.CPUPercent)
@@ -310,17 +310,40 @@ func isReadyLine(data string) bool {
 	return strings.Contains(data, readyLogMarker)
 }
 
+// fatalBootErrorMarker is net.minecraft.server.Main's own top-level catch
+// around server init — printed by every loader this platform supports
+// (Forge/NeoForge inject their mod-loading step before delegating to this
+// same vanilla entry point) whenever startup fails for ANY reason: a mod
+// loading error, a corrupt world, a bad server.properties value, an
+// OutOfMemoryError during init. A plain substring match, same reasoning as
+// readyLogMarker: the timestamp/thread prefix varies, this fragment doesn't.
+//
+// Found live 2026-09-27: a Forge server whose mods failed to load printed
+// this and then never actually exited — its Netty networking threads kept
+// running as daemon threads, keeping the JVM (and the container) alive
+// indefinitely. readyWaitCap's own fallback then silently promoted it to
+// StateRunning once 5 minutes passed, so the panel showed a healthy,
+// counting-up "Ativo" server that could never actually be joined.
+// Detecting this line directly lets a definite failure short-circuit both
+// the wait and that fallback, and forces the stuck process down instead of
+// trusting it to exit on its own.
+const fatalBootErrorMarker = "Failed to start the minecraft server"
+
+func isFatalBootErrorLine(data string) bool {
+	return strings.Contains(data, fatalBootErrorMarker)
+}
+
 // awaitReady watches sub for readyLogMarker and promotes StateStarting to
-// StateRunning the moment it appears — or after readyWaitCap, whichever
-// comes first. Runs for the lifetime of one Start() call; always
-// unsubscribes on the way out, whichever of the three exits below fires.
+// StateRunning the moment it appears, or reacts to fatalBootErrorMarker or
+// readyWaitCap, whichever of the three comes first. Runs for the lifetime
+// of one Start() call; always unsubscribes on the way out.
 //
 // Deliberately re-checks the CURRENT state (not just "did I see the
 // marker") before promoting: if a Stop()/Kill()/crash already moved the
 // server off StateStarting for its own reasons by the time this fires,
 // overwriting that with StateRunning would be a real regression, not a
 // no-op.
-func (s *Server) awaitReady(sub *console.Subscriber) {
+func (s *Server) awaitReady(dc dockerFull, sub *console.Subscriber) {
 	defer s.Hub.Unsubscribe(sub)
 
 	deadline := time.NewTimer(readyWaitCap)
@@ -340,6 +363,10 @@ func (s *Server) awaitReady(sub *console.Subscriber) {
 				s.promoteStartingTo(StateRunning)
 				return
 			}
+			if isFatalBootErrorLine(line.Data) {
+				s.handleFatalBootError(dc)
+				return
+			}
 		case <-ticker.C:
 			if !s.isStarting() {
 				return // Stop/Kill/crash already decided this server's state elsewhere
@@ -353,6 +380,33 @@ func (s *Server) awaitReady(sub *console.Subscriber) {
 			s.promoteStartingTo(StateRunning)
 			return
 		}
+	}
+}
+
+// handleFatalBootError marks a server crashed the moment its own game
+// software reports a definite boot failure, and force-kills the
+// underlying container rather than trusting it to exit on its own — see
+// fatalBootErrorMarker's own comment for why that trust turned out to be
+// misplaced live.
+func (s *Server) handleFatalBootError(dc dockerFull) {
+	s.mu.Lock()
+	if s.State != StateStarting {
+		s.mu.Unlock()
+		return // a concurrent Stop/Kill/crash already decided this server's state
+	}
+	s.State = StateCrashed
+	containerID := s.ContainerID
+	s.teardownRuntimeLocked()
+	s.mu.Unlock()
+
+	slog.Default().Warn("server printed a fatal boot error; marking crashed and killing the stuck process", "server", s.UUID)
+	if containerID == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(s.bgCtx, 10*time.Second)
+	defer cancel()
+	if err := dc.KillContainer(ctx, containerID); err != nil {
+		slog.Default().Warn("failed to kill a server stuck after a fatal boot error", "server", s.UUID, "error", err)
 	}
 }
 
