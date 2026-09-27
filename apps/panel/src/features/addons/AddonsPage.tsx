@@ -100,7 +100,7 @@ export function AddonsPage({ serverId }: { serverId: string }) {
               onClick={() => setContentType(type)}
               className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${selectedContentType === type ? 'border-accent text-accent-strong' : 'border-transparent text-text-muted hover:text-text'}`}
             >
-              {type === 'mods' ? 'Mods' : 'Modpacks'}
+              {type === 'mods' ? 'Mods Instalados' : 'Modpacks'}
             </button>
           ))}
         </div>
