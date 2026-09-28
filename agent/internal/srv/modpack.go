@@ -192,6 +192,22 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 	if err := extractOverrides(zr.File, stageDir, s.spec.UID); err != nil {
 		return err
 	}
+	// The modpack's own bundled server.properties (or the default Vanilla
+	// one Minecraft writes on first boot if the pack ships none) has no way
+	// to know this server's real allocated port — unlike every install
+	// script in software-presets.ts, which writes SERVER_PORT back for
+	// exactly this reason (see PrimaryPort's own doc comment), this path
+	// never touched server-port at all. Found live: a modpack install left
+	// the JVM listening on the vanilla default 25565 while Docker published
+	// (and the allocation reserved) a different port — the TCP handshake
+	// succeeded against docker-proxy, but every real connection reset
+	// immediately after, since docker-proxy's backend dial to the
+	// container's own allocated port had nothing listening on it.
+	if port := s.PrimaryPort(); port > 0 {
+		if err := setServerPort(stageDir, s.spec.UID, port); err != nil {
+			return err
+		}
+	}
 	progress(85, "Validando e ativando os novos arquivos")
 
 	if err := s.Jail.Close(); err != nil {
@@ -214,6 +230,43 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 	go func() { time.Sleep(time.Hour); _ = os.RemoveAll(oldDir) }()
 	progress(98, "Arquivos ativados")
 	return nil
+}
+
+// setServerPort rewrites (or creates) server.properties' server-port line
+// to match this server's real allocation — see the InstallModpack call
+// site's own comment for why this is necessary. Line-based, not a
+// properties-file library: server.properties is a flat key=value format
+// with no nesting, and every other line must survive untouched (comments,
+// world seed, difficulty, everything a modpack author tuned on purpose).
+func setServerPort(stageDir string, uid int, port int) error {
+	path := filepath.Join(stageDir, "server.properties")
+	line := fmt.Sprintf("server-port=%d", port)
+
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	found := false
+	var lines []string
+	if len(existing) > 0 {
+		lines = strings.Split(strings.TrimRight(string(existing), "\n"), "\n")
+		for i, l := range lines {
+			if strings.HasPrefix(l, "server-port=") {
+				lines[i] = line
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		lines = append(lines, line)
+	}
+
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0640); err != nil {
+		return err
+	}
+	return os.Chown(path, uid, uid)
 }
 
 func filesForDedicatedServer(files []mrpackFile, unsupportedProjects map[string]bool) []mrpackFile {
