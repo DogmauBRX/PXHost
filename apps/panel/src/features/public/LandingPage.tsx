@@ -6,6 +6,7 @@ import { NetworkAnimation } from './NetworkAnimation';
 import { ServerProvisionAnimation } from './ServerProvisionAnimation';
 import { HeroCircuitBackground } from './HeroCircuitBackground';
 import { BrazilLatencyMap } from './BrazilLatencyMap';
+import { TestimonialsSection } from './TestimonialsSection';
 
 const LazyNodeStatusSection = lazy(() =>
   import('./NodeStatusSection').then((module) => ({ default: module.NodeStatusSection })),
@@ -189,6 +190,8 @@ export function LandingPage() {
             </div>
           </div>
         </section>
+
+        <TestimonialsSection />
 
         <DeferredNodeStatusSection />
       </div>

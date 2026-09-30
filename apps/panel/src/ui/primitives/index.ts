@@ -18,3 +18,4 @@ export { CodeEditor } from './CodeEditor';
 export { Avatar } from './Avatar';
 export { RouteTabs } from './RouteTabs';
 export type { RouteTab } from './RouteTabs';
+export { StarRating } from './StarRating';

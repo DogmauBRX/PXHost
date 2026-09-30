@@ -32,6 +32,8 @@ import type {
   ServerTransfer,
   SigningKey,
   SiteAnnouncement,
+  Testimonial,
+  TestimonialStatus,
   SubscriptionStatus,
   TemplateGroup,
 } from '@/shared/api/types';
@@ -410,6 +412,18 @@ export interface UpdateSiteAnnouncementInput {
 }
 export const updateSiteAnnouncement = (input: UpdateSiteAnnouncementInput) =>
   apiFetch<SiteAnnouncement>('/api/admin/site-announcement', { method: 'PATCH', body: JSON.stringify(input) });
+
+// ---- Testimonials (depoimentos) ----
+
+export const listAdminTestimonials = (status?: TestimonialStatus) =>
+  apiFetch<Testimonial[]>(`/api/admin/testimonials${status ? `?status=${status}` : ''}`);
+export interface ModerateTestimonialInput {
+  status?: TestimonialStatus;
+  featured?: boolean;
+  featuredOrder?: number;
+}
+export const moderateTestimonial = (id: string, input: ModerateTestimonialInput) =>
+  apiFetch<Testimonial>(`/api/admin/testimonials/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
 
 // ---- Public-exposure gateways ----
 

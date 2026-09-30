@@ -73,6 +73,11 @@ export const ADMIN_PERMISSIONS = [
   // lets a future custom admin seat be read-only.
   'support.view',
   'support.manage',
+  // Customer-submitted testimonials for the public landing page. Own
+  // vocabulary for the same reason `support.*` is: this moderates
+  // customer-authored CONTENT, not an account or infrastructure.
+  'testimonials.view',
+  'testimonials.manage',
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
@@ -121,6 +126,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly (AdminPermission 
     'gateway.manage',
     'support.view',
     'support.manage',
+    'testimonials.view',
+    'testimonials.manage',
   ],
   // The five `.view` keys preserve `support`'s CURRENT behavior — it
   // already passes AdminGuard and already reads nodes/plans/capacity/
@@ -128,7 +135,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly (AdminPermission 
   // hasn't my plan activated" needs to at least SEE the subscription —
   // this is not a grant of new mutation access, only read access
   // matching what every other resource here already gives `support`.
-  support: ['clients.view', 'clients.support', 'nodes.view', 'plans.view', 'capacity.view', 'servers.view', 'subscriptions.view', 'payments.view', 'support.view', 'support.manage'],
+  support: ['clients.view', 'clients.support', 'nodes.view', 'plans.view', 'capacity.view', 'servers.view', 'subscriptions.view', 'payments.view', 'support.view', 'support.manage', 'testimonials.view'],
   user: [],
 };
 

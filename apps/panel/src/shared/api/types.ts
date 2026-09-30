@@ -1047,6 +1047,34 @@ export interface SiteAnnouncement {
   updatedAt: string;
 }
 
+// ───────────────── TESTIMONIALS ──────────────────
+
+export type TestimonialStatus = 'pending' | 'approved' | 'rejected';
+
+// GET /api/client/testimonials/mine, GET/PATCH /api/admin/testimonials — the full row.
+export interface Testimonial {
+  id: string;
+  userId: string;
+  authorName: string;
+  rating: number;
+  message: string;
+  status: TestimonialStatus;
+  featured: boolean;
+  featuredOrder: number | null;
+  moderatedBy: string | null;
+  moderatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// GET /api/public/testimonials — only what the landing page may show.
+export interface PublicTestimonial {
+  id: string;
+  authorName: string;
+  rating: number;
+  message: string;
+}
+
 // GET /api/public/status/announcement — `null` means "nothing to show,"
 // the frontend's whole contract: render if non-null, never a separate
 // isActive check on top (mirrors PublicStatusService.getPublic's own

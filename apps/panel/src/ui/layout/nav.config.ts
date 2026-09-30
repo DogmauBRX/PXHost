@@ -8,6 +8,7 @@ import {
   LifeBuoy,
   Megaphone,
   MapPin,
+  MessageSquareQuote,
   Package,
   Receipt,
   Router,
@@ -67,6 +68,7 @@ export const ADMIN_NAV_SECTIONS: readonly NavSection[] = [
       { label: 'Assinaturas', to: '/admin/subscriptions', icon: CreditCard },
       { label: 'Pagamentos', to: '/admin/payments', icon: Receipt },
       { label: 'Suporte', to: '/admin/support', icon: LifeBuoy },
+      { label: 'Depoimentos', to: '/admin/testimonials', icon: MessageSquareQuote },
     ],
   },
   {
@@ -101,6 +103,7 @@ export const CLIENT_NAV_SECTIONS: readonly NavSection[] = [
       { label: 'Minha Conta', to: '/client/settings', icon: User },
       { label: 'Plano', to: '/client/plan', icon: CalendarClock },
       { label: 'Minha Assinatura', to: '/client/subscription', icon: CreditCard },
+      { label: 'Depoimento', to: '/client/testimonial', icon: MessageSquareQuote },
     ],
   },
   {

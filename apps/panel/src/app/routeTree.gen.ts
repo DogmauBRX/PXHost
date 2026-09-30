@@ -31,6 +31,7 @@ import { Route as AdminSubscriptionsRouteImport } from './routes/admin.subscript
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminSystemRouteImport } from './routes/admin.system'
 import { Route as AdminTemplatesRouteImport } from './routes/admin.templates'
+import { Route as AdminTestimonialsRouteImport } from './routes/admin.testimonials'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as CheckoutPlanSlugRouteImport } from './routes/checkout.$planSlug'
 import { Route as ClientIndexRouteImport } from './routes/client.index'
@@ -40,6 +41,7 @@ import { Route as ClientPlanRouteImport } from './routes/client.plan'
 import { Route as ClientSettingsRouteImport } from './routes/client.settings'
 import { Route as ClientSubscriptionRouteImport } from './routes/client.subscription'
 import { Route as ClientSupportRouteImport } from './routes/client.support'
+import { Route as ClientTestimonialRouteImport } from './routes/client.testimonial'
 import { Route as PlansIndexRouteImport } from './routes/plans.index'
 import { Route as PlansSlugRouteImport } from './routes/plans.$slug'
 import { Route as AdminNodesIndexRouteImport } from './routes/admin.nodes.index'
@@ -178,6 +180,11 @@ const AdminTemplatesRoute = AdminTemplatesRouteImport.update({
   path: '/templates',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminTestimonialsRoute = AdminTestimonialsRouteImport.update({
+  id: '/testimonials',
+  path: '/testimonials',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -221,6 +228,11 @@ const ClientSubscriptionRoute = ClientSubscriptionRouteImport.update({
 const ClientSupportRoute = ClientSupportRouteImport.update({
   id: '/support',
   path: '/support',
+  getParentRoute: () => ClientRoute,
+} as any)
+const ClientTestimonialRoute = ClientTestimonialRouteImport.update({
+  id: '/testimonial',
+  path: '/testimonial',
   getParentRoute: () => ClientRoute,
 } as any)
 const PlansIndexRoute = PlansIndexRouteImport.update({
@@ -399,6 +411,7 @@ export interface FileRoutesByFullPath {
   '/admin/support': typeof AdminSupportRoute
   '/admin/system': typeof AdminSystemRoute
   '/admin/templates': typeof AdminTemplatesRoute
+  '/admin/testimonials': typeof AdminTestimonialsRoute
   '/admin/users': typeof AdminUsersRoute
   '/checkout/$planSlug': typeof CheckoutPlanSlugRoute
   '/client/assistant': typeof ClientAssistantRoute
@@ -407,6 +420,7 @@ export interface FileRoutesByFullPath {
   '/client/settings': typeof ClientSettingsRoute
   '/client/subscription': typeof ClientSubscriptionRoute
   '/client/support': typeof ClientSupportRoute
+  '/client/testimonial': typeof ClientTestimonialRoute
   '/plans/$slug': typeof PlansSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/client/': typeof ClientIndexRoute
@@ -457,6 +471,7 @@ export interface FileRoutesByTo {
   '/admin/support': typeof AdminSupportRoute
   '/admin/system': typeof AdminSystemRoute
   '/admin/templates': typeof AdminTemplatesRoute
+  '/admin/testimonials': typeof AdminTestimonialsRoute
   '/admin/users': typeof AdminUsersRoute
   '/checkout/$planSlug': typeof CheckoutPlanSlugRoute
   '/client/assistant': typeof ClientAssistantRoute
@@ -465,6 +480,7 @@ export interface FileRoutesByTo {
   '/client/settings': typeof ClientSettingsRoute
   '/client/subscription': typeof ClientSubscriptionRoute
   '/client/support': typeof ClientSupportRoute
+  '/client/testimonial': typeof ClientTestimonialRoute
   '/plans/$slug': typeof PlansSlugRoute
   '/admin': typeof AdminIndexRoute
   '/client': typeof ClientIndexRoute
@@ -516,6 +532,7 @@ export interface FileRoutesById {
   '/admin/support': typeof AdminSupportRoute
   '/admin/system': typeof AdminSystemRoute
   '/admin/templates': typeof AdminTemplatesRoute
+  '/admin/testimonials': typeof AdminTestimonialsRoute
   '/admin/users': typeof AdminUsersRoute
   '/checkout/$planSlug': typeof CheckoutPlanSlugRoute
   '/client/assistant': typeof ClientAssistantRoute
@@ -524,6 +541,7 @@ export interface FileRoutesById {
   '/client/settings': typeof ClientSettingsRoute
   '/client/subscription': typeof ClientSubscriptionRoute
   '/client/support': typeof ClientSupportRoute
+  '/client/testimonial': typeof ClientTestimonialRoute
   '/plans/$slug': typeof PlansSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/client/': typeof ClientIndexRoute
@@ -578,6 +596,7 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/system'
     | '/admin/templates'
+    | '/admin/testimonials'
     | '/admin/users'
     | '/checkout/$planSlug'
     | '/client/assistant'
@@ -586,6 +605,7 @@ export interface FileRouteTypes {
     | '/client/settings'
     | '/client/subscription'
     | '/client/support'
+    | '/client/testimonial'
     | '/plans/$slug'
     | '/admin/'
     | '/client/'
@@ -636,6 +656,7 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/system'
     | '/admin/templates'
+    | '/admin/testimonials'
     | '/admin/users'
     | '/checkout/$planSlug'
     | '/client/assistant'
@@ -644,6 +665,7 @@ export interface FileRouteTypes {
     | '/client/settings'
     | '/client/subscription'
     | '/client/support'
+    | '/client/testimonial'
     | '/plans/$slug'
     | '/admin'
     | '/client'
@@ -694,6 +716,7 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/system'
     | '/admin/templates'
+    | '/admin/testimonials'
     | '/admin/users'
     | '/checkout/$planSlug'
     | '/client/assistant'
@@ -702,6 +725,7 @@ export interface FileRouteTypes {
     | '/client/settings'
     | '/client/subscription'
     | '/client/support'
+    | '/client/testimonial'
     | '/plans/$slug'
     | '/admin/'
     | '/client/'
@@ -905,6 +929,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminTemplatesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/testimonials': {
+      id: '/admin/testimonials'
+      path: '/testimonials'
+      fullPath: '/admin/testimonials'
+      preLoaderRoute: typeof AdminTestimonialsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/users': {
       id: '/admin/users'
       path: '/users'
@@ -966,6 +997,13 @@ declare module '@tanstack/react-router' {
       path: '/support'
       fullPath: '/client/support'
       preLoaderRoute: typeof ClientSupportRouteImport
+      parentRoute: typeof ClientRoute
+    }
+    '/client/testimonial': {
+      id: '/client/testimonial'
+      path: '/testimonial'
+      fullPath: '/client/testimonial'
+      preLoaderRoute: typeof ClientTestimonialRouteImport
       parentRoute: typeof ClientRoute
     }
     '/plans/': {
@@ -1199,6 +1237,7 @@ interface AdminRouteChildren {
   AdminSupportRoute: typeof AdminSupportRoute
   AdminSystemRoute: typeof AdminSystemRoute
   AdminTemplatesRoute: typeof AdminTemplatesRoute
+  AdminTestimonialsRoute: typeof AdminTestimonialsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminNodesNodeIdRoute: typeof AdminNodesNodeIdRoute
@@ -1219,6 +1258,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminSupportRoute: AdminSupportRoute,
   AdminSystemRoute: AdminSystemRoute,
   AdminTemplatesRoute: AdminTemplatesRoute,
+  AdminTestimonialsRoute: AdminTestimonialsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminNodesNodeIdRoute: AdminNodesNodeIdRoute,
@@ -1265,6 +1305,7 @@ interface ClientRouteChildren {
   ClientSettingsRoute: typeof ClientSettingsRoute
   ClientSubscriptionRoute: typeof ClientSubscriptionRoute
   ClientSupportRoute: typeof ClientSupportRoute
+  ClientTestimonialRoute: typeof ClientTestimonialRoute
   ClientIndexRoute: typeof ClientIndexRoute
   ClientOrdersOrderIdRoute: typeof ClientOrdersOrderIdRoute
   ClientServersServerIdRoute: typeof ClientServersServerIdRouteWithChildren
@@ -1278,6 +1319,7 @@ const ClientRouteChildren: ClientRouteChildren = {
   ClientSettingsRoute: ClientSettingsRoute,
   ClientSubscriptionRoute: ClientSubscriptionRoute,
   ClientSupportRoute: ClientSupportRoute,
+  ClientTestimonialRoute: ClientTestimonialRoute,
   ClientIndexRoute: ClientIndexRoute,
   ClientOrdersOrderIdRoute: ClientOrdersOrderIdRoute,
   ClientServersServerIdRoute: ClientServersServerIdRouteWithChildren,

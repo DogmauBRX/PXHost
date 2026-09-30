@@ -85,8 +85,41 @@ model User {
   communityServers          CommunityServer[]
   supportTickets            SupportTicket[]        @relation("SupportTicketOwner")
   supportMessages           SupportTicketMessage[] @relation("SupportMessageAuthor")
+  testimonial               Testimonial?
 
   @@map("users")
+}
+
+// One depoimento per customer (public landing page feature). Eligibility —
+// "has ever had a real, paid, provisioned server" — is enforced in
+// TestimonialsService.submit by checking for a Subscription row with a
+// non-null serverId, not by a column here; this table only stores the
+// content, since that eligibility rule can outlive any one submission.
+// `userId` is unique: submitting again is an upsert (TestimonialsService),
+// which resets `status` to 'pending' and `featured` to false so an edited
+// testimonial is always re-reviewed before it can show up publicly again.
+model Testimonial {
+  id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId        String    @unique @map("user_id") @db.Uuid
+  // Snapshotted at submission time — a display name that later changes
+  // (or a deleted account) must never alter or blank out an already
+  //-published testimonial.
+  authorName    String    @map("author_name")
+  rating        Int       @db.SmallInt
+  message       String
+  status        String    @default("pending")
+  featured      Boolean   @default(false)
+  featuredOrder Int?      @map("featured_order")
+  moderatedBy   String?   @map("moderated_by") @db.Uuid
+  moderatedAt   DateTime? @map("moderated_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([featured, featuredOrder])
+  @@map("testimonials")
 }
 
 // Social graph for GXHost customers. `pairKey` is the two user UUIDs in

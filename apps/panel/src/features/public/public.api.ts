@@ -1,5 +1,5 @@
 import { API_URL, ApiError } from '@/shared/api/client';
-import type { PublicPlan, PublicAnnouncement, PublicPlatformStatus } from '@/shared/api/types';
+import type { PublicPlan, PublicAnnouncement, PublicPlatformStatus, PublicTestimonial } from '@/shared/api/types';
 
 /**
  * The commercial catalog's own fetch helper — deliberately NOT `apiFetch`
@@ -34,3 +34,6 @@ export const getPublicPlan = (slug: string) => publicFetch<PublicPlan>(`/api/pub
 // doc comment on why.
 export const getPublicAnnouncement = () => publicFetch<PublicAnnouncement | null>('/api/public/status/announcement');
 export const getPublicNodeStatus = () => publicFetch<PublicPlatformStatus | null>('/api/public/status/nodes');
+
+// Admin-approved AND admin-featured depoimentos only — see TestimonialsService.listPublicFeatured.
+export const getPublicTestimonials = () => publicFetch<PublicTestimonial[]>('/api/public/testimonials');
