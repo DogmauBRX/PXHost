@@ -271,8 +271,33 @@ const STANDARD_STARTUP_COMMAND = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SE
 // command substitution), so a startup command can never reach a path that
 // is only known after the installer has run. WRITE_ARGS_FILE below copies
 // whatever the installer produced to this ONE fixed name, which is what
-// makes a single static startup command possible for every version.
+// gives every modern version one stable startup path.
 const MODLOADER_STARTUP_COMMAND = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M @unix_args.txt nogui';
+
+/**
+ * Resolves the preset's startup command for the selected Minecraft
+ * version. Forge 1.16 and older run on Java 8 and install a runnable jar;
+ * Java 8 does not support launcher @argfiles (that arrived in Java 9), so
+ * passing `@unix_args.txt` there is interpreted as a main-class name and
+ * fails with "Could not find or load main class @unix_args.txt".
+ *
+ * Only the broken `@unix_args.txt` token is rewritten. An unrelated
+ * administrator-defined Forge startup command remains as configured.
+ */
+export function pickStartupCommand(softwareKind: string | null, configuredCommand: string, minecraftVersion: string | undefined): string {
+  if (softwareKind !== 'forge' || !minecraftVersion) return configuredCommand;
+
+  const match = /^1\.(\d+)(?:\.|$)/.exec(minecraftVersion.trim());
+  if (!match) return configuredCommand; // "latest", snapshots and future version schemes use the modern path.
+
+  if (Number(match[1]) > 16) return configuredCommand;
+
+  // Match the argument as a complete token rather than requiring the
+  // entire command to be byte-identical to today's preset. Existing
+  // databases can legitimately carry an older whitespace/JVM-flag
+  // variant of the same preset command.
+  return configuredCommand.replace(/(^|\s)@unix_args\.txt(?=\s|$)/, '$1-jar {{SERVER_JARFILE}}');
+}
 
 // Shared tail of the Forge/NeoForge install scripts. Found live: both
 // installers reported "The server installed successfully", the scripts
@@ -280,8 +305,9 @@ const MODLOADER_STARTUP_COMMAND = 'java -Xms128M -Xmx{{SERVER_MEMORY}}M @unix_ar
 // command ran `java -jar server.jar` against a server.jar the modern
 // installers never create. The legacy branch matters too: 1.16.5 and
 // older really do ship a runnable universal/shim jar and no args file at
-// all, and `-jar x.jar` inside an @argfile is handled exactly like a
-// bare `-jar x.jar`, so one startup command covers both eras.
+// all. pickStartupCommand starts those directly with `java -jar`; putting
+// `-jar` in this normalized file is retained as install metadata, but is
+// deliberately not used by their Java 8 runtime.
 const WRITE_ARGS_FILE = `ARGS_FILE=$(find libraries -name unix_args.txt 2>/dev/null | head -n1)
 if [ -n "$ARGS_FILE" ]; then
   cp "$ARGS_FILE" unix_args.txt
@@ -294,6 +320,22 @@ else
   mv "$LEGACY_JAR" "\${SERVER_JARFILE}"
   printf -- '-jar\\n%s\\n' "\${SERVER_JARFILE}" > unix_args.txt
 fi`;
+
+// A previous install attempt on this same server — a different Forge/
+// NeoForge version, or a plain "latest" run before the customer picked a
+// specific one — can leave unix_args.txt, the libraries/ tree a modern
+// installer wrote it under, and the legacy universal/shim jar WRITE_ARGS_
+// FILE renamed sitting on disk from THAT run. WRITE_ARGS_FILE's own
+// `find` calls have no way to tell "produced by this run" from "produced
+// by the last one" and will happily pick up the stale state instead —
+// found live: unix_args.txt kept pointing at a Forge 26.2 shim jar after
+// installing 1.7.10 (a legacy version with no libraries/ tree of its own)
+// right over it. None of this is world data, so it's safe to clear
+// before every fresh install, run before the installer downloads anything
+// so a failed download never leaves a half-cleared server either.
+const CLEAN_STALE_MODLOADER_ARTIFACTS = `rm -f unix_args.txt
+rm -rf libraries
+find . -maxdepth 1 \\( -name "*-shim.jar" -o -name "*-universal.jar" \\) -delete`;
 const INSTALL_IMAGE = 'ghcr.io/parkervcp/installers:debian';
 // Fabric/Quilt/Forge/NeoForge's own installers are Java programs
 // (`java -jar *-installer.jar ...`), unlike Paper/Purpur/Vanilla which
@@ -545,6 +587,8 @@ cd /mnt/server
 : "\${FORGE_VERSION:=latest}"
 : "\${SERVER_JARFILE:=server.jar}"
 
+${CLEAN_STALE_MODLOADER_ARTIFACTS}
+
 PROMOTIONS=$(curl -fsSL https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json)
 
 if [ "$MINECRAFT_VERSION" == "latest" ]; then
@@ -596,6 +640,8 @@ cd /mnt/server
 : "\${MINECRAFT_VERSION:=latest}"
 : "\${NEOFORGE_VERSION:=latest}"
 : "\${SERVER_JARFILE:=server.jar}"
+
+${CLEAN_STALE_MODLOADER_ARTIFACTS}
 
 VERSIONS=$(curl -fsSL https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge | jq -r '.versions[]')
 

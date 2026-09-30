@@ -12,7 +12,7 @@ import { NodeSchedulerService, SchedulerCandidate } from '../scheduler/node-sche
 import { GatewayService } from '../gateway/gateway.service';
 import { CreateServerDto, CreateSetupPendingServerInput } from './dto/server.dto';
 import { generateShortId } from './short-id';
-import { pickDockerImage } from '../templates/software-presets';
+import { pickDockerImage, pickStartupCommand } from '../templates/software-presets';
 import { validateVariableValue } from './variable-rules';
 import { applyPlanManagedVariables } from './variable-resolution';
 
@@ -331,7 +331,9 @@ export class ServersService {
           // ServerSetupService.complete overwrites it for real.
           name: dto.name ?? `Servidor ${shortId}`,
           dockerImage: templateContext?.dockerImage ?? null,
-          startupCommand: templateContext?.template.startupCommand ?? null,
+          startupCommand: templateContext
+            ? pickStartupCommand(templateContext.template.softwareKind, templateContext.template.startupCommand, dto.variables?.MINECRAFT_VERSION)
+            : null,
           cpuLimitPercent: plan.cpuLimitPercent,
           memoryMb: plan.memoryMb,
           swapMb: plan.swapMb,
@@ -404,6 +406,15 @@ export class ServersService {
         resolvedValues[tv.envVariable] = value;
       }
       applyPlanManagedVariables(resolvedValues, server.memoryMb);
+      const startupCommand = pickStartupCommand(
+        templateContext.template.softwareKind,
+        templateContext.template.startupCommand,
+        resolvedValues.MINECRAFT_VERSION,
+      );
+      if (server.startupCommand !== startupCommand) {
+        await tx.server.update({ where: { id: server.id }, data: { startupCommand } });
+        server.startupCommand = startupCommand;
+      }
       for (const tv of templateVars) {
         const value = resolvedValues[tv.envVariable];
         await tx.serverVariable.create({ data: { serverId: server.id, variableId: tv.id, value } });
@@ -448,7 +459,7 @@ export class ServersService {
       uuid: created.server.id,
       uid: created.uid,
       image: templateContext.dockerImage,
-      startupTemplate: templateContext.template.startupCommand,
+      startupTemplate: created.server.startupCommand!,
       stopSignal: undefined,
       declaredVariables: created.declaredNames,
       variables: created.resolvedValues,

@@ -19,6 +19,52 @@ func TestBuildArgv_SimpleSubstitution(t *testing.T) {
 	}
 }
 
+func TestBuildArgv_LegacyForgeDoesNotPassArgfileToJava8(t *testing.T) {
+	argv, err := BuildArgv(
+		`java -Xms128M -Xmx{{SERVER_MEMORY}}M @unix_args.txt nogui`,
+		map[string]string{
+			"SERVER_MEMORY": "2048", "SERVER_JARFILE": "server.jar",
+			"MINECRAFT_VERSION": "1.7.10", "FORGE_VERSION": "10.13.4.1614",
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"java", "-Xms128M", "-Xmx2048M", "-jar", "server.jar", "nogui"}
+	if !equalSlices(argv, want) {
+		t.Fatalf("got %v, want %v", argv, want)
+	}
+}
+
+func TestBuildArgv_ModernForgeKeepsArgfile(t *testing.T) {
+	argv, err := BuildArgv(
+		`java @unix_args.txt nogui`,
+		map[string]string{"SERVER_JARFILE": "server.jar", "MINECRAFT_VERSION": "1.20.1", "FORGE_VERSION": "47.4.0"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"java", "@unix_args.txt", "nogui"}
+	if !equalSlices(argv, want) {
+		t.Fatalf("got %v, want %v", argv, want)
+	}
+}
+
+func TestBuildArgv_LegacyForgeJarRemainsOneLiteralArgument(t *testing.T) {
+	jar := `server.jar; touch /tmp/pwned`
+	argv, err := BuildArgv(
+		`java @unix_args.txt nogui`,
+		map[string]string{"SERVER_JARFILE": jar, "MINECRAFT_VERSION": "1.7.10", "FORGE_VERSION": "10.13.4.1614"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"java", "-jar", jar, "nogui"}
+	if !equalSlices(argv, want) {
+		t.Fatalf("got %v, want %v", argv, want)
+	}
+}
+
 // This is the load-bearing security test for the whole package: no matter
 // what a customer puts in a variable value, it must land as exactly one
 // literal argv element and must never grow additional argv elements or

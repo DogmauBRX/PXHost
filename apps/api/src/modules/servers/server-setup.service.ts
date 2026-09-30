@@ -5,7 +5,7 @@ import type { AccessActor } from '../authorization/server-access.service';
 import { PublicTemplatesService } from '../public/public-templates.service';
 import { AuditService } from '../audit/audit.service';
 import { DEFAULT_INSTALL_ENTRYPOINT, DEFAULT_INSTALL_IMAGE, ServersService } from './servers.service';
-import { pickDockerImage } from '../templates/software-presets';
+import { pickDockerImage, pickStartupCommand } from '../templates/software-presets';
 import { applyPlanManagedVariables, resolveDeclaredVariables } from './variable-resolution';
 import { CompleteServerSetupDto } from './dto/server-setup.dto';
 import { ChangeServerVersionDto } from './dto/change-version.dto';
@@ -219,6 +219,7 @@ export class ServerSetupService {
     // never in `templateVars`'s editable set, so a client "typing the
     // variable name it saw in devtools" gets a 403, not a resource bump.
     const resolvedValues = applyPlanManagedVariables(resolveDeclaredVariables(templateVars, dto.variables ?? {}), server.memoryMb);
+    const startupCommand = pickStartupCommand(template.softwareKind, template.startupCommand, resolvedValues.MINECRAFT_VERSION);
 
     // Both the CAS transition AND the ServerVariable writes happen inside
     // ONE `withRLS` transaction — `server_variables` carries the same RLS
@@ -235,7 +236,7 @@ export class ServerSetupService {
     const count = await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
       const result = await tx.server.updateMany({
         where: { id: serverId, status: { in: ['setup_pending', 'install_failed'] } },
-        data: { status: 'installing', templateId: template.id, dockerImage, startupCommand: template.startupCommand, name: dto.name },
+        data: { status: 'installing', templateId: template.id, dockerImage, startupCommand, name: dto.name },
       });
       if (result.count === 0) return 0;
 
@@ -288,7 +289,7 @@ export class ServerSetupService {
         // asserted.
         uid: server.uid!,
         image: dockerImage,
-        startupTemplate: template.startupCommand,
+        startupTemplate: startupCommand,
         stopSignal: undefined,
         declaredVariables: templateVars.map((tv) => tv.envVariable),
         variables: resolvedValues,
@@ -359,6 +360,7 @@ export class ServerSetupService {
 
     const templateVars = await this.prisma.templateVariable.findMany({ where: { templateId: template.id } });
     const resolvedValues = applyPlanManagedVariables(resolveDeclaredVariables(templateVars, dto.variables ?? {}), server.memoryMb);
+    const startupCommand = pickStartupCommand(template.softwareKind, template.startupCommand, resolvedValues.MINECRAFT_VERSION);
 
     // Same "CAS + variable upserts in one transaction" shape as `complete`
     // above, re-checking `powerState` at UPDATE time too — the server
@@ -366,7 +368,7 @@ export class ServerSetupService {
     const count = await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
       const result = await tx.server.updateMany({
         where: { id: serverId, status: 'ready', powerState: 'offline' },
-        data: { status: 'installing', templateId: template.id, dockerImage, startupCommand: template.startupCommand },
+        data: { status: 'installing', templateId: template.id, dockerImage, startupCommand },
       });
       if (result.count === 0) return 0;
 
@@ -403,7 +405,7 @@ export class ServerSetupService {
       server.nodeId,
       {
         image: dockerImage,
-        startupTemplate: template.startupCommand,
+        startupTemplate: startupCommand,
         stopSignal: undefined,
         declaredVariables: templateVars.map((tv) => tv.envVariable),
         variables: resolvedValues,

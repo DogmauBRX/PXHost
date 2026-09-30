@@ -2,6 +2,7 @@ package spec
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -49,6 +50,7 @@ func BuildArgv(startupTemplate string, vars map[string]string) ([]string, error)
 		}
 		argv = append(argv, substituted)
 	}
+	argv = rewriteLegacyForgeArgfile(argv, vars)
 
 	if forbiddenArgv0[argv[0]] {
 		return nil, fmt.Errorf(
@@ -61,6 +63,45 @@ func BuildArgv(startupTemplate string, vars map[string]string) ([]string, error)
 		}
 	}
 	return argv, nil
+}
+
+// rewriteLegacyForgeArgfile is a compatibility guard for Forge 1.16 and
+// older. Those servers use Java 8, whose launcher treats @unix_args.txt as
+// a main-class name rather than expanding it (argument files were added in
+// Java 9). The API normally resolves the version-specific startup command,
+// but doing the same at the final argv boundary also repairs servers whose
+// startup command was persisted before that API fix.
+//
+// This is still shell-free: SERVER_JARFILE is appended as one literal argv
+// element after tokenization, preserving BuildArgv's injection guarantee.
+func rewriteLegacyForgeArgfile(argv []string, vars map[string]string) []string {
+	if _, isForge := vars["FORGE_VERSION"]; !isForge || !isLegacyForgeVersion(vars["MINECRAFT_VERSION"]) {
+		return argv
+	}
+	jar, ok := vars["SERVER_JARFILE"]
+	if !ok || jar == "" {
+		return argv
+	}
+	for i, arg := range argv {
+		if arg != "@unix_args.txt" {
+			continue
+		}
+		rewritten := make([]string, 0, len(argv)+1)
+		rewritten = append(rewritten, argv[:i]...)
+		rewritten = append(rewritten, "-jar", jar)
+		rewritten = append(rewritten, argv[i+1:]...)
+		return rewritten
+	}
+	return argv
+}
+
+func isLegacyForgeVersion(version string) bool {
+	parts := strings.Split(strings.TrimSpace(version), ".")
+	if len(parts) < 2 || parts[0] != "1" {
+		return false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	return err == nil && minor <= 16
 }
 
 // tokenize splits a template string into words using shell-like rules:
