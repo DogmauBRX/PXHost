@@ -433,10 +433,18 @@ export class ServerSetupService {
     if (!can('startup.update')) throw new ForbiddenException('Missing permission: startup.update');
     if (!server.templateId) throw new ConflictException('O servidor ainda não possui uma versão instalada.');
 
-    const currentVariables = await this.prisma.serverVariable.findMany({
-      where: { serverId, variable: { templateId: server.templateId } },
-      select: { value: true, variable: { select: { envVariable: true } } },
-    });
+    // server_variables is protected by the same Postgres RLS policy as
+    // servers. A bare Prisma query has no app.user_id/app.is_admin session
+    // context and therefore returns zero rows rather than throwing. That
+    // made `variables` empty, so changeVersion filled every field from the
+    // template defaults — MINECRAFT_VERSION became "latest" and a request
+    // to reinstall 1.7.10 silently installed 26.2 instead.
+    const currentVariables = await this.prisma.withRLS({ userId: actor.id, isAdmin: actor.isAdmin }, (tx) =>
+      tx.serverVariable.findMany({
+        where: { serverId, variable: { templateId: server.templateId! } },
+        select: { value: true, variable: { select: { envVariable: true } } },
+      }),
+    );
     const variables = Object.fromEntries(currentVariables.map((row) => [row.variable.envVariable, row.value]));
 
     // A failed first install cannot use changeVersion: that path is for a

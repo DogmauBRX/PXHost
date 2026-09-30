@@ -9,7 +9,7 @@ describe('ServerSetupService.reinstallCurrent', () => {
         can: () => true,
       })),
     };
-    const prisma = {
+    const tx = {
       serverVariable: {
         findMany: jest.fn(async () => [
           { value: '1.21.10', variable: { envVariable: 'MINECRAFT_VERSION' } },
@@ -18,6 +18,7 @@ describe('ServerSetupService.reinstallCurrent', () => {
         ]),
       },
     };
+    const prisma = { withRLS: jest.fn(async (_ctx, callback) => callback(tx)) };
     const service = new ServerSetupService(
       prisma as never,
       access as never,
@@ -31,7 +32,8 @@ describe('ServerSetupService.reinstallCurrent', () => {
 
     await service.reinstallCurrent(actor, 'server-1');
 
-    expect(prisma.serverVariable.findMany).toHaveBeenCalledWith({
+    expect(prisma.withRLS).toHaveBeenCalledWith({ userId: 'user-1', isAdmin: false }, expect.any(Function));
+    expect(tx.serverVariable.findMany).toHaveBeenCalledWith({
       where: { serverId: 'server-1', variable: { templateId: 'template-1' } },
       select: { value: true, variable: { select: { envVariable: true } } },
     });
@@ -53,7 +55,7 @@ describe('ServerSetupService.reinstallCurrent', () => {
         can: () => true,
       })),
     };
-    const prisma = {
+    const tx = {
       serverVariable: {
         findMany: jest.fn(async () => [
           { value: '1.21.10', variable: { envVariable: 'MINECRAFT_VERSION' } },
@@ -61,6 +63,7 @@ describe('ServerSetupService.reinstallCurrent', () => {
         ]),
       },
     };
+    const prisma = { withRLS: jest.fn(async (_ctx, callback) => callback(tx)) };
     const service = new ServerSetupService(
       prisma as never,
       access as never,
