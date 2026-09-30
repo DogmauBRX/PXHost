@@ -558,7 +558,18 @@ fi
 FULL_VERSION="\${MINECRAFT_VERSION}-\${FORGE_VERSION}"
 INSTALLER_URL="https://maven.minecraftforge.net/net/minecraftforge/forge/\${FULL_VERSION}/forge-\${FULL_VERSION}-installer.jar"
 echo "Downloading Forge installer \${FULL_VERSION}..."
-curl -fsSL -o forge-installer.jar "$INSTALLER_URL"
+if ! curl -fsSL -o forge-installer.jar "$INSTALLER_URL"; then
+  # A handful of legacy builds (found live on 1.7.10-10.13.4.1614) publish
+  # under a Maven artifact version with the Minecraft version repeated as
+  # a trailing suffix (".../1.7.10-10.13.4.1614-1.7.10/...") that
+  # promotions_slim.json's plain "<mcVersion>-<build>" never reflects —
+  # the first attempt 404s without it. No clean version cutoff for which
+  # builds need this, so it's a fallback, not the primary path.
+  FULL_VERSION="\${FULL_VERSION}-\${MINECRAFT_VERSION}"
+  INSTALLER_URL="https://maven.minecraftforge.net/net/minecraftforge/forge/\${FULL_VERSION}/forge-\${FULL_VERSION}-installer.jar"
+  echo "Retrying with legacy version suffix: \${FULL_VERSION}..."
+  curl -fsSL -o forge-installer.jar "$INSTALLER_URL"
+fi
 java -jar forge-installer.jar --installServer
 rm -f forge-installer.jar forge-installer.jar.log
 
