@@ -7,6 +7,7 @@ import { formatBytes, formatDateTimeShort as formatDate } from '@/shared/format/
 import { getServer } from '@/features/servers/servers.api';
 import { ReinstallCurrentVersionButton } from '@/features/servers/ReinstallCurrentVersionButton';
 import { FileEditor } from './FileEditor';
+import { selectionFromDrop, selectionFromFiles, validUploadPath, type UploadSelection } from './folder-upload';
 import { ApiError } from '@/shared/api/client';
 import {
   Alert,
@@ -70,6 +71,7 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [deleteTargets, setDeleteTargets] = useState<{ name: string; isDir: boolean }[] | null>(null);
   const [prompt, setPrompt] = useState<PendingPrompt | null>(null);
@@ -209,20 +211,45 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
     setPrompt(null);
   }
 
-  async function uploadFiles(files: File[]) {
-    if (files.length === 0) return;
+  async function uploadFiles(selection: UploadSelection) {
+    const { files, directories } = selection;
+    if (files.length === 0 && directories.length === 0) return;
+    setActionError(null);
+    setActionNotice(null);
     setUploadProgress({ done: 0, total: files.length });
-    await withErrorHandling(async () => {
+    try {
+      if ([...files.map((entry) => entry.relativePath), ...directories].some((entry) => !validUploadPath(entry))) {
+        throw new Error('A pasta contém um caminho inválido.');
+      }
+      const created = new Set<string>();
+      for (const relativePath of [...new Set(directories)].sort((a, b) => a.split('/').length - b.split('/').length)) {
+        const directoryPath = joinPath(path, relativePath);
+        try {
+          await mkdir(serverId, directoryPath);
+        } catch (err) {
+          // Reusing an existing folder is normal when adding more files to
+          // a modpack. Confirm it is a directory before ignoring mkdir's
+          // generic FILE_OP_FAILED response for EEXIST.
+          const parent = relativePath.split('/').slice(0, -1).join('/');
+          const siblings = await listFiles(serverId, parent ? joinPath(path, parent) : path);
+          if (!siblings.some((entry) => entry.name === relativePath.split('/').at(-1) && entry.isDir)) throw err;
+        }
+        created.add(directoryPath);
+      }
       for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const link = await mintUploadLink(serverId, joinPath(path, file.name), file.size);
+        const { file, relativePath } = files[i];
+        const link = await mintUploadLink(serverId, joinPath(path, relativePath), file.size);
         const res = await fetch(link.url, { method: 'POST', body: file });
-        if (!res.ok) throw new ApiError(res.status, 'UPLOAD_FAILED', `O envio de "${file.name}" falhou (status ${res.status}).`);
+        if (!res.ok) throw new ApiError(res.status, 'UPLOAD_FAILED', `O envio de "${relativePath}" falhou (status ${res.status}).`);
         setUploadProgress({ done: i + 1, total: files.length });
       }
+      setActionNotice(`${files.length} arquivo(s) e ${created.size} pasta(s) enviados.`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'O envio falhou.');
+    } finally {
       refresh();
-    });
-    setUploadProgress(null);
+      setUploadProgress(null);
+    }
   }
 
   async function handleExtract(name: string) {
@@ -270,12 +297,15 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
     setDragActive(true);
   }
 
-  function handleDrop(e: DragEvent<HTMLDivElement>) {
+  async function handleDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setDragActive(false);
-    if (!canWrite) return;
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length) void uploadFiles(files);
+    if (!canWrite || uploadProgress !== null) return;
+    try {
+      await uploadFiles(await selectionFromDrop(e.dataTransfer));
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Não foi possível ler a pasta selecionada.');
+    }
   }
 
   if (editingPath) {
@@ -326,15 +356,33 @@ export function FileManager({ serverId, isAdmin = false }: { serverId: string; i
                     <Upload className="h-4 w-4" aria-hidden="true" />
                     {uploadProgress ? `Enviando ${uploadProgress.done}/${uploadProgress.total}…` : 'Enviar arquivos'}
                   </Button>
+                  <Button variant="secondary" disabled={uploadProgress !== null} onClick={() => folderInputRef.current?.click()}>
+                    <FolderPlus className="h-4 w-4" aria-hidden="true" />
+                    Enviar pasta
+                  </Button>
                   <input
                     ref={fileInputRef}
                     type="file"
                     multiple
                     className="hidden"
                     onChange={(e) => {
-                      const files = Array.from(e.target.files ?? []);
+                      const files = selectionFromFiles(e.target.files ?? []);
                       e.target.value = '';
-                      if (files.length) void uploadFiles(files);
+                      void uploadFiles(files);
+                    }}
+                  />
+                  <input
+                    ref={(input) => {
+                      folderInputRef.current = input;
+                      input?.setAttribute('webkitdirectory', '');
+                    }}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = selectionFromFiles(e.target.files ?? []);
+                      e.target.value = '';
+                      void uploadFiles(files);
                     }}
                   />
                 </>
