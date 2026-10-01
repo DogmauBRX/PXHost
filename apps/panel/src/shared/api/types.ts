@@ -1006,6 +1006,7 @@ export interface Subscription {
   currentPeriodEndsAt: string | null;
   cancelledAt: string | null;
   cancelReason: string | null;
+  cancelAtPeriodEnd: boolean;
   // Checkout Bricks pivot: 'card' auto-renews via Mercado Pago's own
   // preapproval (autoRenew true, externalSubscriptionId set); 'pix'
   // renews only when the customer pays a new order (renewForUser).

@@ -128,7 +128,7 @@ export function SubscriptionPage() {
       <ConfirmDialog
         open={!!cancelTarget}
         title="Cancelar assinatura"
-        message={`Tem certeza que deseja cancelar sua assinatura do plano "${cancelTarget?.plan.name}"? Essa ação não pode ser desfeita.`}
+        message={`Tem certeza que deseja cancelar sua assinatura do plano "${cancelTarget?.plan.name}"? ${cancelTarget && ['active', 'past_due'].includes(cancelTarget.status) ? 'Não haverá novas cobranças e o servidor continua ativo até o fim do período já pago.' : 'Não haverá novas cobranças.'} Essa ação não pode ser desfeita.`}
         confirmLabel="Cancelar assinatura"
         tone="danger"
         loading={cancelMutation.isPending}
@@ -186,9 +186,14 @@ function SubscriptionCard({ sub, orderId, onCancel }: { sub: Subscription; order
               Início: <span className="text-text">{formatDate(sub.startedAt)}</span>
             </p>
           )}
-          {sub.status === 'active' && formatDate(sub.currentPeriodEndsAt) && (
+          {sub.status === 'active' && !sub.cancelAtPeriodEnd && formatDate(sub.currentPeriodEndsAt) && (
             <p>
               Próxima cobrança: <span className="text-text">{formatDate(sub.currentPeriodEndsAt)}</span>
+            </p>
+          )}
+          {sub.cancelAtPeriodEnd && sub.status !== 'cancelled' && (
+            <p>
+              Cancelamento agendado: seu servidor continua ativo até <span className="text-text">{formatDate(sub.currentPeriodEndsAt)}</span>, sem novas cobranças.
             </p>
           )}
           {sub.status === 'pending' && <p>Aguardando confirmação do pagamento.</p>}
@@ -201,7 +206,7 @@ function SubscriptionCard({ sub, orderId, onCancel }: { sub: Subscription; order
             </Link>
           )}
           {sub.status === 'active' && sub.serverId && <ServerSetupCta serverId={sub.serverId} />}
-          {CANCELABLE_STATUSES.includes(sub.status) && (
+          {CANCELABLE_STATUSES.includes(sub.status) && !sub.cancelAtPeriodEnd && (
             <Button variant="secondary" onClick={onCancel}>
               Cancelar assinatura
             </Button>

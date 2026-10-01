@@ -287,6 +287,20 @@ export class PaymentsWebhookService {
             await this.subscriptions.applyTransition(tx, subscriptionId, 'suspended', { actorId: null, reason: `payment webhook: ${event}` });
           }
           await this.audit.record({ action: 'payment.refunded', targetType: 'order', targetId: order.id, metadata: { paymentId: payment.id, event } });
+          // The money went back, so the server stops too — regardless of
+          // the subscription's status. Found live: a customer cancelled
+          // (terminal `cancelled`, so the transition above was skipped),
+          // was refunded, and kept a running server, because nothing
+          // here ever touched the SERVER. 'billing' source, so a later
+          // confirmed payment on this subscription can lift it the same
+          // way it lifts a delinquency suspension.
+          // Never allowed to roll back the refund itself: a server that
+          // vanished in the meantime just gets logged.
+          if (subscription.serverId) {
+            await this.servers
+              .suspend(subscription.serverId, `billing: ${event === 'PaymentChargeback' ? 'chargeback' : 'payment refunded'}`, null, 'billing')
+              .catch((err) => this.logger.error(`failed to suspend server ${subscription.serverId} after ${event} on order ${order.id}: ${(err as Error).message}`));
+          }
           return null;
         }
         case 'PaymentCanceled': {

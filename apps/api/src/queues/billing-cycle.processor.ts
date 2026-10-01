@@ -38,6 +38,11 @@ const OFFLINE_RENEWAL_LOOKAHEAD_DAYS = 3;
  *    RECOVERED payment reactivate a server that was ALSO suspended for
  *    abuse in the meantime. Never deletes a server (payments plan §17).
  *
+ * 4. **Cancelamento no fim do período**: a subscription the customer
+ *    cancelled with `atPeriodEnd` (`cancelAtPeriodEnd`, server kept
+ *    running until the paid period ran out) is moved to `cancelled` and
+ *    its server suspended once `currentPeriodEndsAt` has passed.
+ *
  * "How long has it been past_due" has no dedicated timestamp column —
  * derived from the most recent `SubscriptionEvent` whose `toStatus` is
  * `'past_due'`, the same append-only history `SubscriptionsService`
@@ -82,8 +87,9 @@ export class BillingCycleProcessor implements OnModuleInit, OnModuleDestroy {
     const renewedCount = await this.generateOfflineRenewalCharges();
     const expiredCount = await this.expireStaleOrders();
     const suspendedCount = await this.suspendOverdueSubscriptions();
+    const endedCount = await this.finishCancellationsAtPeriodEnd();
     this.logger.log(
-      `billing-cycle run complete: ${renewedCount} offline renewal charge(s) created, ${expiredCount} order(s) expired, ${suspendedCount} subscription(s) suspended`,
+      `billing-cycle run complete: ${renewedCount} offline renewal charge(s) created, ${expiredCount} order(s) expired, ${suspendedCount} subscription(s) suspended, ${endedCount} cancellation(s) finished`,
     );
   }
 
@@ -202,5 +208,31 @@ export class BillingCycleProcessor implements OnModuleInit, OnModuleDestroy {
     }
 
     return suspendedCount;
+  }
+
+  private async finishCancellationsAtPeriodEnd(): Promise<number> {
+    const ended = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+      tx.subscription.findMany({
+        where: { cancelAtPeriodEnd: true, status: { in: ['active', 'past_due', 'suspended'] }, currentPeriodEndsAt: { lte: new Date() } },
+        select: { id: true, serverId: true, cancelReason: true },
+      }),
+    );
+
+    let finished = 0;
+    for (const sub of ended) {
+      try {
+        await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) =>
+          this.subscriptions.applyTransition(tx, sub.id, 'cancelled', { actorId: null, reason: sub.cancelReason ?? 'billing-cycle: cancelled at period end' }),
+        );
+        await this.audit.record({ action: 'subscription.cancelled.period_end', targetType: 'subscription', targetId: sub.id });
+        if (sub.serverId) {
+          await this.servers.suspend(sub.serverId, 'billing: subscription cancelled (period ended)', null, 'billing');
+        }
+        finished++;
+      } catch (err) {
+        this.logger.error(`failed to finish period-end cancellation for subscription ${sub.id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return finished;
   }
 }

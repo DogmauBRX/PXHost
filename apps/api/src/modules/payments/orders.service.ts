@@ -21,6 +21,7 @@ import { ProvisioningQueueService } from './provisioning-queue.service';
 import { CreateCheckoutDto } from './dto/create-checkout.dto';
 import type { ListOrdersDto } from './dto/list-orders.dto';
 import type { OrderConfigSnapshot } from './order-config-snapshot';
+import { ServersService } from '../servers/servers.service';
 
 const CHECKOUT_RL_WINDOW_SECONDS = 60 * 60;
 const CHECKOUT_RL_LIMIT_PER_USER = 10;
@@ -82,6 +83,7 @@ export class OrdersService {
     private readonly payments: PaymentsService,
     private readonly provisioningQueue: ProvisioningQueueService,
     private readonly providers: PaymentProviderRegistry,
+    private readonly servers: ServersService,
   ) {}
 
   /**
@@ -617,7 +619,19 @@ export class OrdersService {
       return updated;
     }
 
-    return this.subscriptions.cancelForUser(userId, subscriptionId, { reason: opts.reason });
+    const cancelled = await this.subscriptions.cancelForUser(userId, subscriptionId, { reason: opts.reason });
+
+    // `cancelled` is terminal and nothing else ever looks at the SERVER
+    // of a cancelled subscription — without this the customer keeps a
+    // running server forever after cancelling (found live, alongside the
+    // same gap on refunds). A failure here never undoes the cancellation
+    // the customer just made; it is logged and audited instead.
+    if (subscription.serverId) {
+      await this.servers
+        .suspend(subscription.serverId, 'billing: subscription cancelled', null, 'billing')
+        .catch((err) => this.logger.error(`failed to suspend server ${subscription.serverId} after cancelling subscription ${subscriptionId}: ${err instanceof Error ? err.message : String(err)}`));
+    }
+    return cancelled;
   }
 
   async listForUser(userId: string) {
