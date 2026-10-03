@@ -24,9 +24,20 @@ type Client struct {
 }
 
 func New(baseURL string) *Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Every call to the panel multiplexes onto ONE pooled HTTP/2 connection,
+	// and a request timing out only resets its stream, never the connection.
+	// Without these, a connection blackholed mid-flight (seen live: a LAN IP
+	// conflict sent the replies to another device) keeps absorbing every
+	// heartbeat until the kernel gives up retransmitting, ~15 minutes later.
+	transport.HTTP2 = &http.HTTP2Config{
+		SendPingTimeout:  20 * time.Second,
+		PingTimeout:      10 * time.Second,
+		WriteByteTimeout: 15 * time.Second,
+	}
 	return &Client{
 		baseURL: baseURL,
-		http:    &http.Client{Timeout: 15 * time.Second},
+		http:    &http.Client{Timeout: 15 * time.Second, Transport: transport},
 	}
 }
 
