@@ -63,6 +63,11 @@ export interface AgentStatsFrame {
 // Mirrors handleGetServer's response shape (agent/internal/api/routes_server.go).
 // `stats` is absent (not null) until the agent has pushed at least one
 // frame for this container — e.g. a server that was created but never started.
+/** Mirrors the Agent's State.IsStopped: a crashed server has no running process either. */
+export function isStoppedState(state: string): boolean {
+  return state === 'offline' || state === 'crashed';
+}
+
 export interface AgentDiagnosticCheck {
   key: string;
   ok: boolean;

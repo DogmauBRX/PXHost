@@ -202,6 +202,12 @@ export class CanaryService {
     };
 
     const boot = async (name: string, action: 'start' | 'restart') => {
+      // A modpack install already boots the server to validate it and only
+      // reports "completed" once that boot printed "Done (".
+      if (action === 'start' && (await this.agent.getServerStatus(target.nodeId, serverId!)).state === 'running') {
+        r.steps.push({ name, status: 'passed', durationMs: 0, detail: 'já iniciado pela validação da instalação do modpack' });
+        return;
+      }
       watch?.close();
       const { token, wsUrl } = await this.clientServers.mintConsoleToken(actor, serverId!);
       watch = await ConsoleWatch.open(wsUrl, token);

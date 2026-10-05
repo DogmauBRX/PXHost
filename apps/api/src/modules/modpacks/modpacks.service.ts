@@ -2,7 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, UnprocessableEntityE
 import { Prisma } from '@prisma/client';
 import { ServerAccessService, type AccessActor } from '../authorization/server-access.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
-import { AgentClient } from '../nodes/agent-client.service';
+import { AgentClient, isStoppedState } from '../nodes/agent-client.service';
 import { AuditService } from '../audit/audit.service';
 import { ActivityService } from '../activity/activity.service';
 import type { InstallModpackDto, ModpackProgressDto, ResolveCurseForgeFilesDto } from './dto/install-modpack.dto';
@@ -17,11 +17,6 @@ import { describeSoftware } from '../templates/software';
 // pack like DeceasedCraft can need one round for a missing dependency and
 // another for client-only mods that only fail once loading gets that far.
 const MAX_CURSEFORGE_AUTO_RETRIES = 3;
-
-/** Mirrors the Agent's State.IsStopped: a crashed server has no running process either. */
-function isStopped(state: string): boolean {
-  return state === 'offline' || state === 'crashed';
-}
 
 function asNumberArray(value: unknown): number[] {
   return Array.isArray(value) ? value.filter((item): item is number => typeof item === 'number') : [];
@@ -64,7 +59,7 @@ export class ModpacksService {
     if (!server.template?.softwareKind) throw new ConflictException('O software atual do servidor não foi identificado.');
 
     const runtime = await this.agent.getServerStatus(server.nodeId, server.id);
-    if (!isStopped(runtime.state)) throw new ConflictException('Desligue o servidor antes de instalar um modpack.');
+    if (!isStoppedState(runtime.state)) throw new ConflictException('Desligue o servidor antes de instalar um modpack.');
 
     const provider = this.provider(dto.source);
     const [project, version] = await Promise.all([provider.getProject(dto.projectId), provider.getVersion(dto.versionId, dto.projectId)]);
@@ -234,7 +229,7 @@ export class ModpacksService {
     if (!installation.backupId) throw new ConflictException('O backup de segurança desta instalação não está disponível para remoção segura.');
 
     const runtime = await this.agent.getServerStatus(server.nodeId, server.id);
-    if (!isStopped(runtime.state)) throw new ConflictException('Desligue o servidor antes de remover o modpack.');
+    if (!isStoppedState(runtime.state)) throw new ConflictException('Desligue o servidor antes de remover o modpack.');
 
     await this.agent.restoreBackup(server.nodeId, server.id, installation.backupId);
     await this.prisma.withRLS({ userId: actor.isAdmin ? null : actor.id, isAdmin: actor.isAdmin }, (tx) =>
@@ -298,7 +293,7 @@ export class ModpacksService {
     try {
       const server = await this.prisma.withRLS({ userId: null, isAdmin: true }, (tx) => tx.server.findUniqueOrThrow({ where: { id: operation.serverId }, select: { nodeId: true, diskMb: true } }));
       const runtime = await this.agent.getServerStatus(server.nodeId, operation.serverId);
-      if (!isStopped(runtime.state)) return; // someone started it meanwhile; don't fight a concurrent action
+      if (!isStoppedState(runtime.state)) return; // someone started it meanwhile; don't fight a concurrent action
       const provider = this.providers.get('curseforge');
       if (!(provider instanceof CurseForgeProvider)) return;
       const version = await provider.getVersion(operation.versionId, operation.projectId);

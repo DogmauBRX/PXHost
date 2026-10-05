@@ -10,6 +10,7 @@ import { applyPlanManagedVariables, resolveDeclaredVariables } from './variable-
 import { CompleteServerSetupDto } from './dto/server-setup.dto';
 import { ChangeServerVersionDto } from './dto/change-version.dto';
 import { SoftwareDiscoveryService } from '../templates/software-discovery.service';
+import { AgentClient, isStoppedState } from '../nodes/agent-client.service';
 import { KNOWN_MINECRAFT_VERSIONS, PRESET_KINDS, type PresetKind } from '../templates/software-presets';
 
 export interface SetupSoftwareOption {
@@ -71,6 +72,7 @@ export class ServerSetupService {
     private readonly servers: ServersService,
     private readonly audit: AuditService,
     private readonly discovery: SoftwareDiscoveryService,
+    private readonly agent: AgentClient,
   ) {}
 
   /**
@@ -345,7 +347,12 @@ export class ServerSetupService {
     const { server, can } = await this.access.resolve(actor.id, serverId, actor.isAdmin);
     if (!can('startup.update')) throw new ForbiddenException('Missing permission: startup.update');
     if (server.status !== 'ready') throw new ConflictException('INVALID_TRANSITION: server is not ready for a version change');
-    if (server.powerState !== 'offline') throw new ConflictException('SERVER_MUST_BE_OFFLINE: pare o servidor antes de trocar a versão');
+    // servers.power_state only moves on the next heartbeat (up to ~15s), so
+    // right after a stop it still says "running" and right after a start it
+    // still says "offline". Ask the agent; its own Reinstall re-checks under
+    // its lock, and a refusal there reverts this change (rethrow below).
+    const runtime = await this.agent.getServerStatus(server.nodeId, server.id);
+    if (!isStoppedState(runtime.state)) throw new ConflictException('SERVER_MUST_BE_OFFLINE: pare o servidor antes de trocar a versão');
 
     const template = await this.prisma.serverTemplate.findFirst({
       where: { id: dto.templateId, deletedAt: null, isPublic: true, isActive: true },
@@ -363,12 +370,11 @@ export class ServerSetupService {
     const startupCommand = pickStartupCommand(template.softwareKind, template.startupCommand, resolvedValues.MINECRAFT_VERSION);
 
     // Same "CAS + variable upserts in one transaction" shape as `complete`
-    // above, re-checking `powerState` at UPDATE time too — the server
-    // could have started between `access.resolve`'s read and here.
+    // above; the status CAS stops two concurrent version changes.
     const count = await this.prisma.withRLS({ userId: null, isAdmin: true }, async (tx) => {
       const result = await tx.server.updateMany({
-        where: { id: serverId, status: 'ready', powerState: 'offline' },
-        data: { status: 'installing', templateId: template.id, dockerImage, startupCommand },
+        where: { id: serverId, status: 'ready' },
+        data: { status: 'installing', templateId: template.id, dockerImage, startupCommand, powerState: runtime.state },
       });
       if (result.count === 0) return 0;
 
@@ -383,7 +389,7 @@ export class ServerSetupService {
       );
       return result.count;
     });
-    if (count === 0) throw new ConflictException('SERVER_MUST_BE_OFFLINE: pare o servidor antes de trocar a versão');
+    if (count === 0) throw new ConflictException('INVALID_TRANSITION: o servidor mudou de estado; tente novamente');
 
     await this.audit.record({
       action: auditAction,
