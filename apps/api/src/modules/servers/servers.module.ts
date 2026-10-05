@@ -35,6 +35,6 @@ import { TemplatesModule } from '../templates/templates.module';
   ],
   providers: [ServersService, ClientServersService, ServerVariablesService, ServerHostnameService, ServerSetupService],
   controllers: [ServersController, ClientServersController, ServerVariablesController, ServerHostnameController, RemoteServersController],
-  exports: [ServersService, ClientServersService],
+  exports: [ServersService, ClientServersService, ServerSetupService],
 })
 export class ServersModule {}

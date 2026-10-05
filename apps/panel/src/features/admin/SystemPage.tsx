@@ -8,10 +8,12 @@ import {
   maintainPartitions,
   retireSigningKey,
   runDiagnostics,
+  listCanaryRuns,
+  runCanary,
   rotateSigningKey,
 } from './admin.api';
 import { ApiError } from '@/shared/api/client';
-import type { DiagnosticStatus } from '@/shared/api/types';
+import type { CanaryRun, CanaryScenarioResult, DiagnosticStatus } from '@/shared/api/types';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, CardTitle, ConfirmDialog, PageHeader, TBody, TD, TR, Table, TableWrap } from '@/ui/primitives';
 
 const KEY_STATE_TONE: Record<string, 'ok' | 'warn' | 'neutral'> = { current: 'ok', retiring: 'warn' };
@@ -258,6 +260,127 @@ function DiagnosticsCard() {
   );
 }
 
+const RUN_TONE: Record<CanaryRun['status'], 'ok' | 'warn' | 'fail'> = { passed: 'ok', running: 'warn', failed: 'fail' };
+const RUN_LABEL: Record<CanaryRun['status'], string> = { passed: 'ok', running: 'rodando', failed: 'falha' };
+const SCENARIO_TONE: Record<CanaryScenarioResult['status'], 'ok' | 'warn' | 'fail' | 'neutral'> = {
+  passed: 'ok',
+  failed: 'fail',
+  running: 'warn',
+  pending: 'neutral',
+  skipped: 'neutral',
+};
+const SCENARIO_LABEL: Record<CanaryScenarioResult['status'], string> = {
+  passed: 'ok',
+  failed: 'falha',
+  running: 'rodando',
+  pending: 'na fila',
+  skipped: 'pulado',
+};
+
+function formatDuration(ms: number) {
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${s % 60}s`;
+}
+
+function CanaryScenario({ scenario }: { scenario: CanaryScenarioResult }) {
+  const [open, setOpen] = useState(scenario.status === 'failed');
+  return (
+    <div className="border-b border-border py-2 last:border-b-0">
+      <button type="button" className="flex w-full flex-wrap items-center gap-2 text-left" onClick={() => setOpen((v) => !v)}>
+        <Badge tone={SCENARIO_TONE[scenario.status]}>{SCENARIO_LABEL[scenario.status]}</Badge>
+        <span className="text-sm font-medium text-text">{scenario.softwareKind}</span>
+        <span className="text-xs text-text-muted">
+          {scenario.nodeName}
+          {scenario.minecraftVersion ? ` · ${scenario.minecraftVersion}` : ''}
+        </span>
+        {scenario.detail && <span className="text-xs text-text-muted">— {scenario.detail}</span>}
+      </button>
+      {open && scenario.steps.length > 0 && (
+        <div className="mt-2 space-y-1 pl-2">
+          {scenario.steps.map((step, i) => (
+            <div key={i} className="flex flex-col gap-0.5 text-sm sm:flex-row sm:gap-3">
+              <span className={`shrink-0 sm:w-64 ${step.status === 'failed' ? 'text-fail' : 'text-text'}`}>
+                {step.status === 'failed' ? '✗' : '✓'} {step.name} <span className="text-xs text-text-faint">({formatDuration(step.durationMs)})</span>
+              </span>
+              {step.detail && <span className="min-w-0 break-words text-text-muted">{step.detail}</span>}
+            </div>
+          ))}
+          {scenario.logTail && scenario.logTail.length > 0 && (
+            <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-surface-2 p-2 text-xs text-text-muted">{scenario.logTail.join('\n')}</pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CanaryCard() {
+  const queryClient = useQueryClient();
+  const runs = useQuery({
+    queryKey: ['admin', 'canary-runs'],
+    queryFn: listCanaryRuns,
+    refetchInterval: (query) => (query.state.data?.some((r) => r.status === 'running') ? 10_000 : false),
+  });
+  const trigger = useMutation({
+    mutationFn: runCanary,
+    onSuccess: () => setTimeout(() => void queryClient.invalidateQueries({ queryKey: ['admin', 'canary-runs'] }), 3000),
+  });
+  const latest = runs.data?.[0];
+  const isRunning = runs.data?.some((r) => r.status === 'running') ?? false;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <CardTitle>Canário (teste noturno)</CardTitle>
+          <p className="mt-1 text-sm text-text-muted">
+            Toda noite às 04:00 cria um servidor de cada software, instala plugin/modpack, liga, reinicia, desliga, reinstala a versão atual e apaga tudo. Falhas são enviadas por e-mail aos administradores.
+          </p>
+        </div>
+        <Button onClick={() => trigger.mutate()} disabled={trigger.isPending || isRunning}>
+          {isRunning ? 'Rodando…' : trigger.isPending ? 'Enfileirando…' : 'Rodar agora'}
+        </Button>
+      </CardHeader>
+      <CardBody className="space-y-4">
+        {trigger.error && <Alert tone="fail">{trigger.error instanceof ApiError ? trigger.error.message : 'Não foi possível iniciar o canário.'}</Alert>}
+        {trigger.isSuccess && !isRunning && <Alert tone="ok">Canário enfileirado — leva de 15 a 40 minutos.</Alert>}
+        {runs.isPending ? (
+          <p className="text-sm text-text-muted">Carregando…</p>
+        ) : !latest ? (
+          <p className="text-sm text-text-muted">Nenhuma execução ainda.</p>
+        ) : (
+          <>
+            <section>
+              <div className="mb-1 flex flex-wrap items-center gap-2 text-sm">
+                <Badge tone={RUN_TONE[latest.status]}>{RUN_LABEL[latest.status]}</Badge>
+                <span className="text-text">Última execução: {new Date(latest.startedAt).toLocaleString('pt-BR')}</span>
+                <span className="text-text-muted">{latest.trigger === 'manual' ? '(manual)' : '(agendada)'}</span>
+              </div>
+              {latest.summary && <p className="mb-2 text-sm text-text-muted">{latest.summary}</p>}
+              {latest.results.map((scenario) => (
+                <CanaryScenario key={`${latest.id}-${scenario.softwareKind}`} scenario={scenario} />
+              ))}
+            </section>
+            {runs.data!.length > 1 && (
+              <section>
+                <h3 className="mb-1 text-sm font-semibold text-text">Histórico</h3>
+                {runs.data!.slice(1).map((run) => (
+                  <div key={run.id} className="flex flex-wrap items-center gap-2 border-b border-border py-1.5 text-sm last:border-b-0">
+                    <Badge tone={RUN_TONE[run.status]}>{RUN_LABEL[run.status]}</Badge>
+                    <span className="text-text">{new Date(run.startedAt).toLocaleString('pt-BR')}</span>
+                    {run.finishedAt && <span className="text-xs text-text-faint">{formatDuration(new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime())}</span>}
+                    <span className="min-w-0 break-words text-text-muted">{run.summary}</span>
+                  </div>
+                ))}
+              </section>
+            )}
+          </>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
 export function SystemPage() {
   return (
     <>
@@ -265,6 +388,7 @@ export function SystemPage() {
       <div className="space-y-6">
         <InfraHealthCard />
         <DiagnosticsCard />
+        <CanaryCard />
         <SigningKeysCard />
         <PartitionsCard />
       </div>

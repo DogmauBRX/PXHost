@@ -30,6 +30,7 @@ import type {
   SoftwareKind,
   ReadyzResponse,
   PlatformDiagnostics,
+  CanaryRun,
   ServerTransfer,
   SigningKey,
   SiteAnnouncement,
@@ -371,6 +372,8 @@ export const maintainPartitions = () => apiFetch<void>('/api/admin/partitions/ma
 
 export const getReadyz = () => fetch(`${API_URL}/readyz`).then((r) => r.json() as Promise<ReadyzResponse>);
 export const runDiagnostics = () => apiFetch<PlatformDiagnostics>('/api/admin/diagnostics');
+export const listCanaryRuns = () => apiFetch<CanaryRun[]>('/api/admin/canary/runs');
+export const runCanary = () => apiFetch<{ queued: boolean }>('/api/admin/canary/runs', { method: 'POST' });
 
 // ---- Subscriptions (commercial site) ----
 

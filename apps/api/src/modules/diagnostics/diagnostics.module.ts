@@ -8,5 +8,6 @@ import { AdminDiagnosticsController } from './admin-diagnostics.controller';
   imports: [NodesModule, SchedulerModule],
   providers: [DiagnosticsService],
   controllers: [AdminDiagnosticsController],
+  exports: [DiagnosticsService],
 })
 export class DiagnosticsModule {}

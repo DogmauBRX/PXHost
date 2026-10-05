@@ -820,6 +820,33 @@ export interface DiagnosticCheck {
   detail: string;
 }
 
+export interface CanaryStepResult {
+  name: string;
+  status: 'passed' | 'failed';
+  durationMs: number;
+  detail?: string;
+}
+
+export interface CanaryScenarioResult {
+  softwareKind: string;
+  nodeName: string;
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
+  minecraftVersion?: string;
+  detail?: string;
+  steps: CanaryStepResult[];
+  logTail?: string[];
+}
+
+export interface CanaryRun {
+  id: string;
+  trigger: 'schedule' | 'manual';
+  status: 'running' | 'passed' | 'failed';
+  summary: string | null;
+  results: CanaryScenarioResult[];
+  startedAt: string;
+  finishedAt: string | null;
+}
+
 export interface PlatformDiagnostics {
   ranAt: string;
   status: DiagnosticStatus;

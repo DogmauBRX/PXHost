@@ -38,6 +38,7 @@ import { SocialModule } from './modules/social/social.module';
 import { SupportModule } from './modules/support/support.module';
 import { TestimonialsModule } from './modules/testimonials/testimonials.module';
 import { DiagnosticsModule } from './modules/diagnostics/diagnostics.module';
+import { CanaryAdminModule } from './modules/canary/canary-admin.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { DiagnosticsModule } from './modules/diagnostics/diagnostics.module';
     SupportModule,
     TestimonialsModule,
     DiagnosticsModule,
+    CanaryAdminModule,
   ],
   providers: [
     // JwtAuthGuard is global: every route requires authentication unless

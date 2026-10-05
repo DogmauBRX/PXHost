@@ -1555,3 +1555,17 @@ model SupportTicketMessage {
   @@index([ticketId, createdAt])
   @@map("support_ticket_messages")
 }
+
+model CanaryRun {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  trigger     String
+  status      String    @default("running")
+  summary     String?
+  results     Json      @default("[]")
+  diagnostics Json?
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz
+
+  @@index([startedAt])
+  @@map("canary_runs")
+}

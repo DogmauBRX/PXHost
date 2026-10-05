@@ -68,6 +68,18 @@ export class MailService {
     }
   }
 
+  async sendAdminAlert(to: string, subject: string, text: string): Promise<void> {
+    if (!this.transporter) {
+      this.logger.warn(`MAIL_HOST not configured — admin alert for ${to}: ${subject}`);
+      return;
+    }
+    try {
+      await this.transporter.sendMail({ to, from: this.mailFrom(), subject, text });
+    } catch (err) {
+      this.logger.error(`Failed to send admin alert to ${to}: ${(err as Error).message}`);
+    }
+  }
+
   private mailFrom(): string {
     const address = this.config.get<string>('MAIL_FROM_ADDRESS') ?? 'no-reply@localhost';
     const name = this.config.get<string>('MAIL_FROM_NAME');

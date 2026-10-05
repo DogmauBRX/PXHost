@@ -6,5 +6,5 @@ import { ActivityModule } from '../activity/activity.module';
 import { ModpacksModule } from '../modpacks/modpacks.module';
 import { PluginsController } from './plugins.controller';
 import { PluginsService } from './plugins.service';
-@Module({ imports: [AuthorizationModule, NodesModule, AuditModule, ActivityModule, ModpacksModule], controllers: [PluginsController], providers: [PluginsService] })
+@Module({ imports: [AuthorizationModule, NodesModule, AuditModule, ActivityModule, ModpacksModule], controllers: [PluginsController], providers: [PluginsService], exports: [PluginsService] })
 export class PluginsModule {}

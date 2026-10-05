@@ -8,6 +8,7 @@ import { WebhookProcessingProcessor } from './webhook-processing.processor';
 import { BillingCycleProcessor } from './billing-cycle.processor';
 import { BillingReconciliationProcessor } from './billing-reconciliation.processor';
 import { GatewayReconcileProcessor } from './gateway-reconcile.processor';
+import { CanaryProcessor } from './canary.processor';
 import { SchedulesModule } from '../modules/schedules/schedules.module';
 import { PartitionsModule } from '../modules/partitions/partitions.module';
 import { TransfersModule } from '../modules/transfers/transfers.module';
@@ -16,6 +17,7 @@ import { AuditModule } from '../modules/audit/audit.module';
 import { ServersModule } from '../modules/servers/servers.module';
 import { SubscriptionsModule } from '../modules/subscriptions/subscriptions.module';
 import { GatewayModule } from '../modules/gateway/gateway.module';
+import { CanaryModule } from '../modules/canary/canary.module';
 
 // Only ever imported by WorkerModule (src/worker.ts's root) — the HTTP
 // API process (src/main.ts's AppModule) never imports this, so it never
@@ -28,7 +30,7 @@ import { GatewayModule } from '../modules/gateway/gateway.module';
 // PRODUCE jobs and serve the admin/remote/webhook HTTP routes; only the
 // Worker construct here.
 @Module({
-  imports: [SchedulesModule, PartitionsModule, TransfersModule, PaymentsModule, AuditModule, ServersModule, SubscriptionsModule, GatewayModule],
+  imports: [SchedulesModule, PartitionsModule, TransfersModule, PaymentsModule, AuditModule, ServersModule, SubscriptionsModule, GatewayModule, CanaryModule],
   providers: [
     ScheduleTickProcessor,
     ScheduleDispatchProcessor,
@@ -39,6 +41,7 @@ import { GatewayModule } from '../modules/gateway/gateway.module';
     BillingCycleProcessor,
     BillingReconciliationProcessor,
     GatewayReconcileProcessor,
+    CanaryProcessor,
   ],
 })
 export class QueuesModule {}
