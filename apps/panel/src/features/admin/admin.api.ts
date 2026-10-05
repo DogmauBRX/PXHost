@@ -29,6 +29,7 @@ import type {
   PresetKind,
   SoftwareKind,
   ReadyzResponse,
+  PlatformDiagnostics,
   ServerTransfer,
   SigningKey,
   SiteAnnouncement,
@@ -369,6 +370,7 @@ export const maintainPartitions = () => apiFetch<void>('/api/admin/partitions/ma
 // ---- System: infra health (public endpoint, outside /api) ----
 
 export const getReadyz = () => fetch(`${API_URL}/readyz`).then((r) => r.json() as Promise<ReadyzResponse>);
+export const runDiagnostics = () => apiFetch<PlatformDiagnostics>('/api/admin/diagnostics');
 
 // ---- Subscriptions (commercial site) ----
 

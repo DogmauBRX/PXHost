@@ -129,6 +129,7 @@ func (s *Server) routes() http.Handler {
 
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
+	mux.Handle("GET /api/system/diagnostics", s.requireNodeToken(http.HandlerFunc(s.handleDiagnostics)))
 	mux.Handle("POST /api/servers", s.requireNodeToken(http.HandlerFunc(s.handleCreateServer)))
 	mux.Handle("GET /api/servers/{uuid}", s.requireNodeToken(http.HandlerFunc(s.handleGetServer)))
 	mux.Handle("DELETE /api/servers/{uuid}", s.requireNodeToken(http.HandlerFunc(s.handleDeleteServer)))

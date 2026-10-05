@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getReadyz,
   listNodes,
@@ -7,9 +7,11 @@ import {
   listSigningKeys,
   maintainPartitions,
   retireSigningKey,
+  runDiagnostics,
   rotateSigningKey,
 } from './admin.api';
 import { ApiError } from '@/shared/api/client';
+import type { DiagnosticStatus } from '@/shared/api/types';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, CardTitle, ConfirmDialog, PageHeader, TBody, TD, TR, Table, TableWrap } from '@/ui/primitives';
 
 const KEY_STATE_TONE: Record<string, 'ok' | 'warn' | 'neutral'> = { current: 'ok', retiring: 'warn' };
@@ -187,12 +189,82 @@ function PartitionsCard() {
   );
 }
 
+const DIAG_LABEL: Record<DiagnosticStatus, string> = { ok: 'ok', warn: 'atenção', fail: 'falha' };
+
+function DiagnosticRow({ label, status, detail }: { label: string; status: DiagnosticStatus; detail: string }) {
+  return (
+    <div className="flex flex-col gap-1 border-b border-border py-2 last:border-b-0 sm:flex-row sm:items-start sm:gap-3">
+      <div className="flex shrink-0 items-center gap-2 sm:w-72">
+        <Badge tone={status}>{DIAG_LABEL[status]}</Badge>
+        <span className="text-sm text-text">{label}</span>
+      </div>
+      <p className="min-w-0 break-words text-sm text-text-muted">{detail}</p>
+    </div>
+  );
+}
+
+function DiagnosticsCard() {
+  const diagnostics = useMutation({ mutationFn: runDiagnostics });
+  const result = diagnostics.data;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <CardTitle>Diagnóstico da plataforma</CardTitle>
+          <p className="mt-1 text-sm text-text-muted">
+            Testa cada node por dentro (Docker, IPs das allocations, DNS e internet num container igual ao de um servidor) e se cada plano à venda tem um node que aceite novas compras.
+          </p>
+        </div>
+        <Button onClick={() => diagnostics.mutate()} disabled={diagnostics.isPending}>
+          {diagnostics.isPending ? 'Testando… (até 40s)' : 'Rodar diagnóstico'}
+        </Button>
+      </CardHeader>
+      <CardBody className="space-y-5">
+        {diagnostics.error && (
+          <Alert tone="fail">{diagnostics.error instanceof ApiError ? diagnostics.error.message : 'Não foi possível rodar o diagnóstico.'}</Alert>
+        )}
+        {!result && !diagnostics.isPending && !diagnostics.error && (
+          <p className="text-sm text-text-muted">Nenhum diagnóstico rodado nesta sessão.</p>
+        )}
+        {result && (
+          <>
+            <div className="flex items-center gap-2 text-sm text-text-muted">
+              <Badge tone={result.status}>{DIAG_LABEL[result.status]}</Badge>
+              <span>Rodado em {new Date(result.ranAt).toLocaleString('pt-BR')}</span>
+            </div>
+            <section>
+              <h3 className="mb-1 text-sm font-semibold text-text">Planos à venda</h3>
+              {result.plans.length === 0 ? (
+                <p className="text-sm text-text-muted">Nenhum plano público.</p>
+              ) : (
+                result.plans.map((plan) => <DiagnosticRow key={plan.planId} label={`${plan.name} (${plan.slug})`} status={plan.status} detail={plan.detail} />)
+              )}
+            </section>
+            {result.nodes.map((node) => (
+              <section key={node.nodeId}>
+                <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold text-text">
+                  {node.name}
+                  <Badge tone={node.status}>{DIAG_LABEL[node.status]}</Badge>
+                  {node.maintenanceMode && <Badge tone="neutral">manutenção</Badge>}
+                </h3>
+                {node.checks.map((check) => <DiagnosticRow key={check.key} label={check.label} status={check.status} detail={check.detail} />)}
+              </section>
+            ))}
+          </>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
 export function SystemPage() {
   return (
     <>
       <PageHeader title="Sistema" subtitle="Saúde da infraestrutura, chaves de assinatura e manutenção de partições de log." />
       <div className="space-y-6">
         <InfraHealthCard />
+        <DiagnosticsCard />
         <SigningKeysCard />
         <PartitionsCard />
       </div>

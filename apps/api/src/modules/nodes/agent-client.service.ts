@@ -63,6 +63,18 @@ export interface AgentStatsFrame {
 // Mirrors handleGetServer's response shape (agent/internal/api/routes_server.go).
 // `stats` is absent (not null) until the agent has pushed at least one
 // frame for this container — e.g. a server that was created but never started.
+export interface AgentDiagnosticCheck {
+  key: string;
+  ok: boolean;
+  detail: string;
+  durationMs: number;
+}
+
+export interface AgentDiagnostics {
+  agentTime: string;
+  checks: AgentDiagnosticCheck[];
+}
+
 export interface AgentServerStatus {
   uuid: string;
   state: string;
@@ -226,6 +238,12 @@ export class AgentClient {
    */
   getServerStatus(nodeId: string, serverUuid: string): Promise<AgentServerStatus> {
     return this.call(nodeId, 'GET', `/api/servers/${serverUuid}`, undefined);
+  }
+
+  diagnostics(nodeId: string, params: { image?: string; targets: string[]; ips: string[] }): Promise<AgentDiagnostics> {
+    const qs = new URLSearchParams({ targets: params.targets.join(','), ips: params.ips.join(',') });
+    if (params.image) qs.set('image', params.image);
+    return this.call(nodeId, 'GET', `/api/system/diagnostics?${qs.toString()}`, undefined);
   }
 
   /**

@@ -811,6 +811,22 @@ export interface ReadyzResponse {
   };
 }
 
+export type DiagnosticStatus = 'ok' | 'warn' | 'fail';
+
+export interface DiagnosticCheck {
+  key: string;
+  label: string;
+  status: DiagnosticStatus;
+  detail: string;
+}
+
+export interface PlatformDiagnostics {
+  ranAt: string;
+  status: DiagnosticStatus;
+  plans: { planId: string; name: string; slug: string; status: DiagnosticStatus; detail: string }[];
+  nodes: { nodeId: string; name: string; maintenanceMode: boolean; status: DiagnosticStatus; checks: DiagnosticCheck[] }[];
+}
+
 // ─────────────────── COMMERCIAL SITE (subscriptions) ────────────────────
 
 // GET /api/public/plans[/:slug] — the vitrine a visitor sees before ever
