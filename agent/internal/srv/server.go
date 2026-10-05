@@ -234,6 +234,8 @@ func (s *Server) Start(ctx context.Context, dc dockerFull) error {
 		return fmt.Errorf("%w: server %s", ErrServerSuspended, s.UUID)
 	}
 
+	s.ensureServerPort()
+
 	// Deliberately attaches using s.bgCtx, NOT the caller's ctx: this attach
 	// is a long-lived streaming connection that must outlive whatever
 	// short-lived request triggered Start (an HTTP power-action handler or

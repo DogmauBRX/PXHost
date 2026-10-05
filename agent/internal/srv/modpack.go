@@ -240,30 +240,12 @@ func (s *Server) InstallModpack(ctx context.Context, spec ModpackInstallSpec, pr
 // world seed, difficulty, everything a modpack author tuned on purpose).
 func setServerPort(stageDir string, uid int, port int) error {
 	path := filepath.Join(stageDir, "server.properties")
-	line := fmt.Sprintf("server-port=%d", port)
-
 	existing, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-
-	found := false
-	var lines []string
-	if len(existing) > 0 {
-		lines = strings.Split(strings.TrimRight(string(existing), "\n"), "\n")
-		for i, l := range lines {
-			if strings.HasPrefix(l, "server-port=") {
-				lines[i] = line
-				found = true
-				break
-			}
-		}
-	}
-	if !found {
-		lines = append(lines, line)
-	}
-
-	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0640); err != nil {
+	updated, _ := rewriteServerPort(existing, port)
+	if err := os.WriteFile(path, updated, 0640); err != nil {
 		return err
 	}
 	return os.Chown(path, uid, uid)
